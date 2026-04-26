@@ -1,0 +1,10 @@
+{
+  "name": "Fideo",
+  "description": "Una aplicación web para administrar las operaciones de un negocio mayorista de productos agrícolas utilizando una IA conversacional para interpretar pedidos y acciones desde WhatsApp.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "prompt": "",
+  "majorCapabilities": []
+}
