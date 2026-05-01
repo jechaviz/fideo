@@ -27,7 +27,16 @@ El frontend ya corre sobre PocketBase + OneSignal. La capa actual del producto e
 - identidad push cerrada por empleado en cliente y servidor
 - SLA vivo desde PocketBase para bloqueo, severidad alta y falta de acuse
 
-Leccion honesta: este frontend ya consume realtime del snapshot activo y ping de presencia por sesion. Lo que todavia no existe es colaboracion fina record-by-record ni presencia global de todo el staff.
+Leccion honesta: este frontend ya consume realtime del snapshot activo y ping de presencia por sesion. Lo que sigue ahora es convertir esa base en roster global de staff y en una bandeja de excepciones para `Admin` y `Cajero`, sin romper el contrato snapshot-first.
+
+## Slice inmediato: presencia global + excepciones
+
+Este es el frente inmediato del frontend sobre la base ya viva:
+
+- presencia global por `employeeId`, `role`, `sessionId`, `deviceId`, `status` y `lastSeenAt`,
+- lectura compacta de estados `online`, `idle`, `stale` y `offline`,
+- una sola cola de excepciones para `Admin` y `Cajero`,
+- la misma cola mezclando bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos.
 
 ## Comandos
 
@@ -86,7 +95,7 @@ FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 - El bloqueo ya tiene owner practico: queda amarrado al `employeeId` que tomo la tarea o a la cola del rol si aun no habia persona asignada.
 - El SLA vivo actual ya existe en PocketBase: escala `taskAssignments` que entran a `blocked`, reportes abiertos con `escalationStatus: pending` y severidad operativa, y tambien tareas en `assigned` sin `acknowledgedAt` despues del umbral configurado.
 - Ese umbral cae en `20` minutos por default y se gobierna con `FIDEO_TASK_ACK_ESCALATION_MINUTES`.
-- La siguiente capa de producto en este frontend es alinear mejor Admin/Cajero, enriquecer reportes y expandir presencia mas alla de la sesion actual sin romper el contrato snapshot-first.
+- La siguiente capa de producto en este frontend es cerrar presencia global del staff y una bandeja de excepciones real para `Admin/Cajero`, sin romper el contrato snapshot-first.
 - Si `bun run pb:start` encuentra `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY`, `VITE_GEMINI_API_KEY`, `ONESIGNAL_ENABLED`, `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY`, `FIDEO_APP_URL` o `FIDEO_TASK_ACK_ESCALATION_MINUTES` en `frontend/.env.local`, intenta promoverlas al proceso de PocketBase para habilitar interpretacion server-side, push y SLA vivo.
 - La interpretacion de mensajes ya intenta ir primero al backend (`/api/fideo/messages/interpret`) y cae al Gemini del cliente solo si esa ruta no existe o no esta disponible.
 - PocketBase ya materializa un primer slice normalizado para `productGroups`, `warehouses`, `prices`, `inventory`, `customers`, `suppliers` y `purchaseOrders`, ademas de `fideo_task_assignments` y `fideo_task_reports`.

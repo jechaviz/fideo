@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
-import { CashDrawer, CashDrawerActivity, Sale } from '../types';
+import { CashDrawer, CashDrawerActivity, Sale, TaskAssignment, TaskReport } from '../types';
 import { findCustomerForSale, loanBelongsToCustomer } from '../utils/customerIdentity';
 
 const surfaceClass = 'glass-panel-dark rounded-[1.8rem] border border-white/10';
@@ -9,6 +9,43 @@ const labelClass = 'text-[10px] font-black uppercase tracking-[0.28em] text-slat
 
 const formatCurrency = (value: number) =>
     value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+
+const activityLabelMap: Record<string, string> = {
+    INGRESO_VENTA: 'Ingreso',
+    EGRESO_COMPRA: 'Compra',
+    DEPOSITO_BANCO: 'Deposito',
+    RETIRO_EFECTIVO: 'Retiro',
+    SALDO_INICIAL: 'Apertura',
+    CORTE_CIERRE: 'Corte',
+};
+
+const toValidDate = (value?: Date | string | null) => {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getAgeMinutes = (value?: Date | string | null) => {
+    const date = toValidDate(value);
+    if (!date) return null;
+    return Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+};
+
+const formatAgeCompact = (value?: Date | string | null) => {
+    const minutes = getAgeMinutes(value);
+    if (minutes === null) return '';
+    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 1440) return `${Math.round(minutes / 60)}h`;
+    return `${Math.round(minutes / 1440)}d`;
+};
+
+const parseDrawerDifference = (activity: CashDrawerActivity) => {
+    const notes = activity.notes || '';
+    const matched = notes.match(/Diferencia al cierre:\s*([+-]?\d+(?:\.\d+)?)/i);
+    if (matched) return parseFloat(matched[1]);
+    if (/diferencia al cierre/i.test(notes)) return activity.amount;
+    return null;
+};
 
 const getDebtAgeColor = (days: number) => {
     if (days > 60) return 'border-rose-400/20 bg-rose-400/10 text-rose-200';
@@ -23,6 +60,25 @@ interface CustomerDebtInfo {
     totalBalance: number;
     debtSales: (Sale & { ageDays: number })[];
 }
+
+type CashAttentionTone = 'critical' | 'warning' | 'info';
+
+interface CashAttentionItem {
+    id: string;
+    title: string;
+    detail: string;
+    meta: string;
+    tone: CashAttentionTone;
+    amountLabel?: string;
+    priority: number;
+    timestamp?: Date | null;
+}
+
+const attentionToneClass: Record<CashAttentionTone, string> = {
+    critical: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+    warning: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+    info: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
+};
 
 const MetricCard: React.FC<{ title: string; value: string; subtext: string; accent: string }> = ({
     title,
@@ -71,9 +127,12 @@ const ModalShell: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
 const CashDrawerManager: React.FC<{
     drawer: CashDrawer;
     activities: CashDrawerActivity[];
+    attentionItems: CashAttentionItem[];
+    attentionSummary: { critical: number; warning: number; pending: number; hasOpenDrawer: boolean };
+    emphasizeCashOps: boolean;
     onOpen: (id: string, balance: number) => void;
     onClose: (id: string, counted: number, notes?: string) => void;
-}> = ({ drawer, activities, onOpen, onClose }) => {
+}> = ({ drawer, activities, attentionItems, attentionSummary, emphasizeCashOps, onOpen, onClose }) => {
     const [openModal, setOpenModal] = useState(false);
     const [closeModal, setCloseModal] = useState(false);
     const [initialBalance, setInitialBalance] = useState('');
@@ -88,7 +147,9 @@ const CashDrawerManager: React.FC<{
             <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.18),transparent_36%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8">
                 <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-sky-200">Caja operativa</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-sky-200">
+                            {emphasizeCashOps ? 'Cajero' : 'Caja operativa'}
+                        </p>
                         <h2 className="mt-3 text-4xl font-black tracking-tight text-white">{drawer.name}</h2>
                         <div className="mt-4 inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-slate-300">
                             {drawer.status}
@@ -111,6 +172,76 @@ const CashDrawerManager: React.FC<{
                             {drawer.status === 'Cerrada' ? 'Abrir caja' : 'Cerrar caja'}
                         </button>
                     </div>
+                </div>
+            </section>
+
+            <section className={`${surfaceClass} p-5`}>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <p className={labelClass}>Atencion inmediata</p>
+                        <h3 className="mt-2 text-2xl font-black tracking-tight text-white">Excepciones de caja</h3>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <span
+                            className={`rounded-full border px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] ${
+                                attentionSummary.critical > 0
+                                    ? 'border-rose-400/20 bg-rose-400/10 text-rose-200'
+                                    : 'border-white/10 bg-white/5 text-slate-300'
+                            }`}
+                        >
+                            Criticas {attentionSummary.critical}
+                        </span>
+                        <span
+                            className={`rounded-full border px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] ${
+                                attentionSummary.warning > 0
+                                    ? 'border-amber-400/20 bg-amber-400/10 text-amber-200'
+                                    : 'border-white/10 bg-white/5 text-slate-300'
+                            }`}
+                        >
+                            Alertas {attentionSummary.warning}
+                        </span>
+                        <span
+                            className={`rounded-full border px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] ${
+                                attentionSummary.pending > 0
+                                    ? 'border-sky-400/20 bg-sky-400/10 text-sky-200'
+                                    : 'border-white/10 bg-white/5 text-slate-300'
+                            }`}
+                        >
+                            Pendientes {attentionSummary.pending}
+                        </span>
+                        {attentionSummary.hasOpenDrawer && (
+                            <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-brand-200">
+                                Caja abierta
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                    {attentionItems.length > 0 ? (
+                        attentionItems.map((item) => (
+                            <div
+                                key={item.id}
+                                className={`flex flex-col gap-3 rounded-[1.35rem] border p-4 md:flex-row md:items-center md:justify-between ${attentionToneClass[item.tone]}`}
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-sm font-black text-white">{item.title}</p>
+                                    <p className="mt-1 text-sm text-slate-200">{item.detail}</p>
+                                    <p className="mt-2 text-[11px] font-black uppercase tracking-[0.24em] text-current/80">
+                                        {item.meta}
+                                    </p>
+                                </div>
+                                {item.amountLabel && (
+                                    <p className="text-lg font-black text-white md:text-right">{item.amountLabel}</p>
+                                )}
+                            </div>
+                        ))
+                    ) : (
+                        <div className="rounded-[1.35rem] border border-white/10 bg-white/5 px-4 py-5 text-sm text-slate-300">
+                            Sin alertas inmediatas.
+                        </div>
+                    )}
                 </div>
             </section>
 
@@ -250,6 +381,9 @@ const Finances: React.FC<{ data: BusinessData }> = ({ data }) => {
         crateTypes,
         cashDrawers,
         cashDrawerActivities,
+        taskAssignments,
+        taskReports,
+        currentRole,
         closeCashDrawer,
         openCashDrawer,
     } = data;
@@ -324,6 +458,184 @@ const Finances: React.FC<{ data: BusinessData }> = ({ data }) => {
     }, [crateLoans, crateTypes, customers, payments, sales]);
 
     const primaryDrawer = cashDrawers[0];
+    const cashAttention = useMemo(() => {
+        if (!primaryDrawer) {
+            return {
+                items: [] as CashAttentionItem[],
+                summary: { critical: 0, warning: 0, pending: 0, hasOpenDrawer: false },
+            };
+        }
+
+        const drawerActivities = cashDrawerActivities
+            .filter((activity) => activity.drawerId === primaryDrawer.id)
+            .sort(
+                (left, right) =>
+                    (toValidDate(right.timestamp)?.getTime() || 0) - (toValidDate(left.timestamp)?.getTime() || 0),
+            );
+
+        const cashTasks = (taskAssignments || [])
+            .filter((task: TaskAssignment) => task.role === 'Cajero' && task.status !== 'done')
+            .sort(
+                (left, right) =>
+                    (toValidDate(right.updatedAt)?.getTime() || 0) - (toValidDate(left.updatedAt)?.getTime() || 0),
+            );
+
+        const cashReports = (taskReports || [])
+            .filter(
+                (report: TaskReport) =>
+                    report.role === 'Cajero' &&
+                    (report.status === 'open' || report.severity === 'high' || report.escalationStatus !== 'none'),
+            )
+            .sort(
+                (left, right) =>
+                    (toValidDate(right.createdAt)?.getTime() || 0) - (toValidDate(left.createdAt)?.getTime() || 0),
+            );
+
+        const criticalItems: CashAttentionItem[] = [];
+        const warningItems: CashAttentionItem[] = [];
+        const infoItems: CashAttentionItem[] = [];
+        let critical = 0;
+        let warning = 0;
+        let pending = 0;
+
+        const pushItem = (item: CashAttentionItem) => {
+            if (item.tone === 'critical') {
+                critical += 1;
+                criticalItems.push(item);
+                return;
+            }
+            if (item.tone === 'warning') {
+                warning += 1;
+                warningItems.push(item);
+                return;
+            }
+            pending += 1;
+            infoItems.push(item);
+        };
+
+        const openedAt = toValidDate(primaryDrawer.lastOpened);
+        const openedMinutes = getAgeMinutes(openedAt);
+        if (primaryDrawer.status === 'Abierta' && openedMinutes !== null) {
+            const tone: CashAttentionTone = openedMinutes >= 720 ? 'critical' : openedMinutes >= 360 ? 'warning' : 'info';
+            pushItem({
+                id: `drawer_open_${primaryDrawer.id}`,
+                title: openedMinutes >= 720 ? 'Caja abierta prolongada' : 'Caja abierta',
+                detail: `${primaryDrawer.name} sigue abierta.`,
+                meta: `Abierta ${formatAgeCompact(openedAt)}`,
+                tone,
+                amountLabel: formatCurrency(primaryDrawer.balance),
+                priority: tone === 'critical' ? 0 : tone === 'warning' ? 1 : 2,
+                timestamp: openedAt,
+            });
+        }
+
+        drawerActivities
+            .map((activity) => ({ activity, difference: parseDrawerDifference(activity) }))
+            .filter((entry) => entry.difference !== null)
+            .slice(0, 2)
+            .forEach(({ activity, difference }, index) => {
+                const amount = difference || 0;
+                const tone: CashAttentionTone = Math.abs(amount) >= 1000 ? 'critical' : 'warning';
+                const timestamp = toValidDate(activity.timestamp);
+                pushItem({
+                    id: `drawer_diff_${activity.id}_${index}`,
+                    title: amount < 0 ? 'Faltante al cierre' : amount > 0 ? 'Sobrante al cierre' : 'Diferencia al cierre',
+                    detail: activity.notes || 'Revision de corte requerida.',
+                    meta: timestamp ? `Detectada ${formatAgeCompact(timestamp)}` : 'Revision reciente',
+                    tone,
+                    amountLabel: formatCurrency(amount),
+                    priority: tone === 'critical' ? 0 : 1,
+                    timestamp,
+                });
+            });
+
+        cashReports.slice(0, 3).forEach((report) => {
+            const tone: CashAttentionTone =
+                report.escalationStatus === 'pending' || report.severity === 'high' ? 'critical' : 'warning';
+            const timestamp = toValidDate(report.createdAt);
+            pushItem({
+                id: `cash_report_${report.id}`,
+                title:
+                    report.escalationStatus === 'pending'
+                        ? 'Escalacion de caja'
+                        : report.kind === 'blocker'
+                          ? 'Bloqueo reportado'
+                          : 'Incidente de caja',
+                detail: report.summary,
+                meta: `${report.employeeName || 'Caja'}${timestamp ? ` / ${formatAgeCompact(timestamp)}` : ''}`,
+                tone,
+                priority: tone === 'critical' ? 0 : 1,
+                timestamp,
+            });
+        });
+
+        cashTasks.slice(0, 3).forEach((task) => {
+            const createdAt = toValidDate(task.createdAt);
+            const updatedAt = toValidDate(task.updatedAt);
+            const withoutAck =
+                task.status === 'assigned' && !task.acknowledgedAt && (getAgeMinutes(createdAt) || 0) >= 20;
+            const tone: CashAttentionTone =
+                task.status === 'blocked' ? 'critical' : withoutAck ? 'warning' : 'info';
+            const metaSource = task.status === 'blocked' ? toValidDate(task.blockedAt) || updatedAt : createdAt;
+            pushItem({
+                id: `cash_task_${task.id}`,
+                title:
+                    task.status === 'blocked'
+                        ? 'Bloqueo operativo'
+                        : withoutAck
+                          ? 'Sin acuse'
+                          : 'Seguimiento de caja',
+                detail: task.blockReason || task.title,
+                meta:
+                    task.employeeName || metaSource
+                        ? `${task.employeeName || 'Cajero'}${metaSource ? ` / ${formatAgeCompact(metaSource)}` : ''}`
+                        : 'Caja',
+                tone,
+                priority: tone === 'critical' ? 0 : tone === 'warning' ? 1 : 2,
+                timestamp: metaSource,
+            });
+        });
+
+        const relevantMovement = drawerActivities.find((activity) => {
+            if (activity.type === 'INGRESO_VENTA' || activity.type === 'SALDO_INICIAL') return false;
+            if (parseDrawerDifference(activity) !== null) return false;
+            return (getAgeMinutes(activity.timestamp) || Number.MAX_SAFE_INTEGER) <= 720;
+        });
+
+        if (relevantMovement) {
+            const timestamp = toValidDate(relevantMovement.timestamp);
+            pushItem({
+                id: `cash_event_${relevantMovement.id}`,
+                title: 'Movimiento relevante',
+                detail:
+                    relevantMovement.notes ||
+                    activityLabelMap[relevantMovement.type] ||
+                    relevantMovement.type.replace(/_/g, ' '),
+                meta: timestamp ? `${activityLabelMap[relevantMovement.type] || 'Caja'} / ${formatAgeCompact(timestamp)}` : 'Caja',
+                tone: 'info',
+                amountLabel: formatCurrency(relevantMovement.amount),
+                priority: 3,
+                timestamp,
+            });
+        }
+
+        const items = [...criticalItems, ...warningItems, ...infoItems]
+            .sort((left, right) => {
+                if (left.priority !== right.priority) return left.priority - right.priority;
+                return (right.timestamp?.getTime() || 0) - (left.timestamp?.getTime() || 0);
+            })
+            .slice(0, 5);
+
+        return {
+            items,
+            summary: {
+                critical,
+                warning,
+                pending,
+                hasOpenDrawer: primaryDrawer.status === 'Abierta',
+            },
+        };
+    }, [cashDrawerActivities, primaryDrawer, taskAssignments, taskReports]);
 
     return (
         <div className="space-y-6">
@@ -507,6 +819,9 @@ const Finances: React.FC<{ data: BusinessData }> = ({ data }) => {
                     <CashDrawerManager
                         drawer={primaryDrawer}
                         activities={cashDrawerActivities.filter((activity) => activity.drawerId === primaryDrawer.id)}
+                        attentionItems={cashAttention.items}
+                        attentionSummary={cashAttention.summary}
+                        emphasizeCashOps={currentRole === 'Cajero'}
                         onOpen={openCashDrawer}
                         onClose={closeCashDrawer}
                     />

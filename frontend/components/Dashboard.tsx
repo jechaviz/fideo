@@ -36,6 +36,21 @@ type PresenceEntry = {
     source: 'checkin' | 'activity' | 'report';
 };
 
+type StaffPresenceState = 'active' | 'recent' | 'inactive';
+
+type StaffPresenceItem = {
+    id: string;
+    name: string;
+    roleLabel: string;
+    state: StaffPresenceState;
+    stateLabel: string;
+    stateTone: string;
+    dotTone: string;
+    lastSeenLabel: string;
+    taskCount: number;
+    exceptionCount: number;
+};
+
 type LiveActivityItem = {
     id: string;
     summary: string;
@@ -101,6 +116,15 @@ const stageLabelMap: Record<OperationalTaskStage, string> = {
     assignment: 'Asignacion',
     route: 'Ruta',
     other: 'Operacion',
+};
+
+const roleLabelMap: Record<string, string> = {
+    Admin: 'Admin',
+    Cajero: 'Caja',
+    Empacador: 'Empaque',
+    Repartidor: 'Ruta',
+    Cliente: 'Cliente',
+    Proveedor: 'Proveedor',
 };
 
 const asRecord = (value: unknown): LooseRecord | null => (value && typeof value === 'object' ? (value as LooseRecord) : null);
@@ -440,6 +464,90 @@ const getPresenceSignal = (presenceIndex: Map<string, PresenceEntry>, ...candida
     return undefined;
 };
 
+const buildStaffPresenceRoster = (
+    employees: BusinessData['employees'],
+    tasks: DashboardTask[],
+    presenceIndex: Map<string, PresenceEntry>,
+) => {
+    const displayNameByKey = new Map<string, string>();
+    const roleByKey = new Map<string, string>();
+
+    const register = (name: string | null | undefined, role?: string) => {
+        const key = normalizeNameKey(name);
+        if (!key || !name) return;
+        if (!displayNameByKey.has(key)) displayNameByKey.set(key, name.trim());
+        if (role && !roleByKey.has(key)) roleByKey.set(key, roleLabelMap[role] || role);
+    };
+
+    employees.forEach((employee) => register(employee.name, employee.role));
+    tasks.forEach((task) => {
+        register(task.assigneeName);
+        register(task.ownerName);
+        task.reports.forEach((report) => register(report.authorName));
+    });
+
+    const taskStatsByKey = new Map<string, { taskCount: number; exceptionCount: number }>();
+    tasks.forEach((task) => {
+        const key = normalizeNameKey(task.assigneeName || task.ownerName);
+        if (!key) return;
+
+        const hasException =
+            task.status === 'blocked' ||
+            task.signals.some((signal) => signal.id === 'no_ack' || signal.id === 'escalation') ||
+            task.reports.some((report) => report.kind === 'blocker' || report.kind === 'escalation');
+
+        const current = taskStatsByKey.get(key) || { taskCount: 0, exceptionCount: 0 };
+        current.taskCount += 1;
+        if (hasException) current.exceptionCount += 1;
+        taskStatsByKey.set(key, current);
+    });
+
+    const stateRank: Record<StaffPresenceState, number> = {
+        active: 0,
+        recent: 1,
+        inactive: 2,
+    };
+
+    return Array.from(displayNameByKey.entries())
+        .map(([key, name]) => {
+            const presence = getPresenceSignal(presenceIndex, name);
+            const ageMinutes = getAgeMinutes(presence?.lastSeenAt);
+            const taskStats = taskStatsByKey.get(key) || { taskCount: 0, exceptionCount: 0 };
+
+            let state: StaffPresenceState = 'inactive';
+            if (typeof ageMinutes === 'number' && ageMinutes <= 20) state = 'active';
+            else if (typeof ageMinutes === 'number' && ageMinutes <= 120) state = 'recent';
+
+            const stateLabel = state === 'active' ? 'Activo' : state === 'recent' ? 'Reciente' : 'Sin senal';
+            const stateTone =
+                state === 'active'
+                    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
+                    : state === 'recent'
+                      ? 'border-sky-400/20 bg-sky-400/10 text-sky-100'
+                      : 'border-white/10 bg-white/[0.04] text-slate-300';
+            const dotTone = state === 'active' ? 'bg-emerald-300' : state === 'recent' ? 'bg-sky-300' : 'bg-slate-500';
+
+            return {
+                id: key,
+                name,
+                roleLabel: roleByKey.get(key) || 'Staff',
+                state,
+                stateLabel,
+                stateTone,
+                dotTone,
+                lastSeenLabel: presence?.label || 'Sin senal',
+                taskCount: taskStats.taskCount,
+                exceptionCount: taskStats.exceptionCount,
+            } satisfies StaffPresenceItem;
+        })
+        .sort((left, right) => {
+            if (stateRank[left.state] !== stateRank[right.state]) return stateRank[left.state] - stateRank[right.state];
+            if (right.exceptionCount !== left.exceptionCount) return right.exceptionCount - left.exceptionCount;
+            if (right.taskCount !== left.taskCount) return right.taskCount - left.taskCount;
+            return left.name.localeCompare(right.name, 'es-MX');
+        });
+};
+
 const attachExternalReportsToTask = (task: DashboardTask, externalReports: ExternalTaskReportIndex): DashboardTask => {
     const linkedReports = [
         ...(externalReports.byTaskId.get(task.id) || []),
@@ -763,7 +871,7 @@ const InteligenciaFideo: React.FC<{ insights: string; isLoading: boolean }> = ({
 };
 
 const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { sales, inventory, productGroups, theme, taskReports, activities, activityLog } = data;
+    const { sales, inventory, productGroups, theme, taskReports, activities, activityLog, employees } = data;
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
     const isDark = theme === 'dark';
     const [insights, setInsights] = useState<string>('');
@@ -898,15 +1006,12 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             .slice(0, 6);
         const attentionItems = buildAttentionItems(operationalTasks);
         const liveActivity = buildLiveActivity(operationalTasks, activityLog);
-        const responsibleNames = operationalTasks.reduce<string[]>((accumulator, task) => {
-            const candidate = task.assigneeName || task.ownerName;
-            if (typeof candidate !== 'string' || !candidate.length || accumulator.includes(candidate)) return accumulator;
-            accumulator.push(candidate);
-            return accumulator;
-        }, []);
+        const staffPresence = buildStaffPresenceRoster(employees, operationalTasks, presenceIndex);
         const presenceSummary = {
-            total: responsibleNames.length,
-            withSignal: responsibleNames.filter((name) => Boolean(getPresenceSignal(presenceIndex, name))).length,
+            total: staffPresence.length,
+            withSignal: staffPresence.filter((item) => item.state !== 'inactive').length,
+            active: staffPresence.filter((item) => item.state === 'active').length,
+            inactive: staffPresence.filter((item) => item.state === 'inactive').length,
         };
 
         const last7Days = new Date();
@@ -957,6 +1062,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             recentReports,
             attentionItems,
             liveActivity,
+            staffPresence,
             presenceSummary,
             salesByDay,
             salesCompositionData,
@@ -965,7 +1071,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             unidadesActivas,
             ventasRegistradas: todaySales.length,
         };
-    }, [activityLog, externalTaskReports, inventory, presenceIndex, productGroups, sales, taskAssignments]);
+    }, [activityLog, employees, externalTaskReports, inventory, presenceIndex, productGroups, sales, taskAssignments]);
 
     const PIE_COLORS = ['#a3e635', '#38bdf8', '#f59e0b', '#22c55e', '#fb7185'];
     const axisColor = isDark ? '#94a3b8' : '#475569';
@@ -1060,11 +1166,16 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </div>
             </section>
 
-            <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+            <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
-                    <div className="mb-5">
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Pulso operativo</p>
-                        <h2 className="mt-2 text-xl font-black tracking-tight text-white">Escalacion y acuses</h2>
+                    <div className="mb-5 flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Atencion</p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Inmediata</h2>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
+                            {dashboardData.attentionItems.length}
+                        </span>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-4">
@@ -1103,7 +1214,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                             ))
                         ) : (
                             <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
-                                <p className="text-sm font-semibold text-white">Sin riesgos SLA activos.</p>
+                                <p className="text-sm font-semibold text-white">Sin excepciones vivas.</p>
                             </div>
                         )}
                     </div>
@@ -1112,37 +1223,94 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
                     <div className="mb-5 flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Realtime</p>
-                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Actividad en vivo</h2>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Staff</p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Presencia</h2>
                         </div>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
-                            {dashboardData.liveActivity.length}
-                        </span>
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">
+                                Activos {dashboardData.presenceSummary.active}
+                            </span>
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                Sin senal {dashboardData.presenceSummary.inactive}
+                            </span>
+                        </div>
                     </div>
 
-                    {dashboardData.liveActivity.length > 0 ? (
+                    {dashboardData.staffPresence.length > 0 ? (
                         <div className="space-y-3">
-                            {dashboardData.liveActivity.map((item) => (
-                                <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
+                            {dashboardData.staffPresence.map((item) => (
+                                <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
-                                                {item.pill}
-                                            </span>
-                                            <p className="mt-2 text-sm font-semibold text-current">{item.summary}</p>
-                                            {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
+                                            <div className="flex items-center gap-2">
+                                                <span className={`h-2.5 w-2.5 rounded-full ${item.dotTone}`}></span>
+                                                <p className="text-sm font-black text-white">{item.name}</p>
+                                            </div>
+                                            <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{item.roleLabel}</p>
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${item.stateTone}`}>
+                                                    {item.stateLabel}
+                                                </span>
+                                                {item.taskCount > 0 && (
+                                                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                                        {item.taskCount} tarea{item.taskCount === 1 ? '' : 's'}
+                                                    </span>
+                                                )}
+                                                {item.exceptionCount > 0 && (
+                                                    <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
+                                                        {item.exceptionCount} alerta{item.exceptionCount === 1 ? '' : 's'}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <i className={`fa-solid ${item.icon} mt-1 text-xs opacity-80`}></i>
+                                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                            {item.lastSeenLabel}
+                                        </span>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     ) : (
                         <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
-                            <p className="text-sm font-semibold text-white">Sin actividad operativa reciente.</p>
+                            <p className="text-sm font-semibold text-white">Sin staff visible.</p>
                         </div>
                     )}
                 </div>
+            </section>
+
+            <section className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Realtime</p>
+                        <h2 className="mt-2 text-xl font-black tracking-tight text-white">Actividad</h2>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
+                        {dashboardData.liveActivity.length}
+                    </span>
+                </div>
+
+                {dashboardData.liveActivity.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {dashboardData.liveActivity.map((item) => (
+                            <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                                            {item.pill}
+                                        </span>
+                                        <p className="mt-2 text-sm font-semibold text-current">{item.summary}</p>
+                                        {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
+                                    </div>
+                                    <i className={`fa-solid ${item.icon} mt-1 text-xs opacity-80`}></i>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
+                        <p className="text-sm font-semibold text-white">Sin actividad operativa reciente.</p>
+                    </div>
+                )}
             </section>
 
             <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">

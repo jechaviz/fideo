@@ -21,12 +21,13 @@ La base fuerte ya existe:
 - vistas reales para `PackerView`, `DelivererView`, `ActionCenter` y `Deliveries` leyendo la misma cola
 - SLA vivo para tareas bloqueadas, reportes abiertos de severidad alta y tareas sin acuse
 - loop real de entregas y operacion comercial
+- heartbeat de presencia por sesion ya disponible como base del siguiente runtime global
 
 La brecha principal ya no es "poner otro dashboard". Es cerrar el runtime operativo personal:
 
 - extender el contrato de identidad por empleado a clientes staff mas cerrados
-- expandir subscriptions y presencia mas alla de la sesion actual, solo donde de verdad suban despacho y seguimiento
-- bandejas personales mas cerradas para Admin/Cajero y mejor triage de excepciones
+- consolidar presencia global del staff sobre el heartbeat actual
+- cerrar una bandeja de excepciones para Admin/Cajero sobre tareas, caja, SLA y silencios operativos
 - ampliar el SLA mas alla del primer timeout y la severidad alta
 - seguimiento mas fino despues del primer ack
 
@@ -57,7 +58,19 @@ PocketBase ya es la capa realtime actual en sentido operativo:
 
 La nota honesta aqui es igual de importante: esto ya es realtime operativo, pero no multiplayer fino. Hay suscripcion del snapshot activo y presencia de la sesion actual; no hay todavia colaboracion record-by-record ni una vista global de presencia del staff.
 
-### 3. Loop de tarea y SLA vivo
+### 3. Runtime de presencia global + bandeja de excepciones
+
+Sobre ese heartbeat actual, el slice inmediato cierra dos cosas a la vez:
+
+- roster global por `employeeId`, `role`, `sessionId`, `deviceId`, `status`, `lastSeenAt`, `platform` y `appVersion`,
+- estados derivados utiles para operacion: `online`, `idle`, `stale`, `offline`,
+- una sola bandeja de excepciones para `Admin` y `Cajero`,
+- la misma cola leyendo `taskAssignments`, `taskReports`, alertas de caja, falta de acuse y silencio de roles criticos,
+- PocketBase como fuente de verdad y OneSignal como carril de empuje para seguimiento y escalacion.
+
+La idea no es sumar otra pantalla. Es que coordinacion y caja operen por excepcion visible, con ownership claro y seguimiento corto.
+
+### 4. Loop de tarea y SLA vivo
 
 La capa operativa ya no es solo `taskAssignments`. Hoy el loop actual incluye:
 
@@ -75,6 +88,8 @@ El umbral de falta de acuse cae hoy en `20` minutos por default y se gobierna co
 
 ## Lo siguiente sobre esta capa
 
+- consolidar presencia global del staff sobre la infraestructura de `presence/ping` ya viva
+- convertir presencia, bloqueo, caja y SLA en una bandeja de excepciones real para `Admin` y `Cajero`
 - alinear el cliente staff al mismo contrato `employeeId` + `pushExternalId` o `fideo_users.id`
 - usar subscriptions de PocketBase solo en bandejas donde eliminen friccion real
 - enriquecer formularios de reporte, evidencia y cierre sin duplicar el loop
@@ -134,6 +149,56 @@ Hecho cuando:
 - despacho y seguimiento ya no dependen de refrescar toda la app para ver movimiento importante
 - los conflictos dejan de sentirse como sobrescritura silenciosa
 - la colaboracion mejora sin romper el contrato snapshot-first actual
+
+### P0 - Presencia global del staff
+
+Estado: el heartbeat por sesion ya existe; falta consolidarlo como roster util para despacho y supervision.
+
+Objetivo: dejar de ver solo "la sesion actual vive" y pasar a "quien del equipo esta online, stale u offline, desde que dispositivo y con que ultima senal".
+
+Backend:
+
+- reusar `POST /api/fideo/presence/ping` como fuente de verdad ligera
+- consolidar presencia por `workspaceId`, `employeeId`, `sessionId` y `deviceId`
+- derivar `lastSeenAt`, `status`, `platform`, `appVersion` y marca de vigencia
+- exponer el roster dentro del runtime compartido sin abrir un workflow paralelo
+
+Cliente staff:
+
+- seguir enviando heartbeat corto desde la sesion activa
+- abrir roster global solo en vistas que lo necesitan de verdad
+- mostrar senal reciente, atraso o silencio sin volver el shell ruidoso
+
+Hecho cuando:
+
+- `Admin` ve quien sigue vivo en piso, ruta y caja
+- `Cajero` distingue ausencia operativa de atraso normal
+- un rol critico en silencio ya no se confunde con "no ha pasado nada"
+
+### P0 - Bandeja de excepciones Admin/Cajero
+
+Estado: siguiente slice inmediato sobre tareas, reportes, caja y SLA ya materializados.
+
+Objetivo: que `Admin` y `Cajero` operen por excepcion consolidada y no por persecucion manual entre modulos.
+
+Backend:
+
+- reutilizar `taskAssignments`, `taskReports`, alertas de caja y SLA vivo como fuentes de la cola
+- incorporar silencio de presencia y falta de acuse como disparadores del mismo triage
+- mantener ownership, severidad, timestamps y contexto operativo en la misma entidad que origina la excepcion
+- usar OneSignal para empuje y PocketBase para estado y auditoria
+
+Cliente staff:
+
+- una sola bandeja con filtros por severidad, owner, rol, caja, entrega o tarea
+- acciones rapidas para reasignar, marcar seguimiento, resolver o abrir detalle
+- lectura clara de por que la excepcion cayo ahi y a quien le toca moverla
+
+Hecho cuando:
+
+- `Admin` ya no persigue bloqueos por varias vistas
+- `Cajero` ya no pierde alertas de caja dentro del ruido general
+- la misma cola mezcla bloqueo, SLA, caja y presencia sin duplicar workflows
 
 ### P1 - `taskAssignments` snapshot-first con acuse
 
@@ -278,13 +343,14 @@ Hecho cuando:
 ## Orden tecnico recomendado
 
 1. alinear todos los clientes staff al contrato cerrado `employeeId` + `pushExternalId` o `fideo_users.id`
-2. endurecer `taskAssignments` y `taskReports` como contrato operativo real
-3. meter subscriptions de PocketBase solo en bandejas donde sumen de verdad
-4. ampliar el SLA vivo sobre PocketBase + OneSignal
-5. volver mas personales las vistas de staff restantes
-6. meter presencia y estados online cuando ya haya valor operativo claro
-7. meter voz de entrada estable
-8. meter voz de salida y automatizacion de seguimiento
+2. consolidar presencia global del staff sobre el heartbeat actual
+3. cerrar la bandeja de excepciones para `Admin` y `Cajero`
+4. endurecer `taskAssignments` y `taskReports` como contrato operativo real
+5. meter subscriptions de PocketBase solo en bandejas donde sumen de verdad
+6. ampliar el SLA vivo sobre PocketBase + OneSignal
+7. volver mas personales las vistas de staff restantes
+8. meter voz de entrada estable
+9. meter voz de salida y automatizacion de seguimiento
 
 ## Lo que no conviene hacer aun
 

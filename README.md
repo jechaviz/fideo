@@ -416,9 +416,21 @@ PocketBase ya es la capa realtime actual de Fideo en un sentido operativo concre
 - la sesion ya abre suscripcion realtime sobre el snapshot activo y manda heartbeat de presencia por sesion,
 - el backend dispara push y escalacion sobre cambios reales del runtime, no sobre mocks locales.
 
-La nota honesta aqui tambien importa: esto ya es realtime operativo, no multiplayer fino. Hay suscripcion del snapshot activo y presencia de la sesion actual, pero todavia no existe colaboracion record-by-record, locking detallado ni una vista global de presencia de todo el staff.
+La nota honesta aqui tambien importa: esto ya es realtime operativo, no multiplayer fino. Hay suscripcion del snapshot activo y presencia de la sesion actual, pero todavia no existe colaboracion record-by-record ni locking fino. El slice inmediato sobre esta base es volver esa presencia una lectura global del staff y una cola real de excepciones para Admin/Cajero.
 
-### 3. SLA vivo ya activo
+### 3. Runtime de presencia global + bandeja de excepciones
+
+Sobre la capa realtime actual, el siguiente cierre operativo ya esta definido asi:
+
+- presencia consolidada por `employeeId`, `role`, `sessionId`, `deviceId`, `status`, `lastSeenAt`, `platform` y `appVersion`,
+- estados practicos para despacho y supervision: `online`, `idle`, `stale` y `offline`,
+- una sola bandeja para `Admin` y `Cajero` que lea bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos,
+- triage y seguimiento sobre las mismas entidades vivas (`taskAssignments`, `taskReports`, caja y presencia), sin abrir workflows paralelos,
+- PocketBase como fuente de verdad del runtime y OneSignal como carril de empuje y escalacion.
+
+La meta de este slice no es adornar el tablero. Es que `Admin` y `Cajero` operen por excepcion visible, con ownership claro, en vez de perseguir manualmente que paso con cada tarea o cada ausencia.
+
+### 4. SLA vivo ya activo
 
 El SLA ya no esta solo en intencion. Ya hay reglas activas en PocketBase:
 
@@ -439,9 +451,9 @@ Para no romantizar el estado actual, estas son las brechas mas claras:
 
 1. El contrato publico del frontend sigue siendo snapshot-first aunque PocketBase ya materializa slices operativos reales; eso simplifica compatibilidad, pero todavia no es un modelo fino record-by-record.
 2. La identidad push base ya esta alineada entre cliente y servidor, pero falta llevarla a clientes staff mas cerrados y dedicados fuera del navegador general.
-3. El runtime remoto ya tiene suscripcion del snapshot activo y heartbeat de presencia por sesion, pero todavia no existe colaboracion fina record-by-record ni una presencia global de todo el equipo.
+3. El runtime remoto ya tiene suscripcion del snapshot activo y heartbeat de presencia por sesion, pero el roster global de staff y la lectura consolidada de excepciones siguen siendo el siguiente cierre operativo pendiente.
 4. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
-5. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero y el triage de bloqueos todavia necesitan ownership mas fino, mejores bandejas de excepcion y seguimiento mas claro.
+5. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero todavia necesitan una cola unificada de excepciones y mejor seguimiento entre bloqueo, caja, SLA y presencia.
 6. El SLA vivo actual cubre bloqueo, severidad alta y falta de acuse; todavia no hay matriz mas rica por rol, prioridad, horario o ventana de entrega.
 7. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
 
@@ -449,22 +461,22 @@ Para no romantizar el estado actual, estas son las brechas mas claras:
 
 Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correcto parece este:
 
-1. Alinear el cliente staff que consuma push con el contrato cerrado por empleado: `employeeId` como sujeto operativo y `pushExternalId` o `fideo_users.id` como `external_id`.
-2. Meter subscriptions nativas de PocketBase solo donde mejoren de verdad despacho, triage y seguimiento, sin romper el contrato snapshot-first actual.
-3. Endurecer ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
-4. Expandir el SLA vivo mas alla del primer timeout de acuse y la severidad alta: prioridad, ventanas, horarios, reintentos y politicas por rol.
-5. Terminar de volver personales las vistas de staff, sobre todo para Admin/Cajero y el seguimiento de excepciones.
+1. Consolidar presencia global por empleado sobre el heartbeat actual: roster vivo, estado derivado y visibilidad clara por dispositivo y sesion.
+2. Volver esa presencia una bandeja de excepciones real para `Admin` y `Cajero`, alimentada por bloqueos, reportes, caja y tareas sin acuse.
+3. Alinear el cliente staff que consuma push con el contrato cerrado por empleado: `employeeId` como sujeto operativo y `pushExternalId` o `fideo_users.id` como `external_id`.
+4. Endurecer ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
+5. Expandir el SLA vivo mas alla del primer timeout de acuse y la severidad alta: prioridad, ventanas, horarios, reintentos y politicas por rol.
 6. Seguir normalizando las capas de soporte que aun viven solo en snapshot.
 
 ### Actualizacion para el siguiente nivel
 
-Con PocketBase + OneSignal ya aterrizados y con SLA vivo arriba, el frente inmediato cambia de "ya avise" a "ya cerre seguimiento". Hoy la apuesta concreta es esta:
+Con PocketBase + OneSignal ya aterrizados y con SLA vivo arriba, el frente inmediato cambia de "ya avise" a "ya se quien esta, que se atoró y quien debe resolverlo". Hoy la apuesta concreta es esta:
 
-1. `taskAssignments` y `taskReports` ya viven en backend y en vistas reales; el siguiente paso es volverlos mas densos y menos ambiguos para excepciones.
-2. Estados minimos y auditables ya activos: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`.
-3. `blocked` ya es excepcion visible; ahora toca cerrar mejor ownership, resolucion y reasignacion.
-4. La escalacion inicial ya vive en PocketBase usando el helper server-side de OneSignal; no conviene abrir otro stack de notificaciones.
-5. Despues si: subscriptions finas, presencia, SLA por ventana y automatizacion mas ambiciosa.
+1. La presencia deja de ser solo `ping` por sesion y pasa a roster global util para operacion.
+2. `taskAssignments` y `taskReports` ya viven en backend; ahora alimentan una bandeja de excepciones unica para `Admin` y `Cajero`.
+3. `blocked`, `incident`, `high`, silencio sin acuse y alerta de caja dejan de verse por separado y pasan al mismo triage.
+4. OneSignal sigue siendo el mismo carril de empuje; no conviene abrir otro stack de notificaciones para esta capa.
+5. Despues si: subscriptions mas finas, SLA por ventana y automatizacion mas ambiciosa.
 
 ## Definicion Practica de Exito
 

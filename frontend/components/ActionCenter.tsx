@@ -55,6 +55,32 @@ type AttentionItem = {
     timestamp: Date;
 };
 
+type ExceptionScope = 'Operacion' | 'Caja' | 'Cobro' | 'Credito' | 'Activo';
+
+type ExceptionItem = {
+    id: string;
+    scope: ExceptionScope;
+    title: string;
+    detail: string;
+    meta?: string;
+    label: string;
+    tone: string;
+    icon: string;
+    priority: number;
+    timestamp: Date;
+    targetView: View;
+    ctaText: string;
+};
+
+type CashPulse = {
+    openDrawers: number;
+    exposedCash: number;
+    pendingCashSales: number;
+    pendingCashAmount: number;
+    overdueDebtCount: number;
+    overdueCrateCount: number;
+};
+
 type ExternalTaskReportIndex = {
     byTaskId: Map<string, TaskReport[]>;
     bySaleId: Map<string, TaskReport[]>;
@@ -249,6 +275,24 @@ const formatAgeCompact = (timestamp?: Date) => {
     const elapsedHours = Math.floor(elapsedMinutes / 60);
     if (elapsedHours < 24) return `${elapsedHours}h`;
     return `${Math.floor(elapsedHours / 24)}d`;
+};
+
+const formatCurrencyCompact = (value: number) =>
+    value.toLocaleString('es-MX', {
+        style: 'currency',
+        currency: 'MXN',
+        maximumFractionDigits: 0,
+    });
+
+const toNumber = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const normalized = value.replace(/[^0-9.-]+/g, '');
+        if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') return undefined;
+        const parsed = Number(normalized);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return undefined;
 };
 
 const normalizeReportKind = (value: unknown, summary = ''): TaskReportKind => {
@@ -535,7 +579,7 @@ const attachExternalReportsToTask = (task: QueueTask, externalReports: ExternalT
 
 const buildAttentionItems = (tasks: QueueTask[]) =>
     tasks
-        .map((task) => {
+        .map<AttentionItem | null>((task) => {
             const noAckSignal = task.signals.find((signal) => signal.id === 'no_ack');
             const escalated = task.signals.some((signal) => signal.id === 'escalation');
             const blocked = task.status === 'blocked';
@@ -642,6 +686,325 @@ const buildLiveActivity = (tasks: QueueTask[], activityLog: BusinessData['activi
     return [...reportEvents, ...logEvents]
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
         .slice(0, 6);
+};
+
+const compareExceptionItems = (left: ExceptionItem, right: ExceptionItem) =>
+    left.priority - right.priority || right.timestamp.getTime() - left.timestamp.getTime();
+
+const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<string, PresenceEntry>) =>
+    tasks
+        .map<ExceptionItem | null>((task) => {
+            const latestReport = task.reports[0];
+            const noAckSignal = task.signals.find((signal) => signal.id === 'no_ack');
+            const escalated = task.signals.some((signal) => signal.id === 'escalation');
+            const presence = getPresenceSignal(presenceIndex, task.assigneeName, task.ownerName);
+            const meta = [
+                stageLabelMap[task.stage],
+                task.assigneeName || task.ownerName,
+                presence?.label,
+            ]
+                .filter(Boolean)
+                .join(' / ');
+
+            if (escalated) {
+                return {
+                    id: `exception_task_escalated_${task.id}`,
+                    scope: 'Operacion',
+                    title: task.title,
+                    detail: latestReport?.summary || task.blockedReason || task.description,
+                    meta,
+                    label: 'Escalada',
+                    tone: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+                    icon: 'fa-bolt',
+                    priority: 0,
+                    timestamp: latestReport?.createdAt || task.blockedAt || task.updatedAt || task.timestamp,
+                    targetView: task.targetView,
+                    ctaText: task.ctaText,
+                } satisfies ExceptionItem;
+            }
+
+            if (task.status === 'blocked') {
+                return {
+                    id: `exception_task_blocked_${task.id}`,
+                    scope: 'Operacion',
+                    title: task.title,
+                    detail: task.blockedReason || latestReport?.summary || task.description,
+                    meta,
+                    label: 'Bloqueo',
+                    tone: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+                    icon: 'fa-circle-exclamation',
+                    priority: 1,
+                    timestamp: task.blockedAt || latestReport?.createdAt || task.updatedAt || task.timestamp,
+                    targetView: task.targetView,
+                    ctaText: task.ctaText,
+                } satisfies ExceptionItem;
+            }
+
+            if (noAckSignal) {
+                const ageMinutes = getAgeMinutes(task.createdAt) || 0;
+                return {
+                    id: `exception_task_ack_${task.id}`,
+                    scope: 'Operacion',
+                    title: task.title,
+                    detail: task.description,
+                    meta,
+                    label: noAckSignal.label,
+                    tone: 'border-amber-400/20 bg-amber-400/10 text-amber-50',
+                    icon: 'fa-hourglass-half',
+                    priority: ageMinutes >= 45 ? 1 : 2,
+                    timestamp: task.createdAt || task.timestamp,
+                    targetView: task.targetView,
+                    ctaText: task.ctaText,
+                } satisfies ExceptionItem;
+            }
+
+            if (latestReport) {
+                return {
+                    id: `exception_task_report_${task.id}`,
+                    scope: 'Operacion',
+                    title: task.title,
+                    detail: latestReport.summary,
+                    meta,
+                    label: latestReport.kind === 'blocker' ? 'Incidencia' : 'Reporte',
+                    tone:
+                        latestReport.kind === 'blocker'
+                            ? 'border-rose-400/20 bg-rose-400/10 text-rose-50'
+                            : 'border-white/10 bg-white/[0.03] text-slate-100',
+                    icon: latestReport.kind === 'blocker' ? 'fa-circle-exclamation' : 'fa-file-lines',
+                    priority: latestReport.kind === 'blocker' ? 2 : 3,
+                    timestamp: latestReport.createdAt || task.updatedAt || task.timestamp,
+                    targetView: task.targetView,
+                    ctaText: task.ctaText,
+                } satisfies ExceptionItem;
+            }
+
+            return null;
+        })
+        .filter((item): item is ExceptionItem => Boolean(item))
+        .sort(compareExceptionItems);
+
+const buildCashExceptionItems = ({
+    cashDrawers,
+    cashDrawerActivities,
+    sales,
+    crateLoans,
+    crateTypes,
+    activityLog,
+}: {
+    cashDrawers: BusinessData['cashDrawers'];
+    cashDrawerActivities: BusinessData['cashDrawerActivities'];
+    sales: BusinessData['sales'];
+    crateLoans: BusinessData['crateLoans'];
+    crateTypes: BusinessData['crateTypes'];
+    activityLog: BusinessData['activityLog'];
+}) => {
+    const items: ExceptionItem[] = [];
+    const now = new Date();
+
+    cashDrawers.forEach((drawer) => {
+        const lastOpened = toDate(drawer.lastOpened);
+        const drawerActivities = cashDrawerActivities
+            .filter((activity) => activity.drawerId === drawer.id)
+            .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
+        const lastActivity = drawerActivities[0];
+        const openAge = getAgeMinutes(lastOpened);
+
+        if (drawer.balance < 0) {
+            items.push({
+                id: `exception_drawer_negative_${drawer.id}`,
+                scope: 'Caja',
+                title: `${drawer.name} en negativo`,
+                detail: 'La caja quedo por debajo de cero y requiere revision inmediata.',
+                meta: [lastActivity ? `Ult. mov ${formatAgeCompact(toDate(lastActivity.timestamp))}` : undefined].filter(Boolean).join(' / '),
+                label: formatCurrencyCompact(drawer.balance),
+                tone: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+                icon: 'fa-cash-register',
+                priority: 0,
+                timestamp: toDate(lastActivity?.timestamp) || lastOpened || now,
+                targetView: 'finances',
+                ctaText: 'Abrir caja',
+            });
+        }
+
+        if (drawer.status === 'Abierta' && openAge && openAge >= 540) {
+            items.push({
+                id: `exception_drawer_open_${drawer.id}`,
+                scope: 'Caja',
+                title: `${drawer.name} sigue abierta`,
+                detail: 'La caja lleva demasiado tiempo abierta y necesita corte o relevo.',
+                meta: [lastActivity ? `Ult. mov ${formatAgeCompact(toDate(lastActivity.timestamp))}` : undefined].filter(Boolean).join(' / '),
+                label: openAge >= 1440 ? `${Math.floor(openAge / 1440)}d` : `${Math.floor(openAge / 60)}h`,
+                tone: 'border-amber-400/20 bg-amber-400/10 text-amber-50',
+                icon: 'fa-lock-open',
+                priority: 1,
+                timestamp: lastOpened || now,
+                targetView: 'finances',
+                ctaText: 'Revisar corte',
+            });
+        }
+
+        if (drawer.status === 'Abierta' && drawer.balance >= 15000) {
+            items.push({
+                id: `exception_drawer_exposure_${drawer.id}`,
+                scope: 'Caja',
+                title: `${drawer.name} con efectivo alto`,
+                detail: 'Hay exposicion relevante en caja y conviene mover o cortar saldo.',
+                meta: [lastActivity ? `Ult. mov ${formatAgeCompact(toDate(lastActivity.timestamp))}` : undefined].filter(Boolean).join(' / '),
+                label: formatCurrencyCompact(drawer.balance),
+                tone: 'border-sky-400/20 bg-sky-400/10 text-sky-50',
+                icon: 'fa-vault',
+                priority: 2,
+                timestamp: toDate(lastActivity?.timestamp) || lastOpened || now,
+                targetView: 'finances',
+                ctaText: 'Ver caja',
+            });
+        }
+    });
+
+    const cashPendingSales = sales.filter(
+        (sale) =>
+            sale.paymentMethod === 'Efectivo' &&
+            sale.paymentStatus !== 'Pagado' &&
+            sale.status !== 'Cancelado',
+    );
+    if (cashPendingSales.length > 0) {
+        const total = cashPendingSales.reduce((sum, sale) => sum + sale.price, 0);
+        const delivered = cashPendingSales.filter((sale) => sale.status === 'Completado').length;
+        const onRoute = cashPendingSales.filter((sale) => sale.status === 'En Ruta').length;
+        const pending = cashPendingSales.filter((sale) => sale.status === 'Listo para Entrega').length;
+        items.push({
+            id: 'exception_cash_pending_sales',
+            scope: 'Cobro',
+            title: 'Cobros en espera',
+            detail: `${cashPendingSales.length} venta(s) en efectivo siguen fuera del cierre de caja.`,
+            meta: [`${delivered} completadas`, `${onRoute} en ruta`, `${pending} listas`].filter(Boolean).join(' / '),
+            label: formatCurrencyCompact(total),
+            tone: delivered > 0 ? 'border-rose-400/20 bg-rose-400/10 text-rose-50' : 'border-amber-400/20 bg-amber-400/10 text-amber-50',
+            icon: 'fa-money-bill-wave',
+            priority: delivered > 0 ? 1 : 2,
+            timestamp: cashPendingSales
+                .map((sale) => new Date(sale.timestamp))
+                .sort((left, right) => right.getTime() - left.getTime())[0] || now,
+            targetView: 'finances',
+            ctaText: 'Abrir finanzas',
+        });
+    }
+
+    const overdueDebtByCustomer = new Map<string, { total: number; oldestAge: number; count: number; lastTimestamp: Date }>();
+    sales
+        .filter((sale) => sale.status === 'Completado' && sale.paymentStatus === 'En Deuda')
+        .forEach((sale) => {
+            const ageDays = Math.max(1, Math.floor((now.getTime() - new Date(sale.timestamp).getTime()) / 86400000));
+            if (ageDays < 3) return;
+
+            const current = overdueDebtByCustomer.get(sale.customer);
+            if (current) {
+                current.total += sale.price;
+                current.count += 1;
+                current.oldestAge = Math.max(current.oldestAge, ageDays);
+                if (new Date(sale.timestamp).getTime() > current.lastTimestamp.getTime()) current.lastTimestamp = new Date(sale.timestamp);
+                return;
+            }
+
+            overdueDebtByCustomer.set(sale.customer, {
+                total: sale.price,
+                oldestAge: ageDays,
+                count: 1,
+                lastTimestamp: new Date(sale.timestamp),
+            });
+        });
+
+    [...overdueDebtByCustomer.entries()]
+        .sort((left, right) => right[1].total - left[1].total)
+        .slice(0, 3)
+        .forEach(([customerName, debt]) => {
+            items.push({
+                id: `exception_debt_${customerName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+                scope: 'Cobro',
+                title: `Cobro vencido ${customerName}`,
+                detail: `${debt.count} venta(s) completadas siguen abiertas en cartera.`,
+                meta: `Mayor edad ${debt.oldestAge}d`,
+                label: formatCurrencyCompact(debt.total),
+                tone: debt.oldestAge >= 7 ? 'border-rose-400/20 bg-rose-400/10 text-rose-50' : 'border-amber-400/20 bg-amber-400/10 text-amber-50',
+                icon: 'fa-file-invoice-dollar',
+                priority: debt.oldestAge >= 7 ? 1 : 2,
+                timestamp: debt.lastTimestamp,
+                targetView: 'finances',
+                ctaText: 'Ver cartera',
+            });
+        });
+
+    const overdueCrates = crateLoans.filter((loan) => loan.status !== 'Devuelto' && new Date(loan.dueDate) < now);
+    if (overdueCrates.length > 0) {
+        const exposure = overdueCrates.reduce((sum, loan) => {
+            const crateType = crateTypes.find((item) => item.id === loan.crateTypeId);
+            return sum + loan.quantity * (crateType?.cost || 50);
+        }, 0);
+        items.push({
+            id: 'exception_overdue_crates',
+            scope: 'Activo',
+            title: 'Cajas vencidas en campo',
+            detail: `${overdueCrates.length} prestamo(s) siguen sin retorno.`,
+            meta: `${new Set(overdueCrates.map((loan) => loan.customer)).size} cliente(s)`,
+            label: formatCurrencyCompact(exposure),
+            tone: 'border-orange-400/20 bg-orange-400/10 text-orange-50',
+            icon: 'fa-box-open',
+            priority: 2,
+            timestamp: overdueCrates
+                .map((loan) => new Date(loan.dueDate))
+                .sort((left, right) => right.getTime() - left.getTime())[0] || now,
+            targetView: 'customers',
+            ctaText: 'Ver clientes',
+        });
+    }
+
+    activityLog
+        .filter((entry) => entry.type === 'CREDIT_REJECTED' || entry.type === 'CREDIT_LIMIT_EXCEEDED')
+        .slice(0, 3)
+        .forEach((entry) => {
+            const timestamp = toDate(entry.timestamp) || now;
+            const details = asRecord(entry.details);
+            items.push({
+                id: `exception_credit_${entry.id}`,
+                scope: 'Credito',
+                title: entry.type === 'CREDIT_LIMIT_EXCEEDED' ? 'Limite excedido' : 'Credito rechazado',
+                detail: entry.description,
+                meta: readString([details], ['Motivo', 'Cliente']) || formatAgeCompact(timestamp),
+                label: formatAgeCompact(timestamp) || 'Ahora',
+                tone: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+                icon: 'fa-credit-card',
+                priority: 1,
+                timestamp,
+                targetView: 'customers',
+                ctaText: 'Ver clientes',
+            });
+        });
+
+    activityLog
+        .filter((entry) => entry.type === 'CAJA_OPERACION')
+        .forEach((entry) => {
+            const timestamp = toDate(entry.timestamp) || now;
+            const details = asRecord(entry.details);
+            const difference = toNumber(details?.Diferencia);
+            if (!difference) return;
+
+            items.push({
+                id: `exception_cash_difference_${entry.id}`,
+                scope: 'Caja',
+                title: 'Diferencia en corte',
+                detail: entry.description,
+                meta: formatAgeCompact(timestamp),
+                label: `${difference > 0 ? '+' : ''}${formatCurrencyCompact(difference)}`,
+                tone: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+                icon: 'fa-scale-balanced',
+                priority: Math.abs(difference) >= 1000 ? 0 : 1,
+                timestamp,
+                targetView: 'finances',
+                ctaText: 'Revisar caja',
+            });
+        });
+
+    return items.sort(compareExceptionItems);
 };
 
 const normalizeTaskStatus = (value: unknown): OperationalTaskStatus | undefined => {
@@ -920,8 +1283,57 @@ const SupportActionCard: React.FC<{ item: ActionItem; onAction: (item: ActionIte
     </div>
 );
 
+const exceptionScopeToneMap: Record<ExceptionScope, string> = {
+    Operacion: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
+    Caja: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+    Cobro: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+    Credito: 'border-violet-400/20 bg-violet-400/10 text-violet-100',
+    Activo: 'border-orange-400/20 bg-orange-400/10 text-orange-100',
+};
+
+const ExceptionRow: React.FC<{ item: ExceptionItem; onOpen: (item: ExceptionItem) => void }> = ({ item, onOpen }) => (
+    <div className={`rounded-[1.5rem] border px-4 py-3 ${item.tone}`}>
+        <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-current/15 bg-black/10">
+                <i className={`fa-solid ${item.icon} text-sm text-current`}></i>
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${exceptionScopeToneMap[item.scope]}`}>
+                        {item.scope}
+                    </span>
+                    <span className="inline-flex rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                        {item.label}
+                    </span>
+                </div>
+                <p className="mt-2 text-sm font-black text-current">{item.title}</p>
+                <p className="mt-1 text-sm leading-5 text-current/90">{item.detail}</p>
+                {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/75">{item.meta}</p>}
+            </div>
+            <button
+                onClick={() => onOpen(item)}
+                className="inline-flex flex-shrink-0 items-center justify-center rounded-2xl border border-current/15 bg-black/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/20"
+            >
+                {item.ctaText}
+            </button>
+        </div>
+    </div>
+);
+
 const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { actionItems, sales, setCurrentView, taskReports, activities, activityLog } = data;
+    const {
+        actionItems,
+        sales,
+        setCurrentView,
+        taskReports,
+        activities,
+        activityLog,
+        currentRole,
+        cashDrawers,
+        cashDrawerActivities,
+        crateLoans,
+        crateTypes,
+    } = data;
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
     const externalTaskReports = useMemo(() => buildExternalTaskReportIndex(taskReports), [taskReports]);
     const presenceIndex = useMemo(() => buildPresenceIndex(activities, activityLog, taskReports), [activities, activityLog, taskReports]);
@@ -990,6 +1402,52 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
     );
     const attentionItems = useMemo(() => buildAttentionItems(queueTasks), [queueTasks]);
     const liveActivity = useMemo(() => buildLiveActivity(queueTasks, activityLog), [activityLog, queueTasks]);
+    const operationalExceptionItems = useMemo(
+        () => buildOperationalExceptionItems(queueTasks, presenceIndex),
+        [presenceIndex, queueTasks],
+    );
+    const cashExceptionItems = useMemo(
+        () =>
+            buildCashExceptionItems({
+                cashDrawers,
+                cashDrawerActivities,
+                sales,
+                crateLoans,
+                crateTypes,
+                activityLog,
+            }),
+        [activityLog, cashDrawerActivities, cashDrawers, crateLoans, crateTypes, sales],
+    );
+    const isAdminOrCashier = currentRole === 'Admin' || currentRole === 'Cajero';
+    const exceptionQueue = useMemo(
+        () =>
+            (isAdminOrCashier ? [...operationalExceptionItems, ...cashExceptionItems] : operationalExceptionItems)
+                .sort(compareExceptionItems)
+                .slice(0, 8),
+        [cashExceptionItems, isAdminOrCashier, operationalExceptionItems],
+    );
+    const cashPulse = useMemo(() => {
+        const openDrawers = cashDrawers.filter((drawer) => drawer.status === 'Abierta');
+        const cashPendingSales = sales.filter(
+            (sale) => sale.paymentMethod === 'Efectivo' && sale.paymentStatus !== 'Pagado' && sale.status !== 'Cancelado',
+        );
+        const overdueDebtCount = new Set(
+            sales
+                .filter((sale) => sale.status === 'Completado' && sale.paymentStatus === 'En Deuda')
+                .filter((sale) => Math.max(1, Math.floor((Date.now() - new Date(sale.timestamp).getTime()) / 86400000)) >= 3)
+                .map((sale) => sale.customer),
+        ).size;
+
+        return {
+            openDrawers: openDrawers.length,
+            exposedCash: openDrawers.reduce((sum, drawer) => sum + Math.max(0, drawer.balance), 0),
+            pendingCashSales: cashPendingSales.length,
+            pendingCashAmount: cashPendingSales.reduce((sum, sale) => sum + sale.price, 0),
+            overdueDebtCount,
+            overdueCrateCount: crateLoans.filter((loan) => loan.status !== 'Devuelto' && new Date(loan.dueDate) < new Date()).length,
+        } satisfies CashPulse;
+    }, [cashDrawers, crateLoans, sales]);
+    const compactLiveActivity = useMemo(() => liveActivity.slice(0, 3), [liveActivity]);
     const responsiblePresenceSummary = useMemo(() => {
         const names = queueTasks.reduce<string[]>((accumulator, task) => {
             const candidate = task.assigneeName || task.ownerName;
@@ -1016,7 +1474,11 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
         setCurrentView(item.cta.targetView);
     };
 
-    if (queueTasks.length === 0 && secondaryActionItems.length === 0) {
+    const handleExceptionOpen = (item: ExceptionItem) => {
+        setCurrentView(item.targetView);
+    };
+
+    if (queueTasks.length === 0 && secondaryActionItems.length === 0 && exceptionQueue.length === 0) {
         return (
             <div className="space-y-6">
                 <div className="glass-panel-dark rounded-[2rem] py-14 text-center">
@@ -1072,6 +1534,18 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
 
             <section className="flex flex-wrap gap-2">
                 <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                    Excepciones {exceptionQueue.length}
+                </span>
+                <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
+                    Caja {cashExceptionItems.filter((item) => item.scope === 'Caja').length}
+                </span>
+                <span className="inline-flex rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
+                    Cobro {cashExceptionItems.filter((item) => item.scope === 'Cobro' || item.scope === 'Credito').length}
+                </span>
+                <span className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
+                    Foco SLA {attentionItems.length}
+                </span>
+                <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
                     Reportes {operationalIndicators.reported}
                 </span>
                 <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
@@ -1094,33 +1568,20 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
                     <div className="flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">SLA inmediato</p>
-                            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Sin acuse y escalacion</h2>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Inbox</p>
+                            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Bandeja de excepciones</h2>
                         </div>
                         <span className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
-                            {attentionItems.length} foco
+                            {exceptionQueue.length} activas
                         </span>
                     </div>
 
                     <div className="mt-4 space-y-3">
-                        {attentionItems.length > 0 ? (
-                            attentionItems.map((item) => (
-                                <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-black text-current">{item.customerName}</p>
-                                            <p className="mt-1 text-sm text-current/90">{item.title}</p>
-                                        </div>
-                                        <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
-                                            {item.label}
-                                        </span>
-                                    </div>
-                                    {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
-                                </div>
-                            ))
+                        {exceptionQueue.length > 0 ? (
+                            exceptionQueue.map((item) => <ExceptionRow key={item.id} item={item} onOpen={handleExceptionOpen} />)
                         ) : (
                             <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
-                                <p className="text-sm font-semibold text-white">Sin riesgos SLA activos.</p>
+                                <p className="text-sm font-semibold text-white">Sin excepciones activas.</p>
                             </div>
                         )}
                     </div>
@@ -1129,36 +1590,97 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
                     <div className="flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Realtime</p>
-                            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Actividad en vivo</h2>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Caja</p>
+                            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Caja y cobro</h2>
                         </div>
                         <span className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
-                            {liveActivity.length}
+                            {cashExceptionItems.length} foco
                         </span>
                     </div>
 
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Abiertas</p>
+                            <p className="mt-2 text-xl font-black text-white">{cashPulse.openDrawers}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Expuesto</p>
+                            <p className="mt-2 text-xl font-black text-white">{formatCurrencyCompact(cashPulse.exposedCash)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Cobros</p>
+                            <p className="mt-2 text-xl font-black text-white">{cashPulse.pendingCashSales}</p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-400">{formatCurrencyCompact(cashPulse.pendingCashAmount)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Vencidos</p>
+                            <p className="mt-2 text-xl font-black text-white">{cashPulse.overdueDebtCount + cashPulse.overdueCrateCount}</p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                                {cashPulse.overdueDebtCount} cobro / {cashPulse.overdueCrateCount} caja
+                            </p>
+                        </div>
+                    </div>
+
                     <div className="mt-4 space-y-3">
-                        {liveActivity.length > 0 ? (
-                            liveActivity.map((item) => (
+                        {cashExceptionItems.length > 0 ? (
+                            cashExceptionItems.slice(0, 4).map((item) => (
                                 <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
-                                                {item.pill}
+                                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${exceptionScopeToneMap[item.scope]}`}>
+                                                {item.scope}
                                             </span>
-                                            <p className="mt-2 text-sm font-semibold text-current">{item.summary}</p>
+                                            <p className="mt-2 text-sm font-semibold text-current">{item.title}</p>
+                                            <p className="mt-1 text-sm text-current/90">{item.detail}</p>
                                             {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
                                         </div>
-                                        <i className={`fa-solid ${item.icon} mt-1 text-xs opacity-80`}></i>
+                                        <div className="text-right">
+                                            <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                                                {item.label}
+                                            </span>
+                                            <button
+                                                onClick={() => handleExceptionOpen(item)}
+                                                className="mt-3 inline-flex items-center justify-center rounded-2xl border border-current/15 bg-black/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/20"
+                                            >
+                                                {item.ctaText}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))
                         ) : (
                             <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
-                                <p className="text-sm font-semibold text-white">Sin actividad operativa reciente.</p>
+                                <p className="text-sm font-semibold text-white">Sin alertas de caja.</p>
                             </div>
                         )}
                     </div>
+
+                    {compactLiveActivity.length > 0 && (
+                        <div className="mt-5 border-t border-white/10 pt-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Realtime</p>
+                                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">
+                                    {compactLiveActivity.length}
+                                </span>
+                            </div>
+                            <div className="space-y-3">
+                                {compactLiveActivity.map((item) => (
+                                    <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                                                    {item.pill}
+                                                </span>
+                                                <p className="mt-2 text-sm font-semibold text-current">{item.summary}</p>
+                                                {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
+                                            </div>
+                                            <i className={`fa-solid ${item.icon} mt-1 text-xs opacity-80`}></i>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </section>
 
