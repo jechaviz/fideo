@@ -17,6 +17,8 @@ import {
     MessageUndoState,
     MessageTemplate,
     OperationalException,
+    OperationalExceptionReassignInput,
+    OperationalExceptionResolveInput,
     ParsedMessage,
     Payment,
     Price,
@@ -136,6 +138,24 @@ export interface SubmitTaskReportResult {
     actionLogId?: string;
     notification?: PocketBaseNotification | null;
 }
+
+interface RuntimeActionResponseBase {
+    snapshot?: Record<string, unknown>;
+    version?: number;
+    snapshotRecordId?: string;
+    updatedAt?: string;
+    actionLogId?: string;
+    notification?: PocketBaseNotification | null;
+    runtimeOverview?: WorkspaceRuntimeOverview | null;
+    staffPresence?: PresenceRosterEntry[];
+    exceptionInbox?: OperationalException[];
+    taskAssignment?: TaskAssignment;
+    report?: TaskReport;
+    exception?: OperationalException;
+}
+
+export type ResolveOperationalExceptionResult = RuntimeActionResponseBase;
+export type ReassignOperationalExceptionResult = RuntimeActionResponseBase;
 
 type PocketBaseErrorLike = {
     status?: number;
@@ -1190,6 +1210,48 @@ const normalizeTaskReportResponse = (response: unknown): SubmitTaskReportResult 
     };
 };
 
+const normalizeRuntimeActionResponse = (response: unknown): RuntimeActionResponseBase => {
+    const payload = isRecord(response) ? response : {};
+    const runtime = buildRuntimeOverviewResult(payload);
+    const taskAssignmentSource =
+        isRecord(payload.taskAssignment)
+            ? payload.taskAssignment
+            : isRecord(payload.task)
+              ? payload.task
+              : null;
+    const reportSource =
+        isRecord(payload.report)
+            ? payload.report
+            : isRecord(payload.taskReport)
+              ? payload.taskReport
+              : null;
+    const exceptionSource =
+        isRecord(payload.exception)
+            ? payload.exception
+            : isRecord(payload.operationalException)
+              ? payload.operationalException
+              : null;
+
+    return {
+        snapshot: isRecord(payload.snapshot)
+            ? mergeRemoteOperationalRuntimeSnapshot(payload.snapshot as Record<string, unknown>, {
+                sources: [payload, { staffPresence: runtime.staffPresence || [], exceptionInbox: runtime.exceptionInbox || [] }],
+            })
+            : undefined,
+        version: readNumber(payload.version),
+        snapshotRecordId: readString(payload.snapshotRecordId) || undefined,
+        updatedAt: readString(payload.updatedAt) || undefined,
+        actionLogId: readString(payload.actionLogId) || undefined,
+        notification: normalizeNotification(payload.notification),
+        runtimeOverview: runtime.runtimeOverview,
+        staffPresence: runtime.staffPresence,
+        exceptionInbox: runtime.exceptionInbox,
+        taskAssignment: taskAssignmentSource ? cloneWithDates<TaskAssignment>(taskAssignmentSource) : undefined,
+        report: reportSource ? cloneWithDates<TaskReport>(reportSource) : undefined,
+        exception: exceptionSource ? normalizeOperationalException(exceptionSource) || undefined : undefined,
+    };
+};
+
 const normalizePresenceState = (value: unknown): AuthPresenceState | null => {
     if (!isRecord(value)) return null;
 
@@ -1314,6 +1376,52 @@ export const submitRemoteWorkspaceTaskReport = async (
     });
 
     return normalizeTaskReportResponse(response);
+};
+
+export const resolveRemoteOperationalException = async (
+    workspaceId: string,
+    snapshot: PersistableBusinessState,
+    exception: OperationalException,
+    resolution: OperationalExceptionResolveInput,
+    expectedVersion: number,
+): Promise<ResolveOperationalExceptionResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/exceptions/resolve', {
+        method: 'POST',
+        body: {
+            workspaceId,
+            expectedVersion,
+            snapshot,
+            exceptionId: exception.id,
+            exception: JSON.parse(JSON.stringify(exception)),
+            resolution: JSON.parse(JSON.stringify(resolution)),
+        },
+    });
+
+    return normalizeRuntimeActionResponse(response);
+};
+
+export const reassignRemoteOperationalException = async (
+    workspaceId: string,
+    snapshot: PersistableBusinessState,
+    exception: OperationalException,
+    reassignment: OperationalExceptionReassignInput,
+    expectedVersion: number,
+): Promise<ReassignOperationalExceptionResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/exceptions/reassign', {
+        method: 'POST',
+        body: {
+            workspaceId,
+            expectedVersion,
+            snapshot,
+            exceptionId: exception.id,
+            exception: JSON.parse(JSON.stringify(exception)),
+            reassignment: JSON.parse(JSON.stringify(reassignment)),
+        },
+    });
+
+    return normalizeRuntimeActionResponse(response);
 };
 
 export const pingRemoteWorkspacePresence = async (

@@ -16,7 +16,7 @@ param(
     [ValidateSet("Admin", "Repartidor", "Empacador", "Cajero", "Cliente", "Proveedor")]
     [string]$UserRole = "Admin",
 
-    [bool]$CanSwitchRoles = $true,
+    [Nullable[bool]]$CanSwitchRoles = $null,
     [string]$EmployeeId = "",
     [string]$CustomerId = "",
     [string]$SupplierId = "",
@@ -42,6 +42,154 @@ function ConvertTo-FilterLiteral {
 
     $escaped = $Value.Replace("\", "\\").Replace("'", "\'")
     return "'$escaped'"
+}
+
+function Get-RecordValue {
+    param(
+        [object]$Record,
+        [string]$FieldName
+    )
+
+    if ($null -eq $Record) {
+        return $null
+    }
+
+    $property = $Record.PSObject.Properties[$FieldName]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
+function Resolve-NonEmptyText {
+    param(
+        [string]$ExplicitValue,
+        [string]$ExistingValue,
+        [string]$FallbackValue = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitValue)) {
+        return $ExplicitValue.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExistingValue)) {
+        return $ExistingValue.Trim()
+    }
+
+    return $FallbackValue
+}
+
+function ConvertTo-SlugPart {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return "user"
+    }
+
+    $normalized = $Value.Trim().ToLowerInvariant()
+    $normalized = $normalized -replace "[^a-z0-9]+", "-"
+    $normalized = $normalized.Trim("-")
+
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return "user"
+    }
+
+    return $normalized
+}
+
+function Resolve-PushExternalId {
+    param(
+        [string]$ExplicitValue,
+        [string]$ExistingValue,
+        [string]$WorkspaceSlugValue,
+        [string]$RoleValue,
+        [string]$EmailValue
+    )
+
+    $resolved = Resolve-NonEmptyText -ExplicitValue $ExplicitValue -ExistingValue $ExistingValue
+    if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+        return $resolved
+    }
+
+    $localPart = if ($EmailValue -match "@") { $EmailValue.Split("@")[0] } else { $EmailValue }
+    return "fideo-{0}-{1}-{2}" -f `
+        (ConvertTo-SlugPart -Value $WorkspaceSlugValue), `
+        (ConvertTo-SlugPart -Value $RoleValue), `
+        (ConvertTo-SlugPart -Value $localPart)
+}
+
+function Resolve-CanSwitchRolesValue {
+    param(
+        [Nullable[bool]]$ExplicitValue,
+        [object]$ExistingValue,
+        [string]$RoleValue
+    )
+
+    if ($null -ne $ExplicitValue) {
+        return [bool]$ExplicitValue
+    }
+
+    if ($null -ne $ExistingValue) {
+        return [bool]$ExistingValue
+    }
+
+    return $RoleValue -notin @("Cliente", "Proveedor")
+}
+
+function Resolve-EmployeeIdFromSnapshot {
+    param(
+        [object]$Snapshot,
+        [string]$RoleValue,
+        [string]$UserNameValue,
+        [string]$UserEmailValue
+    )
+
+    if ($RoleValue -notin @("Admin", "Repartidor", "Empacador", "Cajero")) {
+        return ""
+    }
+
+    $employees = @()
+    if ($null -ne $Snapshot) {
+        $employees = @($Snapshot.employees)
+    }
+
+    if ($employees.Count -eq 0) {
+        return ""
+    }
+
+    $normalizedName = if ([string]::IsNullOrWhiteSpace($UserNameValue)) { "" } else { $UserNameValue.Trim().ToLowerInvariant() }
+    $normalizedLocalPart = if ([string]::IsNullOrWhiteSpace($UserEmailValue)) { "" } else { ($UserEmailValue.Split("@")[0]).Trim().ToLowerInvariant() }
+
+    foreach ($employee in $employees) {
+        $employeeName = [string](Get-RecordValue -Record $employee -FieldName "name")
+        $employeeIdValue = [string](Get-RecordValue -Record $employee -FieldName "id")
+        if ([string]::IsNullOrWhiteSpace($employeeName) -or [string]::IsNullOrWhiteSpace($employeeIdValue)) {
+            continue
+        }
+
+        $employeeNameNormalized = $employeeName.Trim().ToLowerInvariant()
+
+        if ($normalizedName -and $employeeNameNormalized -eq $normalizedName) {
+            return $employeeIdValue
+        }
+
+        if ($normalizedLocalPart -and $employeeNameNormalized.Contains($normalizedLocalPart)) {
+            return $employeeIdValue
+        }
+    }
+
+    $roleMatches = @(
+        $employees | Where-Object {
+            ([string](Get-RecordValue -Record $_ -FieldName "role")).Trim() -eq $RoleValue
+        }
+    )
+
+    if ($roleMatches.Count -eq 1) {
+        return [string](Get-RecordValue -Record $roleMatches[0] -FieldName "id")
+    }
+
+    return ""
 }
 
 function Invoke-PocketBaseJson {
@@ -146,6 +294,26 @@ $appUser = Find-FirstRecord `
     -Filter ("email = {0}" -f (ConvertTo-FilterLiteral -Value $UserEmail)) `
     -Headers $superuserHeaders
 
+$existingEmployeeId = [string](Get-RecordValue -Record $appUser -FieldName "employeeId")
+$existingCustomerId = [string](Get-RecordValue -Record $appUser -FieldName "customerId")
+$existingSupplierId = [string](Get-RecordValue -Record $appUser -FieldName "supplierId")
+$existingPushExternalId = [string](Get-RecordValue -Record $appUser -FieldName "pushExternalId")
+$existingCanSwitchRoles = Get-RecordValue -Record $appUser -FieldName "canSwitchRoles"
+
+$effectiveEmployeeId = Resolve-NonEmptyText -ExplicitValue $EmployeeId -ExistingValue $existingEmployeeId
+$effectiveCustomerId = Resolve-NonEmptyText -ExplicitValue $CustomerId -ExistingValue $existingCustomerId
+$effectiveSupplierId = Resolve-NonEmptyText -ExplicitValue $SupplierId -ExistingValue $existingSupplierId
+$effectivePushExternalId = Resolve-PushExternalId `
+    -ExplicitValue $PushExternalId `
+    -ExistingValue $existingPushExternalId `
+    -WorkspaceSlugValue $WorkspaceSlug `
+    -RoleValue $UserRole `
+    -EmailValue $UserEmail
+$effectiveCanSwitchRoles = Resolve-CanSwitchRolesValue `
+    -ExplicitValue $CanSwitchRoles `
+    -ExistingValue $existingCanSwitchRoles `
+    -RoleValue $UserRole
+
 if (-not $appUser) {
     $appUser = Invoke-PocketBaseJson `
         -Method "Post" `
@@ -158,11 +326,11 @@ if (-not $appUser) {
             name            = $UserName
             role            = $UserRole
             workspace       = $workspace.id
-            employeeId      = $EmployeeId
-            customerId      = $CustomerId
-            supplierId      = $SupplierId
-            pushExternalId  = $PushExternalId
-            canSwitchRoles  = $CanSwitchRoles
+            employeeId      = $effectiveEmployeeId
+            customerId      = $effectiveCustomerId
+            supplierId      = $effectiveSupplierId
+            pushExternalId  = $effectivePushExternalId
+            canSwitchRoles  = $effectiveCanSwitchRoles
             verified        = $true
         }
 }
@@ -171,11 +339,11 @@ else {
         name           = $UserName
         role           = $UserRole
         workspace      = $workspace.id
-        employeeId     = $EmployeeId
-        customerId     = $CustomerId
-        supplierId     = $SupplierId
-        pushExternalId = $PushExternalId
-        canSwitchRoles = $CanSwitchRoles
+        employeeId     = $effectiveEmployeeId
+        customerId     = $effectiveCustomerId
+        supplierId     = $effectiveSupplierId
+        pushExternalId = $effectivePushExternalId
+        canSwitchRoles = $effectiveCanSwitchRoles
         verified       = $true
     }
 
@@ -216,6 +384,32 @@ $bootstrap = Invoke-PocketBaseJson `
         seedSnapshot  = @{}
     }
 
+$bootstrapSnapshot = Get-RecordValue -Record $bootstrap -FieldName "snapshot"
+$resolvedEmployeeIdFromSnapshot = Resolve-EmployeeIdFromSnapshot `
+    -Snapshot $bootstrapSnapshot `
+    -RoleValue $UserRole `
+    -UserNameValue $UserName `
+    -UserEmailValue $UserEmail
+
+if ([string]::IsNullOrWhiteSpace($effectiveEmployeeId) -and -not [string]::IsNullOrWhiteSpace($resolvedEmployeeIdFromSnapshot)) {
+    $effectiveEmployeeId = $resolvedEmployeeIdFromSnapshot
+    $appUser = Invoke-PocketBaseJson `
+        -Method "Patch" `
+        -Path ("/api/collections/fideo_users/records/{0}" -f $appUser.id) `
+        -Headers $superuserHeaders `
+        -Body @{
+            employeeId     = $effectiveEmployeeId
+            pushExternalId = $effectivePushExternalId
+        }
+}
+
 Write-Host "Bootstrap listo."
 Write-Host ("Workspace: {0} ({1})" -f $bootstrap.workspaceSlug, $bootstrap.workspaceId)
 Write-Host ("Usuario Fideo: {0}" -f $UserEmail)
+Write-Host ("Rol: {0}" -f $UserRole)
+Write-Host ("EmployeeId: {0}" -f $(if ([string]::IsNullOrWhiteSpace($effectiveEmployeeId)) { "(sin binding)" } else { $effectiveEmployeeId }))
+Write-Host ("PushExternalId: {0}" -f $effectivePushExternalId)
+
+if ($UserRole -in @("Admin", "Repartidor", "Empacador", "Cajero") -and [string]::IsNullOrWhiteSpace($effectiveEmployeeId)) {
+    Write-Warning "No pude resolver employeeId automaticamente. Puedes volver a correr el helper con -EmployeeId explicito."
+}

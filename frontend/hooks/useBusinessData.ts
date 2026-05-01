@@ -3,6 +3,7 @@ import {
     ActionItem,
     ActionResult,
     BusinessState,
+    OperationalException,
     FixedAssetSaleInterpretation,
     FilterInterpretation,
     InventoryRecommendation,
@@ -15,6 +16,7 @@ import {
     StateChangeInterpretation,
     TaskAssignment,
     TaskReportInput,
+    TaskStatus,
     UserRole,
     View,
     WarehouseTransferInterpretation,
@@ -37,14 +39,15 @@ import {
     InterpretMessageResult,
     PersistResult,
     PocketBaseSyncError,
+    readRemoteOperationalRuntime,
     readLocalBusinessState,
     RevertInterpretationResult,
     SubmitTaskReportResult,
     writeLocalBusinessState,
 } from '../services/pocketbase/state';
 import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
-import { resolveCurrentEmployee, syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../utils/taskAssignments';
-import { normalizeTaskReportInput, submitTaskReportLocally, syncTaskReportsWithTasks } from '../utils/taskReports';
+import { reassignTaskAssignment, resolveCurrentEmployee, syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../utils/taskAssignments';
+import { normalizeTaskReportInput, resolveOperationalExceptionLocally, submitTaskReportLocally, syncTaskReportsWithTasks } from '../utils/taskReports';
 import * as Logic from '../utils/businessLogic';
 import { useCatalogActions } from './useCatalogActions';
 import { useInventoryActions } from './useInventoryActions';
@@ -95,6 +98,30 @@ interface UseBusinessDataOptions {
         report: TaskReportInput,
         expectedVersion: number,
     ) => Promise<SubmitTaskReportResult | null>;
+    onReassignRemoteTask?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        exception: OperationalException,
+        assignee: { employeeId?: string | null; employeeName?: string | null; reason?: string },
+        expectedVersion: number,
+    ) => Promise<{
+        snapshot?: Record<string, unknown>;
+        version?: number;
+        snapshotRecordId?: string;
+        updatedAt?: string;
+        actionLogId?: string;
+    } | null>;
+    onResolveRemoteException?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        exception: OperationalException,
+        resolution: { nextTaskStatus?: TaskStatus; resolutionNote?: string },
+        expectedVersion: number,
+    ) => Promise<{
+        snapshot?: Record<string, unknown>;
+        version?: number;
+        snapshotRecordId?: string;
+        updatedAt?: string;
+        actionLogId?: string;
+    } | null>;
     onSignOut?: () => void;
 }
 
@@ -331,6 +358,22 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         [options.authProfile, state],
     );
 
+    const syncLocalRuntimeSlices = useCallback(
+        (nextState: BusinessState): BusinessState => {
+            const runtime = readRemoteOperationalRuntime(
+                buildPersistableSnapshot(nextState) as unknown as Record<string, unknown>,
+                { profile: options.authProfile || null },
+            );
+
+            return {
+                ...nextState,
+                presenceRoster: runtime.presenceRoster,
+                operationalExceptions: runtime.operationalExceptions,
+            };
+        },
+        [options.authProfile],
+    );
+
     const inventoryActions = useInventoryActions(setState);
     const salesActions = useSalesActions(setState);
     const catalogActions = useCatalogActions(setState);
@@ -559,48 +602,56 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
 
     const acknowledgeTask = useCallback((taskId: string) => {
         setState((currentState) =>
-            updateTaskAssignmentStatus(
-                currentState,
-                taskId,
-                'acknowledged',
-                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            syncLocalRuntimeSlices(
+                updateTaskAssignmentStatus(
+                    currentState,
+                    taskId,
+                    'acknowledged',
+                    currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+                ),
             ),
         );
-    }, [currentEmployee]);
+    }, [currentEmployee, syncLocalRuntimeSlices]);
 
     const startTask = useCallback((taskId: string) => {
         setState((currentState) =>
-            updateTaskAssignmentStatus(
-                currentState,
-                taskId,
-                'in_progress',
-                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            syncLocalRuntimeSlices(
+                updateTaskAssignmentStatus(
+                    currentState,
+                    taskId,
+                    'in_progress',
+                    currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+                ),
             ),
         );
-    }, [currentEmployee]);
+    }, [currentEmployee, syncLocalRuntimeSlices]);
 
     const blockTask = useCallback((taskId: string, reason: string) => {
         setState((currentState) =>
-            updateTaskAssignmentStatus(
-                currentState,
-                taskId,
-                'blocked',
-                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
-                reason,
+            syncLocalRuntimeSlices(
+                updateTaskAssignmentStatus(
+                    currentState,
+                    taskId,
+                    'blocked',
+                    currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+                    reason,
+                ),
             ),
         );
-    }, [currentEmployee]);
+    }, [currentEmployee, syncLocalRuntimeSlices]);
 
     const completeTask = useCallback((taskId: string) => {
         setState((currentState) =>
-            updateTaskAssignmentStatus(
-                currentState,
-                taskId,
-                'done',
-                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            syncLocalRuntimeSlices(
+                updateTaskAssignmentStatus(
+                    currentState,
+                    taskId,
+                    'done',
+                    currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+                ),
             ),
         );
-    }, [currentEmployee]);
+    }, [currentEmployee, syncLocalRuntimeSlices]);
 
     const submitTaskReport = useCallback(
         async (taskId: string, report: TaskReportInput | Record<string, unknown>) => {
@@ -611,7 +662,7 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
             const localResult = submitTaskReportLocally(currentState, taskId, normalizedReport, actor);
             if (!localResult.report) return null;
 
-            setState(localResult.nextState);
+            setState(syncLocalRuntimeSlices(localResult.nextState));
 
             if (options.onSubmitRemoteTaskReport) {
                 try {
@@ -638,7 +689,111 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
 
             return localResult.report;
         },
-        [currentEmployee, options.authProfile, options.onSubmitRemoteTaskReport],
+        [currentEmployee, options.authProfile, options.onSubmitRemoteTaskReport, syncLocalRuntimeSlices],
+    );
+
+    const reassignTask = useCallback(
+        async (
+            taskId: string,
+            assignee: { employeeId?: string | null; employeeName?: string | null; reason?: string },
+            exception?: OperationalException | null,
+        ) => {
+            const currentState = stateRef.current;
+            const localState = syncLocalRuntimeSlices(
+                reassignTaskAssignment(currentState, taskId, assignee, { reason: assignee.reason }),
+            );
+
+            setState(localState);
+
+            if (!options.onReassignRemoteTask) {
+                return true;
+            }
+
+            try {
+                const exceptionRecord =
+                    exception
+                    || currentState.operationalExceptions.find(
+                        (item) => item.taskId === taskId && item.status !== 'resolved',
+                    )
+                    || ({
+                        id: `task-reassign:${taskId}`,
+                        kind: 'task_blocked',
+                        severity: 'high',
+                        status: 'open',
+                        title: 'Reasignacion operativa',
+                        summary: assignee.reason || 'Reasignada desde operacion',
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                        taskId,
+                        employeeId: assignee.employeeId || null,
+                        employeeName: assignee.employeeName || null,
+                        source: 'local',
+                        meta: null,
+                    } satisfies OperationalException);
+                const result = await options.onReassignRemoteTask(
+                    buildPersistableSnapshot(localState),
+                    exceptionRecord,
+                    assignee,
+                    remoteVersionRef.current,
+                );
+
+                if (result?.snapshot && typeof result.version === 'number') {
+                    remoteVersionRef.current = result.version;
+                    setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                }
+            } catch (error) {
+                if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                    console.error('No se pudo reasignar la tarea en PocketBase por un conflicto de version.', error);
+                    return false;
+                }
+
+                console.error('No se pudo reasignar la tarea en PocketBase. Seguimos con el flujo local.', error);
+            }
+
+            return true;
+        },
+        [options.authProfile, options.onReassignRemoteTask, syncLocalRuntimeSlices],
+    );
+
+    const resolveException = useCallback(
+        async (
+            exception: OperationalException,
+            resolution: { nextTaskStatus?: TaskStatus; resolutionNote?: string } = {},
+        ) => {
+            const currentState = stateRef.current;
+            const actor = currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined;
+            const localResult = resolveOperationalExceptionLocally(currentState, exception, actor, resolution);
+            const localState = syncLocalRuntimeSlices(localResult.nextState);
+            setState(localState);
+
+            if (!options.onResolveRemoteException) {
+                return true;
+            }
+
+            try {
+                const result = await options.onResolveRemoteException(
+                    buildPersistableSnapshot(localState),
+                    exception,
+                    resolution,
+                    remoteVersionRef.current,
+                );
+
+                if (result?.snapshot && typeof result.version === 'number') {
+                    remoteVersionRef.current = result.version;
+                    setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                }
+            } catch (error) {
+                if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                    console.error('No se pudo resolver la excepcion en PocketBase por un conflicto de version.', error);
+                    return false;
+                }
+
+                console.error('No se pudo resolver la excepcion en PocketBase. Seguimos con el flujo local.', error);
+            }
+
+            return true;
+        },
+        [currentEmployee, options.authProfile, options.onResolveRemoteException, syncLocalRuntimeSlices],
     );
 
     const addMessage = useCallback((text: string, sender: string) => {
@@ -1056,6 +1211,8 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         blockTask,
         completeTask,
         submitTaskReport,
+        reassignTask,
+        resolveException,
         currentEmployee,
         authEnabled: Boolean(options.authEnabled),
         authProfile: options.authProfile || null,

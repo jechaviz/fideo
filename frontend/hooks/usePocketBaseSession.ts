@@ -7,8 +7,7 @@ import {
     signInWithPassword,
 } from '../services/pocketbase/auth';
 import { isPocketBaseEnabled, requirePocketBaseClient } from '../services/pocketbase/client';
-import { Message } from '../types';
-import { TaskReportInput } from '../types';
+import { Message, OperationalException, OperationalExceptionReassignInput, OperationalExceptionResolveInput, TaskReportInput } from '../types';
 import {
     approveRemoteWorkspaceInterpretation,
     ApproveInterpretationResult,
@@ -27,7 +26,11 @@ import {
     PresencePingResult,
     persistRemoteWorkspaceSnapshot,
     PocketBaseSyncError,
+    reassignRemoteOperationalException,
     readRemoteOperationalRuntime,
+    ReassignOperationalExceptionResult,
+    resolveRemoteOperationalException,
+    ResolveOperationalExceptionResult,
     revertRemoteWorkspaceInterpretation,
     RevertInterpretationResult,
     RemoteWorkspaceSnapshot,
@@ -49,6 +52,15 @@ interface QueuedPersistSnapshot {
     expectedVersion: number;
     epoch: number;
 }
+
+type RuntimeActionResultLike = {
+    snapshot?: Record<string, unknown>;
+    version?: number;
+    snapshotRecordId?: string;
+    runtimeOverview?: RemoteWorkspaceSnapshot['runtimeOverview'];
+    staffPresence?: NonNullable<RemoteWorkspaceSnapshot['staffPresence']>;
+    exceptionInbox?: NonNullable<RemoteWorkspaceSnapshot['exceptionInbox']>;
+};
 
 const buildSyntheticPersistResult = (version: number, snapshotRecordId = ''): PersistResult => ({
     version,
@@ -227,6 +239,8 @@ export const usePocketBaseSession = () => {
     const remoteTaskReportRouteAvailableRef = useRef(true);
     const remotePresenceRouteAvailableRef = useRef(true);
     const remoteRuntimeOverviewRouteAvailableRef = useRef(true);
+    const remoteResolveExceptionRouteAvailableRef = useRef(true);
+    const remoteReassignExceptionRouteAvailableRef = useRef(true);
 
     useEffect(() => {
         profileRef.current = sessionState.profile;
@@ -248,6 +262,8 @@ export const usePocketBaseSession = () => {
         remoteTaskReportRouteAvailableRef.current = true;
         remotePresenceRouteAvailableRef.current = true;
         remoteRuntimeOverviewRouteAvailableRef.current = true;
+        remoteResolveExceptionRouteAvailableRef.current = true;
+        remoteReassignExceptionRouteAvailableRef.current = true;
         workspaceEpochRef.current += 1;
         setSessionState({
             status,
@@ -279,6 +295,8 @@ export const usePocketBaseSession = () => {
             remoteTaskReportRouteAvailableRef.current = true;
             remotePresenceRouteAvailableRef.current = true;
             remoteRuntimeOverviewRouteAvailableRef.current = true;
+            remoteResolveExceptionRouteAvailableRef.current = true;
+            remoteReassignExceptionRouteAvailableRef.current = true;
             workspaceEpochRef.current += 1;
             setSessionState({
                 status: 'authenticated',
@@ -300,6 +318,58 @@ export const usePocketBaseSession = () => {
             };
         });
     }, []);
+
+    const applyRuntimeActionResult = useCallback(
+        (workspaceId: string, result: RuntimeActionResultLike) => {
+            const shouldPatchWorkspace =
+                Boolean(result.snapshot)
+                || typeof result.version === 'number'
+                || typeof result.snapshotRecordId === 'string'
+                || result.runtimeOverview !== undefined
+                || Array.isArray(result.staffPresence)
+                || Array.isArray(result.exceptionInbox);
+
+            if (!shouldPatchWorkspace) {
+                return false;
+            }
+
+            let updated = false;
+
+            setSessionState((previous) => {
+                if (previous.status !== 'authenticated' || !previous.workspace || previous.workspace.workspaceId !== workspaceId) {
+                    return previous;
+                }
+
+                const nextWorkspace = syncWorkspaceRuntime(
+                    {
+                        ...previous.workspace,
+                        snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
+                        version: typeof result.version === 'number' ? result.version : previous.workspace.version,
+                        snapshot: result.snapshot || previous.workspace.snapshot,
+                        runtimeOverview:
+                            result.runtimeOverview !== undefined
+                                ? result.runtimeOverview ?? previous.workspace.runtimeOverview ?? null
+                                : previous.workspace.runtimeOverview,
+                        staffPresence: Array.isArray(result.staffPresence) ? result.staffPresence : previous.workspace.staffPresence,
+                        exceptionInbox: Array.isArray(result.exceptionInbox) ? result.exceptionInbox : previous.workspace.exceptionInbox,
+                    },
+                    previous.profile,
+                );
+
+                workspaceRef.current = nextWorkspace;
+                updated = true;
+
+                return {
+                    ...previous,
+                    error: null,
+                    workspace: nextWorkspace,
+                };
+            });
+
+            return updated;
+        },
+        [],
+    );
 
     const refreshRuntimeOverview = useCallback(
         async (workspaceId?: string) => {
@@ -1140,6 +1210,188 @@ export const usePocketBaseSession = () => {
         [enabled, loadWorkspace, setAuthenticatedError],
     );
 
+    const resolveOperationalExceptionNow = useCallback(
+        async (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            resolution: OperationalExceptionResolveInput,
+            expectedVersion: number,
+            epoch: number,
+        ): Promise<ResolveOperationalExceptionResult | null> => {
+            if (epoch !== workspaceEpochRef.current) {
+                throw new PocketBaseSyncError(
+                    'Se descarto una resolucion pendiente porque el workspace ya se habia recargado desde PocketBase.',
+                    {
+                        code: 'conflict',
+                        status: 409,
+                        retryable: false,
+                    },
+                );
+            }
+
+            const workspace = workspaceRef.current;
+            const workspaceId = workspace?.workspaceId;
+            if (!enabled || !workspaceId || !remoteResolveExceptionRouteAvailableRef.current) {
+                return null;
+            }
+
+            const versionToUse = Math.max(expectedVersion, workspace.version);
+
+            try {
+                const result = await resolveRemoteOperationalException(
+                    workspaceId,
+                    snapshot,
+                    exception,
+                    resolution,
+                    versionToUse,
+                );
+
+                applyRuntimeActionResult(workspaceId, result);
+                setAuthenticatedError(null);
+                await refreshRuntimeOverview(workspaceId);
+
+                return result;
+            } catch (error) {
+                if (isPocketBaseRouteUnavailable(error)) {
+                    remoteResolveExceptionRouteAvailableRef.current = false;
+                    return null;
+                }
+
+                const normalizedError = normalizePocketBaseError(error, 'No se pudo resolver la excepcion en PocketBase.');
+
+                if (normalizedError.code === 'conflict') {
+                    const conflictMessage = 'El workspace remoto cambio antes de resolver la excepcion. Recargamos la version mas reciente de PocketBase.';
+
+                    try {
+                        await loadWorkspace({ errorAfterLoad: conflictMessage });
+                    } catch (refreshError) {
+                        const normalizedRefreshError = normalizePocketBaseError(
+                            refreshError,
+                            'No se pudo recargar el workspace despues del conflicto de resolucion.',
+                        );
+                        setAuthenticatedError(normalizedRefreshError.message);
+                        throw normalizedRefreshError;
+                    }
+
+                    throw new PocketBaseSyncError(conflictMessage, {
+                        code: normalizedError.code,
+                        status: normalizedError.status,
+                        retryable: false,
+                        conflictVersion: normalizedError.conflictVersion,
+                        snapshotRecordId: normalizedError.snapshotRecordId,
+                        cause: normalizedError,
+                    });
+                }
+
+                if (
+                    normalizedError.code === 'offline'
+                    || normalizedError.code === 'cancelled'
+                    || normalizedError.code === 'auth'
+                    || normalizedError.code === 'forbidden'
+                    || normalizedError.code === 'unknown'
+                ) {
+                    console.warn('La resolucion remota no estuvo disponible. Seguimos con el flujo local.', normalizedError);
+                    return null;
+                }
+
+                setAuthenticatedError(normalizedError.message);
+                throw normalizedError;
+            }
+        },
+        [applyRuntimeActionResult, enabled, loadWorkspace, refreshRuntimeOverview, setAuthenticatedError],
+    );
+
+    const reassignOperationalExceptionNow = useCallback(
+        async (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            reassignment: OperationalExceptionReassignInput,
+            expectedVersion: number,
+            epoch: number,
+        ): Promise<ReassignOperationalExceptionResult | null> => {
+            if (epoch !== workspaceEpochRef.current) {
+                throw new PocketBaseSyncError(
+                    'Se descarto una reasignacion pendiente porque el workspace ya se habia recargado desde PocketBase.',
+                    {
+                        code: 'conflict',
+                        status: 409,
+                        retryable: false,
+                    },
+                );
+            }
+
+            const workspace = workspaceRef.current;
+            const workspaceId = workspace?.workspaceId;
+            if (!enabled || !workspaceId || !remoteReassignExceptionRouteAvailableRef.current) {
+                return null;
+            }
+
+            const versionToUse = Math.max(expectedVersion, workspace.version);
+
+            try {
+                const result = await reassignRemoteOperationalException(
+                    workspaceId,
+                    snapshot,
+                    exception,
+                    reassignment,
+                    versionToUse,
+                );
+
+                applyRuntimeActionResult(workspaceId, result);
+                setAuthenticatedError(null);
+                await refreshRuntimeOverview(workspaceId);
+
+                return result;
+            } catch (error) {
+                if (isPocketBaseRouteUnavailable(error)) {
+                    remoteReassignExceptionRouteAvailableRef.current = false;
+                    return null;
+                }
+
+                const normalizedError = normalizePocketBaseError(error, 'No se pudo reasignar la excepcion en PocketBase.');
+
+                if (normalizedError.code === 'conflict') {
+                    const conflictMessage = 'El workspace remoto cambio antes de reasignar la excepcion. Recargamos la version mas reciente de PocketBase.';
+
+                    try {
+                        await loadWorkspace({ errorAfterLoad: conflictMessage });
+                    } catch (refreshError) {
+                        const normalizedRefreshError = normalizePocketBaseError(
+                            refreshError,
+                            'No se pudo recargar el workspace despues del conflicto de reasignacion.',
+                        );
+                        setAuthenticatedError(normalizedRefreshError.message);
+                        throw normalizedRefreshError;
+                    }
+
+                    throw new PocketBaseSyncError(conflictMessage, {
+                        code: normalizedError.code,
+                        status: normalizedError.status,
+                        retryable: false,
+                        conflictVersion: normalizedError.conflictVersion,
+                        snapshotRecordId: normalizedError.snapshotRecordId,
+                        cause: normalizedError,
+                    });
+                }
+
+                if (
+                    normalizedError.code === 'offline'
+                    || normalizedError.code === 'cancelled'
+                    || normalizedError.code === 'auth'
+                    || normalizedError.code === 'forbidden'
+                    || normalizedError.code === 'unknown'
+                ) {
+                    console.warn('La reasignacion remota no estuvo disponible. Seguimos con el flujo local.', normalizedError);
+                    return null;
+                }
+
+                setAuthenticatedError(normalizedError.message);
+                throw normalizedError;
+            }
+        },
+        [applyRuntimeActionResult, enabled, loadWorkspace, refreshRuntimeOverview, setAuthenticatedError],
+    );
+
     const flushPendingPersist = useCallback((): Promise<PersistResult | null> => {
         const pendingSnapshot = pendingPersistRef.current;
         if (!pendingSnapshot) {
@@ -1527,6 +1779,36 @@ export const usePocketBaseSession = () => {
         [enqueuePersistTask, submitTaskReportNow],
     );
 
+    const resolveOperationalException = useCallback(
+        (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            resolution: OperationalExceptionResolveInput,
+            expectedVersion: number,
+        ): Promise<ResolveOperationalExceptionResult | null> => {
+            const epoch = workspaceEpochRef.current;
+            return enqueuePersistTask(() =>
+                resolveOperationalExceptionNow(snapshot, exception, resolution, expectedVersion, epoch),
+            );
+        },
+        [enqueuePersistTask, resolveOperationalExceptionNow],
+    );
+
+    const reassignOperationalException = useCallback(
+        (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            reassignment: OperationalExceptionReassignInput,
+            expectedVersion: number,
+        ): Promise<ReassignOperationalExceptionResult | null> => {
+            const epoch = workspaceEpochRef.current;
+            return enqueuePersistTask(() =>
+                reassignOperationalExceptionNow(snapshot, exception, reassignment, expectedVersion, epoch),
+            );
+        },
+        [enqueuePersistTask, reassignOperationalExceptionNow],
+    );
+
     const remoteRuntime = useMemo(
         () =>
             readRemoteOperationalRuntime(sessionState.workspace?.snapshot, {
@@ -1555,5 +1837,8 @@ export const usePocketBaseSession = () => {
         correctInterpretation,
         revertInterpretation,
         submitTaskReport,
+        resolveOperationalException,
+        reassignOperationalException,
+        refreshRuntimeOverview,
     };
 };

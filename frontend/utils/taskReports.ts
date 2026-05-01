@@ -1,4 +1,4 @@
-import { BusinessState, TaskAssignment, TaskReport, TaskReportInput, TaskReportSeverity, TaskReportStatus } from '../types';
+import { BusinessState, OperationalException, TaskAssignment, TaskReport, TaskReportInput, TaskReportSeverity, TaskReportStatus, TaskStatus } from '../types';
 import { updateTaskAssignmentStatus } from './taskAssignments';
 
 const readString = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -162,4 +162,71 @@ export const submitTaskReportLocally = (
         },
         report,
     };
+};
+
+export const resolveTaskReportLocally = (
+    state: BusinessState,
+    reportId: string,
+    actor: { employeeId?: string | null; employeeName?: string | null } = {},
+    options: { nextTaskStatus?: TaskStatus; resolutionNote?: string } = {},
+): { nextState: BusinessState; report: TaskReport | null } => {
+    const now = new Date();
+    let resolvedReport: TaskReport | null = null;
+
+    const nextReports = state.taskReports.map((report) => {
+        if (report.id !== reportId) return report;
+
+        resolvedReport = {
+            ...report,
+            status: 'resolved',
+            resolvedAt: report.resolvedAt || now,
+            escalationStatus: report.escalationStatus === 'sent' ? 'sent' : 'none',
+            detail: options.resolutionNote?.trim() ? options.resolutionNote.trim() : report.detail,
+        };
+
+        return resolvedReport;
+    });
+
+    if (!resolvedReport) {
+        return { nextState: state, report: null };
+    }
+
+    const nextState =
+        options.nextTaskStatus && resolvedReport.taskId
+            ? updateTaskAssignmentStatus(state, resolvedReport.taskId, options.nextTaskStatus, actor)
+            : state;
+
+    return {
+        nextState: {
+            ...nextState,
+            taskReports: nextReports,
+        },
+        report: resolvedReport,
+    };
+};
+
+export const resolveOperationalExceptionLocally = (
+    state: BusinessState,
+    exception: OperationalException,
+    actor: { employeeId?: string | null; employeeName?: string | null } = {},
+    options: { nextTaskStatus?: TaskStatus; resolutionNote?: string } = {},
+): { nextState: BusinessState; report: TaskReport | null } => {
+    if (exception.reportId) {
+        return resolveTaskReportLocally(state, exception.reportId, actor, options);
+    }
+
+    if (exception.taskId && options.nextTaskStatus) {
+        return {
+            nextState: updateTaskAssignmentStatus(
+                state,
+                exception.taskId,
+                options.nextTaskStatus,
+                actor,
+                options.nextTaskStatus === 'blocked' ? options.resolutionNote : undefined,
+            ),
+            report: null,
+        };
+    }
+
+    return { nextState: state, report: null };
 };

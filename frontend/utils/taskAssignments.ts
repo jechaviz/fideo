@@ -263,6 +263,55 @@ export const updateTaskAssignmentStatus = (
     };
 };
 
+export const reassignTaskAssignment = (
+    state: BusinessState,
+    taskId: string,
+    actor: { employeeId?: string | null; employeeName?: string | null } = {},
+    options: { reason?: string } = {},
+): BusinessState => {
+    const now = new Date();
+    let targetTask: TaskAssignment | null = null;
+
+    const nextTasks = state.taskAssignments.map((task) => {
+        if (task.id !== taskId) return task;
+
+        targetTask = task;
+
+        return {
+            ...task,
+            employeeId: actor.employeeId ?? null,
+            employeeName: actor.employeeName ?? null,
+            status: 'assigned' as const,
+            acknowledgedAt: undefined,
+            startedAt: undefined,
+            blockedAt: undefined,
+            completedAt: undefined,
+            blockReason: options.reason?.trim() || undefined,
+            updatedAt: now,
+        };
+    });
+
+    if (!targetTask) return state;
+
+    const nextSales =
+        targetTask.saleId && targetTask.role === 'Repartidor'
+            ? state.sales.map((sale) =>
+                  sale.id === targetTask?.saleId
+                      ? {
+                            ...sale,
+                            assignedEmployeeId: actor.employeeId ?? null,
+                      }
+                      : sale,
+              )
+            : state.sales;
+
+    return {
+        ...state,
+        sales: nextSales,
+        taskAssignments: nextTasks,
+    };
+};
+
 export const resolveCurrentEmployee = (
     state: BusinessState,
     profile: { employeeId?: string | null; role?: UserRole | null; name?: string | null } | null | undefined,

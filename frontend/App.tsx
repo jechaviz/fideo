@@ -101,6 +101,14 @@ const App: React.FC = () => {
             session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
                 ? session.submitTaskReport
                 : undefined,
+        onReassignRemoteTask:
+            session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
+                ? session.reassignOperationalException
+                : undefined,
+        onResolveRemoteException:
+            session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
+                ? session.resolveOperationalException
+                : undefined,
         onSignOut: handleSignOut,
     });
 

@@ -100,6 +100,18 @@ export type OperationalExceptionKind = 'task_report' | 'task_blocked' | 'cash_dr
 export type OperationalExceptionSeverity = 'normal' | 'high' | 'critical';
 export type OperationalExceptionStatus = 'open' | 'acknowledged' | 'resolved';
 
+export interface OperationalExceptionResolveInput {
+    resolutionNote?: string;
+    nextTaskStatus?: TaskStatus;
+}
+
+export interface OperationalExceptionReassignInput {
+    employeeId: string;
+    employeeName?: string | null;
+    nextTaskStatus?: TaskStatus;
+    reason?: string;
+}
+
 export interface TaskAssignment {
     id: string;
     kind: TaskAssignmentKind;
