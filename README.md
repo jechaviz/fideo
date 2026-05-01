@@ -237,8 +237,8 @@ Backend temporal actual:
 
 - PocketBase para auth,
 - snapshot persistido del workspace,
-- identidad base por empleado en `fideo_users` con `employeeId` y `pushExternalId`,
-- tres slices normalizados en colecciones reales: uno para catalogo/inventario/clientes/proveedores/compras, otro para ventas/pagos/caja/actividad/prestamos y un slice minimo de `taskAssignments` con acuse por `employeeId`,
+- identidad base por empleado en `fideo_users` con `employeeId` y `pushExternalId` como override server-side para push,
+- tres slices normalizados en colecciones reales: uno para catalogo/inventario/clientes/proveedores/compras, otro para ventas/pagos/caja/actividad/prestamos y un slice operativo de `taskAssignments` con ownership por `employeeId`, estados auditables, timestamps y `blockedReason`,
 - scope server-side por perfil para portales Cliente/Proveedor,
 - backfill de `customerId` para ventas y prestamos historicos,
 - rutas custom para bootstrap, persistencia del estado compartido, interpretacion remota de mensajes y aprobacion server-side de acciones,
@@ -406,7 +406,47 @@ El contrato recomendado para el cliente movil que use OneSignal es:
 - `external_id = fideo_users.pushExternalId` si existe, o `fideo_users.id` como fallback
 - tags: `app=fideo`, `workspace_slug=<slug>`, `role=<rol>`, `employee_id=<employeeId>`
 
+Estado real del carril hoy:
+
+- PocketBase ya resuelve audiencias con `pushExternalId` si existe y cae a `fideo_users.id` como baseline.
+- El cliente web actual sincroniza OneSignal con `external_id = profile.id` y tags de `workspace_id`, `workspace_slug`, `role`, `channel`, `customer_id` o `supplier_id`.
+- Eso deja el carril util, pero la unificacion completa entre `pushExternalId`, `external_id` y la identidad del empleado sigue siendo una brecha real para el siguiente corte.
+
 Con esa base, el slice operativo ya en curso es `taskAssignments` sobre el contrato snapshot-first actual. La idea no es reescribir todo el modelo interno de golpe, sino cerrar primero ownership, acuse y avance del trabajo con estados `assigned`, `acknowledged`, `in_progress`, `blocked` y `done`.
+
+## Slice siguiente: reportes, bloqueos y escalacion
+
+Sobre esa base, el siguiente slice no necesita un motor paralelo nuevo. Necesita endurecer el loop actual de `taskAssignments`.
+
+Que ya existe hoy:
+
+- estados `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`
+- timestamps `acknowledgedAt`, `startedAt`, `blockedAt`, `completedAt` en frontend y `doneAt` en la materializacion de PocketBase
+- `blockReason` persistido en PocketBase y visible en `ActionCenter`, `Deliveries`, `PackerView` y `DelivererView`
+- cierre operativo de entrega con notas y resultado de cobro sobre la venta relacionada
+
+Como debemos leer "task reports estructurados" en este corte:
+
+- no como una coleccion nueva desde dia uno,
+- sino como reportes pegados a la tarea y su contexto:
+  - acuse -> `acknowledgedAt`
+  - avance -> `startedAt`
+  - bloqueo -> `blockedAt` + `blockReason`
+  - cierre -> `completedAt` en frontend, `doneAt` en PocketBase, y notas operativas ligadas a la orden cuando apliquen
+- el `payload` del task materializado en PocketBase queda como puente para crecer a evidencia o notas mas ricas sin romper el contrato snapshot-first.
+
+Ownership de bloqueos en este estado:
+
+- cuando una tarea pasa a `blocked`, el ownership sigue amarrado al `employeeId` que la tenia tomada, o a la cola del rol si aun no habia persona asignada,
+- Admin/dispatch ya puede ver ese bloqueo en las superficies operativas y decidir si resuelve, reasigna o persigue el cierre,
+- lo importante aqui es no perder quien reporto el bloqueo ni sobre que tarea exacta cayo.
+
+Primera escalacion sobre OneSignal/PocketBase:
+
+- el carril de push actual ya resuelve `pedido listo`, `asignacion de entrega` y `alerta de caja`,
+- la primera escalacion correcta a montar encima de esa base es `tarea bloqueada` y, despues, `tarea sin acuse`,
+- hoy esa escalacion automatica todavia no existe para `taskAssignments`; queda como siguiente corte directo sobre los hooks de PocketBase y el helper server-side de OneSignal,
+- el disparo debe vivir en PocketBase, dejar huella en logs y subir a Admin/dispatch con contexto de `taskId`, `employeeId`, `role`, `status` y `blockReason`.
 
 El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md](C:/git/customers/fideo/docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md).
 
@@ -414,34 +454,34 @@ El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JE
 
 Para no romantizar el estado actual, estas son las brechas mas claras:
 
-1. El backend ya corre con PocketBase y tres slices normalizados reales, pero el loop interno sigue siendo snapshot-first y el slice `taskAssignments` apenas esta tomando forma encima de ese contrato.
-2. `employeeId` y `pushExternalId` ya existen, pero aun falta cerrar bien la identidad empleado-dispositivo para que cada push y cada tarea caigan en la persona correcta sin heuristicas.
+1. El backend ya corre con PocketBase y `taskAssignments` ya alimenta vistas reales, pero el loop sigue siendo snapshot-first y todavia no existe un event log dedicado de task reports.
+2. PocketBase ya soporta `pushExternalId`, pero el cliente web actual sincroniza OneSignal con `profile.id`; esa unificacion de identidad sigue pendiente para que push, ownership y escalacion apunten al mismo sujeto sin ambiguedad.
 3. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
-4. Las vistas de staff todavia leen demasiado contexto general; falta llevarlas a bandejas personales mas reales con acuse, avance, bloqueo y cierre.
-5. El loop multiusuario real ya tiene auth y workspace compartido, pero todavia no hay locking fino ni colaboracion en tiempo real.
-6. Aun quedan capas de soporte fuera de la normalizacion fuerte: mensajes, gastos, activos, inventario de cajas, templates y algunas configuraciones.
+4. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero y el triage de bloqueos todavia necesitan ownership mas fino y seguimiento mas claro.
+5. No existe aun una escalacion automatica para `blocked` o `assigned` sin acuse; los pushes actuales solo cubren `pedido listo`, `asignacion de entrega` y `alerta de caja`.
+6. El loop multiusuario real ya tiene auth y workspace compartido, pero todavia no hay locking fino ni colaboracion en tiempo real.
 7. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
 
 ## Siguiente Paso Correcto
 
 Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correcto parece este:
 
-1. Terminar `taskAssignments` snapshot-first como slice operativo interno, con ownership claro y transiciones `assigned -> acknowledged -> in_progress -> blocked -> done`.
-2. Cerrar identidad por empleado de punta a punta: `employeeId`, `pushExternalId`, tags, `external_id` y feed personal consistente.
-3. Convertir las vistas de staff en superficies personales reales: lo mio, lo pendiente, lo bloqueado y lo terminado.
-4. Llevar reportes, correcciones y bloqueos del staff al mismo loop servidor.
-5. Endurecer observabilidad, retries, presencia y escalacion sobre PocketBase + OneSignal.
+1. Endurecer los task reports estructurados sobre `taskAssignments`, sin abrir todavia una coleccion nueva: acuse, inicio, bloqueo, cierre y notas de resultado.
+2. Cerrar ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
+3. Montar la primera escalacion sobre PocketBase + OneSignal para `blocked` y, despues, para `assigned` sin acuse.
+4. Unificar identidad por empleado entre `employeeId`, `pushExternalId`, `external_id` y tags para que push, feed personal y auditoria usen la misma llave.
+5. Terminar de volver personales las vistas de staff, sobre todo para Admin/Cajero y el seguimiento de excepciones.
 6. Seguir normalizando las capas de soporte que aun viven solo en snapshot.
 
 ### Actualizacion para el siguiente nivel
 
 Con PocketBase + OneSignal ya aterrizados, el frente inmediato cambia de "mandar push" a "confirmar trabajo". Hoy la apuesta concreta es esta:
 
-1. `taskAssignments` ya tiene carril backend minimo snapshot-first; el siguiente paso es endurecerlo sin rehacer aun toda la arquitectura transaccional.
+1. `taskAssignments` ya tiene carril backend minimo snapshot-first y ya vive en vistas reales; el siguiente paso es tratar cada cambio de estado como reporte operativo valido.
 2. Estados minimos y auditables: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`.
-3. Identidad por empleado como llave unica de push, ownership y vista personal.
-4. Staff views mas reales para repartidor, empacador, cajero y admin operativo.
-5. Luego si: reportes estructurados, SLA, escalacion y automatizacion de seguimiento.
+3. `blocked` deja de ser solo un badge y se vuelve excepcion con owner, motivo y triage claro.
+4. La primera escalacion se monta en PocketBase usando el helper server-side de OneSignal; no conviene abrir otro stack de notificaciones.
+5. Despues si: SLA, recordatorios, presencia y automatizacion mas ambiciosa.
 
 ## Definicion Practica de Exito
 
