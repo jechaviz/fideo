@@ -10,12 +10,18 @@
     "preview": "vite preview",
     "lint": "bun run lint:typecheck && bun run lint:eslint",
     "lint:typecheck": "tsc --noEmit",
-    "lint:eslint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint:eslint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "pb:install": "powershell -ExecutionPolicy Bypass -File ..\\backend\\pocketbase\\install-pocketbase.ps1",
+    "pb:start": "powershell -ExecutionPolicy Bypass -File ..\\backend\\pocketbase\\start-pocketbase.ps1 -InstallIfMissing",
+    "pb:bootstrap": "powershell -ExecutionPolicy Bypass -File ..\\backend\\pocketbase\\bootstrap-pocketbase.ps1",
+    "pb:check": "powershell -ExecutionPolicy Bypass -Command '& { node --check ../backend/pocketbase/pb_hooks/fideo.pb.js; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Get-ChildItem ../backend/pocketbase/pb_migrations/*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } }'"
   },
   "dependencies": {
     "@google/genai": "^1.8.0",
+    "pocketbase": "^0.26.8",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-onesignal": "^3.5.1",
     "recharts": "^3.0.2"
   },
   "devDependencies": {

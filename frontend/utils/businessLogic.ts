@@ -90,7 +90,7 @@ export const addSaleAction = (s: BusinessState, interpretation: SaleInterpretati
     const paymentMethod: PaymentMethod = customerInfo.creditStatus === 'Contado Solamente' ? 'Efectivo' : 'Crédito';
 
     const newSale: Sale = {
-        id: `s_${Date.now()}`, productGroupId: group.id, varietyId: variety.id, productGroupName: group.name, varietyName: variety.name,
+        id: `s_${Date.now()}`, productGroupId: group.id, varietyId: variety.id, customerId: customerInfo.id, productGroupName: group.name, varietyName: variety.name,
         size: saleData.size, quality: quality, state: saleData.state, quantity: saleData.quantity, price: finalPricePerUnit * saleData.quantity,
         cogs: totalCogs, unit: saleData.unit, customer: saleData.customer, destination: saleData.destination || 'Sin destino',
         locationQuery: saleData.locationQuery, status: 'Pendiente de Empaque', 
@@ -161,7 +161,7 @@ export const addFixedAssetSaleAction = (s: BusinessState, interpretation: FixedA
     const now = new Date();
     const newSale: Sale = {
         id: `s_asset_${Date.now()}`,
-        productGroupId: 'asset', varietyId: crateType.id, productGroupName: 'Activos', varietyName: crateType.name,
+        productGroupId: 'asset', varietyId: crateType.id, customerId: customer.id, productGroupName: 'Activos', varietyName: crateType.name,
         size: crateType.size, quality: 'Normal', state: 'Verde', 
         quantity, price: totalCost, cogs: 0, unit: 'unidades', customer: customer.name,
         destination: 'Cliente', status: 'Completado', paymentStatus: 'En Deuda',
@@ -337,6 +337,7 @@ export const transferWarehouseAction = (s: BusinessState, interpretation: Wareho
 export const addCrateLoanAction = (s: BusinessState, interpretation: CrateLoanInterpretation): ActionResult => {
     const loanData = interpretation.data;
     const crateType = s.crateTypes.find(ct => ct.name.toLowerCase() === loanData.description.toLowerCase());
+    const customer = s.customers.find(c => c.name === loanData.customer);
     if (!crateType) {
         return createActionResult(s, { text: `Crate type not found: ${loanData.description}`, isError: true });
     }
@@ -346,6 +347,7 @@ export const addCrateLoanAction = (s: BusinessState, interpretation: CrateLoanIn
     
     const newLoan: CrateLoan = { 
         id: `l_${Date.now()}`, 
+        customerId: customer?.id,
         customer: loanData.customer, 
         crateTypeId: crateType.id,
         quantity: loanData.quantity, 

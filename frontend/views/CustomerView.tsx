@@ -1,140 +1,254 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { Sale } from '../types';
+import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
 
 type CustomerTab = 'today_orders' | 'order_history' | 'crates' | 'prices';
 
-const TabButton: React.FC<{name: string, tab: CustomerTab, activeTab: CustomerTab, setActiveTab: (tab: CustomerTab) => void}> = ({ name, tab, activeTab, setActiveTab }) => (
-    <button onClick={() => setActiveTab(tab)} className={`whitespace-nowrap py-3 px-3 border-b-2 font-semibold text-sm transition-colors ${activeTab === tab ? 'border-green-600 text-green-700 dark:text-green-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}>
+const surfaceClass = 'glass-panel-dark rounded-[1.6rem] border border-white/10';
+const labelClass = 'text-[10px] font-black uppercase tracking-[0.28em] text-slate-500';
+
+const formatCurrency = (value: number) =>
+    value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+
+const TabButton: React.FC<{
+    name: string;
+    tab: CustomerTab;
+    activeTab: CustomerTab;
+    setActiveTab: (tab: CustomerTab) => void;
+}> = ({ name, tab, activeTab, setActiveTab }) => (
+    <button
+        onClick={() => setActiveTab(tab)}
+        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            activeTab === tab
+                ? 'bg-white text-slate-950'
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+        }`}
+    >
         {name}
     </button>
 );
 
-const OrderList: React.FC<{ sales: Sale[] }> = ({ sales }) => (
-    <div className="max-h-96 overflow-y-auto pr-2 space-y-3">
-        {sales.length > 0 ? sales.map(sale => (
-            <div key={sale.id} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex justify-between items-center">
-                    <p className="font-semibold dark:text-gray-200">{sale.quantity}x {sale.varietyName} {sale.size}</p>
-                    <p className="font-bold text-green-700 dark:text-green-400">{sale.price.toLocaleString('es-MX', {style:'currency', currency: 'MXN'})}</p>
+const OrderList: React.FC<{ sales: Sale[]; emptyTitle: string; emptyBody: string }> = ({
+    sales,
+    emptyBody,
+    emptyTitle,
+}) => (
+    <div className="space-y-3">
+        {sales.length > 0 ? (
+            sales.map((sale) => (
+                <div key={sale.id} className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="font-semibold text-white">
+                                {sale.quantity}x {sale.varietyName} {sale.size}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                                {new Date(sale.timestamp).toLocaleString('es-MX')} | {sale.status} | {sale.paymentStatus}
+                            </p>
+                        </div>
+                        <p className="text-lg font-black text-brand-200">{formatCurrency(sale.price)}</p>
+                    </div>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(sale.timestamp).toLocaleString('es-MX')} - {sale.status} / {sale.paymentStatus}</p>
+            ))
+        ) : (
+            <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-6 py-12 text-center">
+                <p className="text-lg font-semibold text-white">{emptyTitle}</p>
+                <p className="mt-2 text-sm text-slate-400">{emptyBody}</p>
             </div>
-        )) : <p className="text-center text-gray-500 dark:text-gray-400 py-4">No hay pedidos para mostrar.</p>}
+        )}
     </div>
 );
 
 const CustomerView: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { customers, sales, payments, crateLoans, crateTypes, productGroups, currentCustomerId } = data;
+    const { crateLoans, crateTypes, currentCustomerId, customers, payments, productGroups, sales } = data;
     const [activeTab, setActiveTab] = useState<CustomerTab>('today_orders');
 
-    const customer = useMemo(() => {
-        return customers.find(c => c.id === currentCustomerId);
-    }, [customers, currentCustomerId]);
+    const customer = useMemo(
+        () => customers.find((item) => item.id === currentCustomerId),
+        [currentCustomerId, customers],
+    );
 
     const totalBalance = useMemo(() => {
         if (!customer) return 0;
         const debtFromSales = sales
-          .filter(s => s.customer === customer.name && s.paymentStatus === 'En Deuda' && s.status === 'Completado')
-          .reduce((sum, s) => sum + s.price, 0);
+            .filter((sale) => saleBelongsToCustomer(sale, customer) && sale.paymentStatus === 'En Deuda' && sale.status === 'Completado')
+            .reduce((sum, sale) => sum + sale.price, 0);
         const totalPayments = payments
-          .filter(p => p.customerId === customer.id)
-          .reduce((sum, p) => sum + p.amount, 0);
-        const finalMonetaryDebt = Math.max(0, debtFromSales - totalPayments);
-        const loans = crateLoans.filter(l => l.customer === customer.name && (l.status === 'Prestado' || l.status === 'No Devuelto'));
-        const finalLentCratesValue = loans.reduce((sum, loan) => {
-            const crateType = crateTypes.find(ct => ct.id === loan.crateTypeId);
-            return sum + (loan.quantity * (crateType?.cost || 50));
+            .filter((payment) => payment.customerId === customer.id)
+            .reduce((sum, payment) => sum + payment.amount, 0);
+        const monetaryDebt = Math.max(0, debtFromSales - totalPayments);
+        const loans = crateLoans.filter(
+            (loan) => loanBelongsToCustomer(loan, customer) && (loan.status === 'Prestado' || loan.status === 'No Devuelto'),
+        );
+        const lentCratesValue = loans.reduce((sum, loan) => {
+            const crateType = crateTypes.find((item) => item.id === loan.crateTypeId);
+            return sum + loan.quantity * (crateType?.cost || 50);
         }, 0);
-        return finalMonetaryDebt + finalLentCratesValue;
-    }, [customer, sales, payments, crateLoans, crateTypes]);
-    
-    const { todaySales, historicalSales } = useMemo(() => {
-        const allSales = data.sales.filter(s => s.customer === customer?.name).sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime());
+        return monetaryDebt + lentCratesValue;
+    }, [crateLoans, crateTypes, customer, payments, sales]);
+
+    const { historicalSales, todaySales } = useMemo(() => {
+        const allSales = sales
+            .filter((sale) => customer && saleBelongsToCustomer(sale, customer))
+            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
-        return {
-            todaySales: allSales.filter(s => new Date(s.timestamp) >= today),
-            historicalSales: allSales.filter(s => new Date(s.timestamp) < today)
-        };
-    }, [data.sales, customer]);
 
-    const customerLoans = useMemo(() => crateLoans.filter(l => l.customer === customer?.name).sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime()), [crateLoans, customer]);
+        return {
+            todaySales: allSales.filter((sale) => new Date(sale.timestamp) >= today),
+            historicalSales: allSales.filter((sale) => new Date(sale.timestamp) < today),
+        };
+    }, [customer, sales]);
+
+    const customerLoans = useMemo(
+        () =>
+            crateLoans
+                .filter((loan) => customer && loanBelongsToCustomer(loan, customer))
+                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
+        [crateLoans, customer],
+    );
 
     if (!customer) {
         return (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl shadow-md">
-                <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">Cliente no encontrado</h2>
-                <p className="text-gray-500 dark:text-gray-400 mt-2">No se pudo cargar la información del cliente.</p>
+            <div className="rounded-[1.8rem] border border-white/10 bg-white/[0.03] px-6 py-14 text-center">
+                <h2 className="text-xl font-black text-white">Cliente no encontrado</h2>
+                <p className="mt-2 text-sm text-slate-400">No fue posible cargar el portal para esta cuenta.</p>
             </div>
         );
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md">
-            <div className="p-6 border-b dark:border-gray-700">
-                <div className="flex justify-between items-start">
-                     <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Bienvenido, {customer.name}</h2>
-                     <div className="text-right flex-shrink-0 ml-4">
-                        <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Balance Total</p>
-                        <p className={`text-3xl font-bold ${totalBalance > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
-                            {totalBalance.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
+        <div className="space-y-6">
+            <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.14),transparent_32%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8">
+                <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                    <div className="max-w-3xl">
+                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-300">Portal cliente</p>
+                        <h2 className="mt-3 text-4xl font-black tracking-tight text-white">Bienvenido, {customer.name}</h2>
+                        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+                            Consulta pedidos, cajas prestadas y condiciones especiales de compra desde una vista clara y directa.
                         </p>
-                     </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:min-w-[540px]">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Balance total</p>
+                            <p className="mt-2 text-3xl font-black text-white">{formatCurrency(totalBalance)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Pedidos hoy</p>
+                            <p className="mt-2 text-3xl font-black text-white">{todaySales.length}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Precios especiales</p>
+                            <p className="mt-2 text-3xl font-black text-white">{customer.specialPrices.length}</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <div className="border-b border-gray-200 dark:border-gray-700">
-              <nav className="-mb-px flex space-x-2 px-4" aria-label="Tabs">
-                <TabButton name="Mi Pedido de Hoy" tab="today_orders" activeTab={activeTab} setActiveTab={setActiveTab} />
-                <TabButton name="Historial de Pedidos" tab="order_history" activeTab={activeTab} setActiveTab={setActiveTab} />
-                {customerLoans.length > 0 && <TabButton name="Mis Cajas" tab="crates" activeTab={activeTab} setActiveTab={setActiveTab} />}
-                {customer.specialPrices.length > 0 && <TabButton name="Mi Lista de Precios" tab="prices" activeTab={activeTab} setActiveTab={setActiveTab} />}
-              </nav>
-            </div>
-            
-            <div className="p-6">
-                {activeTab === 'today_orders' && <OrderList sales={todaySales} />}
-                {activeTab === 'order_history' && <OrderList sales={historicalSales} />}
+            </section>
+
+            <section className={`${surfaceClass} p-3`}>
+                <div className="flex flex-wrap gap-2">
+                    <TabButton name="Pedido de hoy" tab="today_orders" activeTab={activeTab} setActiveTab={setActiveTab} />
+                    <TabButton name="Historial" tab="order_history" activeTab={activeTab} setActiveTab={setActiveTab} />
+                    {customerLoans.length > 0 && (
+                        <TabButton name="Mis cajas" tab="crates" activeTab={activeTab} setActiveTab={setActiveTab} />
+                    )}
+                    {customer.specialPrices.length > 0 && (
+                        <TabButton name="Mis precios" tab="prices" activeTab={activeTab} setActiveTab={setActiveTab} />
+                    )}
+                </div>
+            </section>
+
+            <section className={`${surfaceClass} p-6`}>
+                {activeTab === 'today_orders' && (
+                    <OrderList
+                        sales={todaySales}
+                        emptyTitle="Todavia no hay pedidos para hoy."
+                        emptyBody="Cuando se registren tus compras del dia apareceran aqui."
+                    />
+                )}
+
+                {activeTab === 'order_history' && (
+                    <OrderList
+                        sales={historicalSales}
+                        emptyTitle="Sin historial disponible."
+                        emptyBody="Aun no encontramos pedidos anteriores para esta cuenta."
+                    />
+                )}
+
                 {activeTab === 'crates' && (
-                     <div className="max-h-96 overflow-y-auto pr-2 space-y-3">
-                        {customerLoans.map(loan => {
-                             const crateType = crateTypes.find(ct => ct.id === loan.crateTypeId);
-                             const isOverdue = new Date(loan.dueDate) < new Date() && loan.status === 'Prestado';
-                             return (
-                                 <div key={loan.id} className={`p-3 rounded-md ${isOverdue ? 'bg-red-50 dark:bg-red-900/30' : 'bg-yellow-50 dark:bg-yellow-900/30'}`}>
-                                     <span className="font-semibold text-gray-700 dark:text-gray-200">{loan.quantity} x {crateType?.name || 'Caja'}</span>
-                                     <span className={`ml-3 text-sm ${isOverdue ? 'text-red-700 dark:text-red-300' : 'text-yellow-800 dark:text-yellow-300'}`}>
-                                         {loan.status} | Vence: {new Date(loan.dueDate).toLocaleDateString('es-MX')}
-                                     </span>
-                                 </div>
-                             )
-                        })}
-                    </div>
-                )}
-                {activeTab === 'prices' && (
-                     <div className="max-h-96 overflow-y-auto">
-                        <table className="min-w-full text-sm">
-                            <thead className="text-left font-semibold text-gray-500 dark:text-gray-400">
-                                <tr><th className="p-2">Producto</th><th className="p-2">Tu Precio</th></tr>
-                            </thead>
-                            <tbody>
-                            {customer.specialPrices.map(sp => {
-                                const pg = productGroups.find(g => g.varieties.some(v => v.id === sp.varietyId));
-                                const variety = pg?.varieties.find(v => v.id === sp.varietyId);
+                    <div className="space-y-3">
+                        {customerLoans.length > 0 ? (
+                            customerLoans.map((loan) => {
+                                const crateType = crateTypes.find((item) => item.id === loan.crateTypeId);
+                                const isOverdue = new Date(loan.dueDate) < new Date() && loan.status === 'Prestado';
+
                                 return (
-                                <tr key={`${sp.varietyId}-${sp.size}`} className="border-b dark:border-gray-700">
-                                    <td className="p-2 dark:text-gray-200">{pg?.name} {variety?.name} ({sp.size})</td>
-                                    <td className="p-2 font-bold text-green-700 dark:text-green-400">{sp.price.toLocaleString('es-MX', {style:'currency',currency:'MXN'})}</td>
-                                </tr>
+                                    <div
+                                        key={loan.id}
+                                        className={`rounded-[1.4rem] border p-4 ${
+                                            isOverdue
+                                                ? 'border-rose-400/20 bg-rose-400/10'
+                                                : 'border-amber-400/20 bg-amber-400/10'
+                                        }`}
+                                    >
+                                        <p className="font-semibold text-white">
+                                            {loan.quantity} x {crateType?.name || 'Caja'}
+                                        </p>
+                                        <p className={`mt-2 text-sm ${isOverdue ? 'text-rose-200' : 'text-amber-200'}`}>
+                                            {loan.status} | Vence: {new Date(loan.dueDate).toLocaleDateString('es-MX')}
+                                        </p>
+                                    </div>
                                 );
-                            })}
-                            </tbody>
-                        </table>
+                            })
+                        ) : (
+                            <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-6 py-12 text-center">
+                                <p className="text-lg font-semibold text-white">Sin cajas registradas.</p>
+                                <p className="mt-2 text-sm text-slate-400">No tienes prestamos activos en este momento.</p>
+                            </div>
+                        )}
                     </div>
                 )}
-            </div>
+
+                {activeTab === 'prices' && (
+                    <div className="space-y-3">
+                        {customer.specialPrices.length > 0 ? (
+                            customer.specialPrices.map((specialPrice) => {
+                                const productGroup = productGroups.find((group) =>
+                                    group.varieties.some((variety) => variety.id === specialPrice.varietyId),
+                                );
+                                const variety = productGroup?.varieties.find(
+                                    (item) => item.id === specialPrice.varietyId,
+                                );
+
+                                return (
+                                    <div key={`${specialPrice.varietyId}-${specialPrice.size}-${specialPrice.state}-${specialPrice.quality}`} className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+                                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                            <div>
+                                                <p className="font-semibold text-white">
+                                                    {productGroup?.name} {variety?.name} ({specialPrice.size})
+                                                </p>
+                                                <p className="mt-1 text-xs text-slate-400">
+                                                    {specialPrice.quality} | {specialPrice.state}
+                                                </p>
+                                            </div>
+                                            <p className="text-lg font-black text-brand-200">
+                                                {formatCurrency(specialPrice.price)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-6 py-12 text-center">
+                                <p className="text-lg font-semibold text-white">Sin precios especiales.</p>
+                                <p className="mt-2 text-sm text-slate-400">Tus condiciones personalizadas apareceran aqui cuando existan.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </section>
         </div>
     );
 };

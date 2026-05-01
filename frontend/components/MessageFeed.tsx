@@ -1,271 +1,531 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
-import { ParsedMessage, InterpretationType, Message } from '../types';
-import { interpretMessage } from '../services/geminiService';
-import { BotIcon, UserIcon, CheckCircleIcon } from './icons/Icons';
+import { InterpretationType, Message, ParsedMessage } from '../types';
+import { BotIcon, CheckCircleIcon, UserIcon } from './icons/Icons';
 
-const SystemNotificationCard: React.FC<{ message: Message }> = ({ message }) => {
-    return (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-5 rounded-xl shadow-md border-l-4 border-yellow-500">
-            <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-white">
-                        <i className="fa-solid fa-triangle-exclamation"></i>
-                    </div>
-                </div>
-                <div className="flex-1">
-                    <p className="font-bold text-yellow-800 dark:text-yellow-200">{message.sender}</p>
-                    <p className="text-yellow-700 dark:text-yellow-300">{message.text}</p>
-                </div>
+const surfaceClass = 'glass-panel-dark rounded-[1.8rem] border border-white/10';
+const labelClass = 'text-[10px] font-black uppercase tracking-[0.28em] text-slate-500';
+const editableInterpretationTypes = Object.values(InterpretationType);
+
+const formatJson = (value: unknown) => JSON.stringify(value, null, 2);
+
+const clampCertainty = (value: number) => Math.min(1, Math.max(0, value));
+
+const SystemNotificationCard: React.FC<{ message: Message }> = ({ message }) => (
+    <div className="rounded-[1.6rem] border border-amber-400/20 bg-amber-400/10 p-5">
+        <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-400/30 bg-amber-400/20 text-amber-100">
+                <i className="fa-solid fa-triangle-exclamation" />
+            </div>
+            <div>
+                <p className="font-semibold text-amber-100">{message.sender}</p>
+                <p className="mt-1 text-sm text-amber-200">{message.text}</p>
             </div>
         </div>
-    );
-};
+    </div>
+);
 
-const ApprovedMessageCard: React.FC<{ message: Message }> = ({ message }) => {
-    return (
-        <div className="bg-gray-50 dark:bg-gray-800/50 p-5 rounded-xl shadow-sm">
-             <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                    <UserIcon/>
-                </div>
-                <div className="flex-1">
-                    <p className="font-bold text-gray-800 dark:text-gray-100">{message.sender}</p>
-                    <p className="text-gray-700 dark:text-gray-300">{message.text}</p>
-                     {message.interpretation && (
-                         <div className="mt-4 p-4 bg-green-50 dark:bg-gray-800 rounded-lg border-l-4 border-green-500 shadow-sm opacity-80">
-                             <div className="flex items-center gap-2">
-                                <CheckCircleIcon />
-                                <h4 className="font-semibold text-green-800 dark:text-green-300">Acción Aprobada</h4>
-                             </div>
-                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 italic pl-7">"{message.interpretation.explanation}"</p>
-                         </div>
+const ApprovedMessageCard: React.FC<{
+    message: Message;
+    onRevert: () => void;
+    remoteEnabled: boolean;
+}> = ({ message, onRevert, remoteEnabled }) => (
+    <div className="rounded-[1.6rem] border border-white/10 bg-white/5 p-5">
+        <div className="flex items-start gap-4">
+            <UserIcon />
+            <div className="flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="font-semibold text-white">{message.sender}</p>
+                    {message.undoState?.approval && (
+                        <button
+                            onClick={onRevert}
+                            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+                        >
+                            Revertir
+                        </button>
                     )}
                 </div>
+                <p className="mt-1 text-sm text-slate-300">{message.text}</p>
+                {message.interpretation && (
+                    <div className="mt-4 rounded-[1.2rem] border border-emerald-400/20 bg-emerald-400/10 p-4">
+                        <div className="flex items-center gap-2 text-emerald-200">
+                            <CheckCircleIcon />
+                            <h4 className="text-sm font-black uppercase tracking-[0.24em]">Accion aprobada</h4>
+                        </div>
+                        <p className="mt-2 text-sm italic text-slate-200">"{message.interpretation.explanation}"</p>
+                        <p className="mt-3 text-xs text-emerald-100/80">
+                            {remoteEnabled
+                                ? 'Puedes revertir la aprobacion y el snapshot se vuelve a sincronizar.'
+                                : 'Puedes revertir la aprobacion; quedara guardada en este navegador.'}
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
-    );
-};
-
+    </div>
+);
 
 const InterpretationCard: React.FC<{
+    message: Message;
     interpretation: ParsedMessage;
     onApprove: () => void;
-}> = ({ interpretation, onApprove }) => {
-    
-    const dataKeyMap: { [key: string]: string } = {
-        productGroup: 'Producto',
-        variety: 'Variedad',
-        size: 'Tamaño',
-        quality: 'Calidad',
-        state: 'Estado',
-        fromState: 'De',
-        toState: 'A',
-        fromWarehouseName: 'Bodega Origen',
-        toWarehouseName: 'Bodega Destino',
-        quantity: 'Cantidad',
-        unit: 'Unidad',
+    onCorrect: (messageId: string, interpretation: ParsedMessage) => void;
+    onRevert: (messageId: string) => void;
+    remoteEnabled: boolean;
+}> = ({ message, interpretation, onApprove, onCorrect, onRevert, remoteEnabled }) => {
+    const dataKeyMap: Record<string, string> = {
+        action: 'Accion',
+        assetName: 'Activo',
         customer: 'Cliente',
         customerName: 'Cliente',
+        description: 'Descripcion',
         destination: 'Destino',
+        dueDate: 'Fecha limite',
         employee: 'Empleado',
         employeeName: 'Empleado',
-        price: 'Precio',
-        action: 'Acción',
-        topic: 'Tema',
-        view: 'Vista',
-        filterType: 'Tipo de Filtro',
+        filterType: 'Filtro',
         filterValue: 'Valor',
-        productDescription: 'Descripción',
-        targetAudience: 'Dirigido a',
-        supplierName: 'Proveedor',
+        fromState: 'De',
+        fromWarehouseName: 'Bodega origen',
         packaging: 'Empaque',
-        suggestedPayment: 'Abono Sugerido',
-        assetName: 'Activo',
-        description: 'Descripción',
-        dueDate: 'Fecha Límite',
+        price: 'Precio',
+        productDescription: 'Descripcion',
+        productGroup: 'Producto',
+        quality: 'Calidad',
+        quantity: 'Cantidad',
+        size: 'Tamano',
+        state: 'Estado',
+        suggestedPayment: 'Abono sugerido',
+        supplierName: 'Proveedor',
+        targetAudience: 'Dirigido a',
+        toState: 'A',
+        toWarehouseName: 'Bodega destino',
+        topic: 'Tema',
+        unit: 'Unidad',
+        variety: 'Variedad',
+        view: 'Vista',
     };
 
-    const typeLabelMap: { [key in InterpretationType]: string } = {
-        [InterpretationType.VENTA]: "Venta",
-        [InterpretationType.ORDEN_COMPRA]: "Orden de Compra",
-        [InterpretationType.VENTA_ACTIVO_FIJO]: "Venta de Activo",
-        [InterpretationType.ACTUALIZACION_PRECIO]: "Actualización de Precio",
-        [InterpretationType.PRESTAMO_CAJA]: "Préstamo de Caja",
-        [InterpretationType.LLEGADA_EMPLEADO]: "Llegada de Empleado",
-        [InterpretationType.ACTUALIZACION_INVENTARIO]: "Actualización de Inventario",
-        [InterpretationType.MOVIMIENTO_ESTADO]: "Movimiento de Estado",
-        [InterpretationType.MOVIMIENTO_CALIDAD]: "Movimiento de Calidad",
-        [InterpretationType.TRANSFERENCIA_BODEGA]: "Transferencia de Bodega",
-        [InterpretationType.ASIGNACION_ENTREGA]: "Asignación de Entrega",
-        [InterpretationType.CAMBIO_VISTA]: "Navegación",
-        [InterpretationType.APLICAR_FILTRO]: "Aplicar Filtro",
-        [InterpretationType.CREAR_OFERTA]: "Crear Oferta",
-        [InterpretationType.CONSULTA]: "Consulta",
-        [InterpretationType.DESCONOCIDO]: "Desconocido",
-    };
-
-    const renderData = () => {
-        if (!interpretation.data || Object.keys(interpretation.data).length === 0) return <p className="text-xs text-gray-500 dark:text-gray-400">Sin detalles adicionales.</p>;
-        return Object.entries(interpretation.data).map(([key, value]) => {
-            if (!value) return null;
-            let displayValue = String(value);
-            if (key === 'dueDate' && typeof value === 'string') {
-                displayValue = new Date(value).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
-            }
-            return (
-                <div key={key} className={`text-xs ${key === 'suggestedPayment' ? 'bg-yellow-100 dark:bg-yellow-900/50 p-1 rounded-md' : ''}`}>
-                    <span className="font-semibold capitalize text-gray-500 dark:text-gray-400">{dataKeyMap[key] || key}: </span>
-                    <span className="text-gray-700 dark:text-gray-300">{displayValue}</span>
-                </div>
-            )
-        }).filter(Boolean);
+    const typeLabelMap: Record<InterpretationType, string> = {
+        [InterpretationType.ACTUALIZACION_INVENTARIO]: 'Actualizacion de inventario',
+        [InterpretationType.ACTUALIZACION_PRECIO]: 'Actualizacion de precio',
+        [InterpretationType.APLICAR_FILTRO]: 'Filtro',
+        [InterpretationType.ASIGNACION_ENTREGA]: 'Asignacion de entrega',
+        [InterpretationType.CAMBIO_VISTA]: 'Navegacion',
+        [InterpretationType.CONSULTA]: 'Consulta',
+        [InterpretationType.CREAR_OFERTA]: 'Oferta',
+        [InterpretationType.DESCONOCIDO]: 'No identificado',
+        [InterpretationType.LLEGADA_EMPLEADO]: 'Llegada de empleado',
+        [InterpretationType.MOVIMIENTO_CALIDAD]: 'Movimiento de calidad',
+        [InterpretationType.MOVIMIENTO_ESTADO]: 'Movimiento de estado',
+        [InterpretationType.ORDEN_COMPRA]: 'Orden de compra',
+        [InterpretationType.PRESTAMO_CAJA]: 'Prestamo de caja',
+        [InterpretationType.TRANSFERENCIA_BODEGA]: 'Transferencia',
+        [InterpretationType.VENTA]: 'Venta',
+        [InterpretationType.VENTA_ACTIVO_FIJO]: 'Venta de activo',
     };
 
     const getColorsForType = (type: InterpretationType) => {
-        switch(type) {
-            case InterpretationType.VENTA: return { bg: 'bg-green-100 dark:bg-green-900', border: 'border-green-500', text: 'text-green-800 dark:text-green-300' };
-            case InterpretationType.ORDEN_COMPRA: return { bg: 'bg-teal-100 dark:bg-teal-900', border: 'border-teal-500', text: 'text-teal-800 dark:text-teal-300' };
-            case InterpretationType.VENTA_ACTIVO_FIJO: return { bg: 'bg-orange-100 dark:bg-orange-900', border: 'border-orange-500', text: 'text-orange-800 dark:text-orange-300' };
-            case InterpretationType.ACTUALIZACION_PRECIO: return { bg: 'bg-blue-100 dark:bg-blue-900', border: 'border-blue-500', text: 'text-blue-800 dark:text-blue-300' };
-            case InterpretationType.PRESTAMO_CAJA: return { bg: 'bg-yellow-100 dark:bg-yellow-900', border: 'border-yellow-500', text: 'text-yellow-800 dark:text-yellow-300' };
-            case InterpretationType.LLEGADA_EMPLEADO: return { bg: 'bg-indigo-100 dark:bg-indigo-900', border: 'border-indigo-500', text: 'text-indigo-800 dark:text-indigo-300' };
-            case InterpretationType.MOVIMIENTO_ESTADO: return { bg: 'bg-purple-100 dark:bg-purple-900', border: 'border-purple-500', text: 'text-purple-800 dark:text-purple-300' };
-            case InterpretationType.MOVIMIENTO_CALIDAD: return { bg: 'bg-orange-100 dark:bg-orange-900', border: 'border-orange-500', text: 'text-orange-800 dark:text-orange-300' };
-            case InterpretationType.TRANSFERENCIA_BODEGA: return { bg: 'bg-cyan-100 dark:bg-cyan-900', border: 'border-cyan-500', text: 'text-cyan-800 dark:text-cyan-300' };
-            case InterpretationType.ASIGNACION_ENTREGA: return { bg: 'bg-sky-100 dark:bg-sky-900', border: 'border-sky-500', text: 'text-sky-800 dark:text-sky-300' };
-            case InterpretationType.CAMBIO_VISTA: return { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900', border: 'border-fuchsia-500', text: 'text-fuchsia-800 dark:text-fuchsia-300' };
-            case InterpretationType.APLICAR_FILTRO: return { bg: 'bg-rose-100 dark:bg-rose-900', border: 'border-rose-500', text: 'text-rose-800 dark:text-rose-300' };
-            case InterpretationType.CREAR_OFERTA: return { bg: 'bg-lime-100 dark:bg-lime-900', border: 'border-lime-500', text: 'text-lime-800 dark:text-lime-300' };
-            case InterpretationType.CONSULTA: return { bg: 'bg-pink-100 dark:bg-pink-900', border: 'border-pink-500', text: 'text-pink-800 dark:text-pink-300' };
-            default: return { bg: 'bg-gray-100 dark:bg-gray-700', border: 'border-gray-400', text: 'text-gray-600 dark:text-gray-300' };
+        switch (type) {
+            case InterpretationType.VENTA:
+                return 'border-brand-300/20 bg-brand-300/10 text-brand-100';
+            case InterpretationType.ORDEN_COMPRA:
+                return 'border-teal-400/20 bg-teal-400/10 text-teal-100';
+            case InterpretationType.VENTA_ACTIVO_FIJO:
+                return 'border-orange-400/20 bg-orange-400/10 text-orange-100';
+            case InterpretationType.ACTUALIZACION_PRECIO:
+                return 'border-sky-400/20 bg-sky-400/10 text-sky-100';
+            case InterpretationType.PRESTAMO_CAJA:
+                return 'border-amber-400/20 bg-amber-400/10 text-amber-100';
+            case InterpretationType.LLEGADA_EMPLEADO:
+                return 'border-indigo-400/20 bg-indigo-400/10 text-indigo-100';
+            case InterpretationType.MOVIMIENTO_ESTADO:
+                return 'border-violet-400/20 bg-violet-400/10 text-violet-100';
+            case InterpretationType.MOVIMIENTO_CALIDAD:
+                return 'border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-100';
+            case InterpretationType.TRANSFERENCIA_BODEGA:
+                return 'border-cyan-400/20 bg-cyan-400/10 text-cyan-100';
+            case InterpretationType.ASIGNACION_ENTREGA:
+                return 'border-rose-400/20 bg-rose-400/10 text-rose-100';
+            case InterpretationType.CAMBIO_VISTA:
+                return 'border-white/10 bg-white/5 text-slate-200';
+            case InterpretationType.APLICAR_FILTRO:
+                return 'border-pink-400/20 bg-pink-400/10 text-pink-100';
+            case InterpretationType.CREAR_OFERTA:
+                return 'border-lime-400/20 bg-lime-400/10 text-lime-100';
+            case InterpretationType.CONSULTA:
+                return 'border-slate-400/20 bg-slate-400/10 text-slate-100';
+            default:
+                return 'border-white/10 bg-white/5 text-slate-200';
         }
-    }
-    
+    };
+
+    const [isEditing, setIsEditing] = useState(false);
+    const [draftType, setDraftType] = useState<InterpretationType>(interpretation.type);
+    const [draftExplanation, setDraftExplanation] = useState(interpretation.explanation);
+    const [draftCertainty, setDraftCertainty] = useState(String(interpretation.certainty));
+    const [draftData, setDraftData] = useState(formatJson(interpretation.data || {}));
+    const [formError, setFormError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (isEditing) return;
+        setDraftType(interpretation.type);
+        setDraftExplanation(interpretation.explanation);
+        setDraftCertainty(String(interpretation.certainty));
+        setDraftData(formatJson(interpretation.data || {}));
+        setFormError(null);
+    }, [interpretation, isEditing]);
+
+    const renderData = () => {
+        if (!interpretation.data || Object.keys(interpretation.data).length === 0) {
+            return <p className="text-sm text-slate-400">Sin detalles adicionales.</p>;
+        }
+
+        return Object.entries(interpretation.data)
+            .map(([key, value]) => {
+                if (!value) return null;
+                const displayValue =
+                    key === 'dueDate' && typeof value === 'string'
+                        ? new Date(value).toLocaleDateString('es-MX', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                          })
+                        : String(value);
+
+                return (
+                    <div key={key} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">
+                            {dataKeyMap[key] || key}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-200">{displayValue}</p>
+                    </div>
+                );
+            })
+            .filter(Boolean);
+    };
+
     const isUnknown = interpretation.type === InterpretationType.DESCONOCIDO;
-    const { bg, border, text } = getColorsForType(interpretation.type);
     const typeLabel = typeLabelMap[interpretation.type];
+    const colorClass = getColorsForType(interpretation.type);
+    const hasCorrectionUndo = Boolean(message.undoState?.correction);
+    const correctionHint = remoteEnabled
+        ? 'Se guarda en este workspace y se sincroniza con PocketBase.'
+        : 'No hay backend activo: la correccion se conserva en este navegador.';
+
+    const handleOpenEditor = () => {
+        setDraftType(interpretation.type);
+        setDraftExplanation(interpretation.explanation);
+        setDraftCertainty(String(interpretation.certainty));
+        setDraftData(formatJson(interpretation.data || {}));
+        setFormError(null);
+        setIsEditing(true);
+    };
+
+    const handleSaveCorrection = () => {
+        const trimmedExplanation = draftExplanation.trim();
+        if (!trimmedExplanation) {
+            setFormError('Agrega una explicacion corta para la correccion.');
+            return;
+        }
+
+        let parsedData: Record<string, unknown>;
+        try {
+            const candidate = JSON.parse(draftData);
+            if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+                setFormError('El bloque de datos debe ser un objeto JSON valido.');
+                return;
+            }
+            parsedData = candidate as Record<string, unknown>;
+        } catch {
+            setFormError('Revisa el JSON de datos antes de guardar.');
+            return;
+        }
+
+        const certaintyValue = Number(draftCertainty);
+        const nextInterpretation: ParsedMessage = {
+            ...interpretation,
+            type: draftType,
+            explanation: trimmedExplanation,
+            certainty: Number.isFinite(certaintyValue) ? clampCertainty(certaintyValue) : interpretation.certainty,
+            data: parsedData,
+            originalMessage: interpretation.originalMessage || message.text,
+            sender: interpretation.sender || message.sender,
+        } as ParsedMessage;
+
+        onCorrect(message.id, nextInterpretation);
+        setFormError(null);
+        setIsEditing(false);
+    };
 
     return (
-        <div className={`mt-4 p-4 rounded-lg border-l-4 shadow-sm ${bg} ${border}`}>
-            <div className="flex justify-between items-start">
-                <div>
-                    <span className={`px-2 py-1 text-xs font-bold rounded-full ${bg} ${text}`}>
+        <div className={`mt-4 rounded-[1.4rem] border p-4 ${colorClass}`}>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] ${colorClass}`}>
                         {typeLabel}
                     </span>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 italic">"{interpretation.explanation}"</p>
+                    <p className="mt-3 text-sm italic text-slate-200">"{interpretation.explanation}"</p>
                 </div>
-                {!isUnknown && (
-                    <div className="text-right">
-                         <div className="flex items-center space-x-2">
-                             <button onClick={onApprove} className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors">Aprobar</button>
-                             <button className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 transition-colors">Corregir</button>
-                         </div>
+
+                <div className="flex flex-wrap gap-2">
+                    {!isUnknown && !isEditing && (
+                        <button
+                            onClick={onApprove}
+                            className="rounded-full bg-brand-400 px-4 py-2 text-sm font-black text-slate-950 transition hover:bg-brand-300"
+                        >
+                            Aprobar
+                        </button>
+                    )}
+                    {hasCorrectionUndo && !isEditing && (
+                        <button
+                            onClick={() => onRevert(message.id)}
+                            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+                        >
+                            Revertir
+                        </button>
+                    )}
+                    <button
+                        onClick={isEditing ? () => setIsEditing(false) : handleOpenEditor}
+                        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                    >
+                        {isEditing ? 'Cerrar' : 'Corregir'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {!isUnknown ? renderData() : <p className="text-sm text-slate-300">La IA no pudo determinar una accion clara a partir de este mensaje.</p>}
+            </div>
+
+            {hasCorrectionUndo && !isEditing && (
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-300">
+                    Esta interpretacion fue corregida. Puedes revertirla para volver al estado anterior y seguir editando.
+                </div>
+            )}
+
+            {isEditing && (
+                <div className="mt-5 rounded-[1.2rem] border border-white/10 bg-slate-950/40 p-4">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,260px)]">
+                        <div className="space-y-4">
+                            <div>
+                                <p className={labelClass}>Mensaje original</p>
+                                <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-200">
+                                    {message.text}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className={labelClass} htmlFor={`interpretation-explanation-${message.id}`}>
+                                    Explicacion
+                                </label>
+                                <textarea
+                                    id={`interpretation-explanation-${message.id}`}
+                                    value={draftExplanation}
+                                    onChange={(event) => setDraftExplanation(event.target.value)}
+                                    rows={3}
+                                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-brand-300/40 focus:bg-white/[0.06]"
+                                />
+                            </div>
+
+                            <div>
+                                <label className={labelClass} htmlFor={`interpretation-data-${message.id}`}>
+                                    Datos JSON
+                                </label>
+                                <textarea
+                                    id={`interpretation-data-${message.id}`}
+                                    value={draftData}
+                                    onChange={(event) => setDraftData(event.target.value)}
+                                    rows={12}
+                                    spellCheck={false}
+                                    className="mt-2 min-h-[250px] w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-3 font-mono text-sm text-slate-100 outline-none transition focus:border-brand-300/40"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className={labelClass} htmlFor={`interpretation-type-${message.id}`}>
+                                    Tipo
+                                </label>
+                                <select
+                                    id={`interpretation-type-${message.id}`}
+                                    value={draftType}
+                                    onChange={(event) => setDraftType(event.target.value as InterpretationType)}
+                                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-brand-300/40 focus:bg-white/[0.06]"
+                                >
+                                    {editableInterpretationTypes.map((type) => (
+                                        <option key={type} value={type} className="bg-slate-950 text-slate-100">
+                                            {typeLabelMap[type] || type}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className={labelClass} htmlFor={`interpretation-certainty-${message.id}`}>
+                                    Certeza
+                                </label>
+                                <input
+                                    id={`interpretation-certainty-${message.id}`}
+                                    type="number"
+                                    min={0}
+                                    max={1}
+                                    step="0.01"
+                                    value={draftCertainty}
+                                    onChange={(event) => setDraftCertainty(event.target.value)}
+                                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-brand-300/40 focus:bg-white/[0.06]"
+                                />
+                            </div>
+
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-slate-300">
+                                {correctionHint}
+                            </div>
+
+                            {formError && (
+                                <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-3 text-sm text-rose-100">
+                                    {formError}
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={handleSaveCorrection}
+                                    className="rounded-full bg-brand-400 px-4 py-2 text-sm font-black text-slate-950 transition hover:bg-brand-300"
+                                >
+                                    Guardar correccion
+                                </button>
+                                <button
+                                    onClick={() => setIsEditing(false)}
+                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                )}
-            </div>
-             <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600 space-y-1">
-                {!isUnknown ? (
-                    renderData()
-                ) : (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">La IA no pudo determinar una acción a partir de este mensaje.</p>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 };
-
 
 const MessageCard: React.FC<{
     message: Message;
     onApprove: (messageId: string) => void;
-}> = ({ message, onApprove }) => {
-    
+    onCorrect: (messageId: string, interpretation: ParsedMessage) => void;
+    onRevert: (messageId: string) => void;
+    remoteEnabled: boolean;
+}> = ({ message, onApprove, onCorrect, onRevert, remoteEnabled }) => {
     const renderInterpretation = () => {
-        switch(message.status) {
+        switch (message.status) {
             case 'pending':
             case 'interpreting':
-                 return (
-                    <div className="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
-                        <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                return (
+                    <div className="flex items-center gap-3 text-sm text-slate-400">
+                        <div className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
                         <span>Interpretando...</span>
                     </div>
                 );
             case 'interpreted':
-                if (message.interpretation) {
-                    return <InterpretationCard interpretation={message.interpretation} onApprove={() => onApprove(message.id)} />;
-                }
-                return null;
-            case 'approved':
-                return null; // Handled by ApprovedMessageCard
+                return message.interpretation ? (
+                    <InterpretationCard
+                        message={message}
+                        interpretation={message.interpretation}
+                        onApprove={() => onApprove(message.id)}
+                        onCorrect={onCorrect}
+                        onRevert={onRevert}
+                        remoteEnabled={remoteEnabled}
+                    />
+                ) : null;
             default:
                 return null;
         }
     };
-    
-    if (message.isSystemNotification) {
-        return <SystemNotificationCard message={message} />;
-    }
-    
-    if (message.status === 'approved') {
-        return <ApprovedMessageCard message={message} />;
-    }
+
+    if (message.isSystemNotification) return <SystemNotificationCard message={message} />;
+    if (message.status === 'approved') return <ApprovedMessageCard message={message} onRevert={() => onRevert(message.id)} remoteEnabled={remoteEnabled} />;
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-md">
-            <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                    <UserIcon/>
-                </div>
+        <div className={`${surfaceClass} p-5`}>
+            <div className="flex items-start gap-4">
+                <UserIcon />
                 <div className="flex-1">
-                    <p className="font-bold text-gray-800 dark:text-gray-100">{message.sender}</p>
-                    <p className="text-gray-700 dark:text-gray-300">{message.text}</p>
+                    <p className="font-semibold text-white">{message.sender}</p>
+                    <p className="mt-1 text-sm text-slate-300">{message.text}</p>
                 </div>
             </div>
+
             {(message.status === 'interpreting' || message.status === 'interpreted') && (
-                 <div className="mt-4 pl-12 flex items-start space-x-4">
-                      <div className="flex-shrink-0">
-                         <BotIcon />
-                     </div>
-                     <div className="flex-1">
-                        {renderInterpretation()}
-                     </div>
-                 </div>
+                <div className="mt-4 flex items-start gap-4 pl-12">
+                    <BotIcon />
+                    <div className="flex-1">{renderInterpretation()}</div>
+                </div>
             )}
         </div>
     );
 };
 
 const MessageFeed: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { messages, approveInterpretation, setInterpretationForMessage, markMessageAsInterpreting, systemPrompt } = data;
+    const { approveInterpretation, authEnabled, correctInterpretation, interpretPendingMessage, messages, revertInterpretation } = data;
 
     useEffect(() => {
         const processNextMessage = async () => {
-            const messageToProcess = messages.find(msg => msg.status === 'pending');
-            if (!messageToProcess) {
-                return;
-            }
+            const messageToProcess = messages.find((message) => message.status === 'pending');
+            if (!messageToProcess) return;
 
-            markMessageAsInterpreting(messageToProcess.id);
-            const result = await interpretMessage(messageToProcess.text, messageToProcess.sender, systemPrompt);
-            setInterpretationForMessage(messageToProcess.id, result);
+            await interpretPendingMessage(messageToProcess.id);
         };
 
-        processNextMessage();
-    }, [messages, systemPrompt, setInterpretationForMessage, markMessageAsInterpreting]);
+        void processNextMessage();
+    }, [interpretPendingMessage, messages]);
+
+    const pendingCount = messages.filter((message) => message.status === 'pending' || message.status === 'interpreting').length;
+    const approvedCount = messages.filter((message) => message.status === 'approved').length;
 
     return (
-        <div>
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-6">Bandeja de Entrada de Mensajes</h1>
-            <div className="space-y-6">
-                {messages.map((msg) => (
-                    <MessageCard 
-                        key={msg.id}
-                        message={msg}
+        <div className="space-y-6">
+            <section className="rounded-[2.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.14),transparent_34%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8">
+                <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                    <div className="max-w-3xl">
+                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-300">Conversaciones</p>
+                        <h1 className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">
+                            Bandeja comercial con lectura y aprobacion en tiempo real.
+                        </h1>
+                        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+                            Supervisa mensajes entrantes, valida la interpretacion de IA y transforma texto en acciones operativas.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:min-w-[560px]">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Mensajes</p>
+                            <p className="mt-2 text-3xl font-black text-white">{messages.length}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Pendientes</p>
+                            <p className="mt-2 text-3xl font-black text-white">{pendingCount}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className={labelClass}>Aprobados</p>
+                            <p className="mt-2 text-3xl font-black text-white">{approvedCount}</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className="space-y-4">
+                {messages.map((message) => (
+                    <MessageCard
+                        key={message.id}
+                        message={message}
                         onApprove={approveInterpretation}
+                        onCorrect={correctInterpretation}
+                        onRevert={revertInterpretation}
+                        remoteEnabled={authEnabled}
                     />
                 ))}
-            </div>
+            </section>
         </div>
     );
 };

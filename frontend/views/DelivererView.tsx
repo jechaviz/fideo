@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { Sale, Customer, CrateLoan, PaymentStatus, PaymentMethod } from '../types';
+import { findCustomerForSale, loanBelongsToCustomer } from '../utils/customerIdentity';
 
 const CompleteDeliveryModal: React.FC<{
     sale: Sale;
@@ -64,8 +65,8 @@ const DelivererCard: React.FC<{
     const mapUrl = location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : null;
 
     const pendingCrates = useMemo(() => {
-        return crateLoans.filter(l => l.customer === sale.customer && l.status === 'Prestado');
-    }, [crateLoans, sale.customer]);
+        return customerDetails ? crateLoans.filter((loan) => loanBelongsToCustomer(loan, customerDetails) && loan.status === 'Prestado') : [];
+    }, [crateLoans, customerDetails]);
 
     return (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-blue-500 flex flex-col justify-between h-full">
@@ -116,7 +117,7 @@ const DelivererView: React.FC<{ data: BusinessData }> = ({ data }) => {
             {inRouteDeliveries.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {inRouteDeliveries.map(sale => {
-                        const customerDetails = customers.find(c => c.name === sale.customer);
+                        const customerDetails = findCustomerForSale(customers, sale);
                         return (
                             <DelivererCard
                                 key={sale.id}

@@ -1,223 +1,903 @@
-import { useState, useCallback, useEffect } from 'react';
-import { 
-    ParsedMessage, InterpretationType, Message, View, InventoryRecommendation,
-    PurchaseOrderInterpretation, ActionItem, UserRole, BusinessState, ActionResult, SaleInterpretation,
-    FixedAssetSaleInterpretation, PriceUpdateInterpretation, StateChangeInterpretation, 
-    WarehouseTransferInterpretation, AssignmentInterpretation, CrateLoanInterpretation, 
-    EmployeeCheckInInterpretation, ViewChangeInterpretation, FilterInterpretation, 
-    OfferInterpretation
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    ActionItem,
+    ActionResult,
+    BusinessState,
+    FixedAssetSaleInterpretation,
+    FilterInterpretation,
+    InventoryRecommendation,
+    InterpretationType,
+    Message,
+    OfferInterpretation,
+    ParsedMessage,
+    PurchaseOrderInterpretation,
+    SaleInterpretation,
+    StateChangeInterpretation,
+    UserRole,
+    View,
+    WarehouseTransferInterpretation,
+    AssignmentInterpretation,
+    CrateLoanInterpretation,
+    EmployeeCheckInInterpretation,
+    ViewChangeInterpretation,
+    PriceUpdateInterpretation,
 } from '../types';
-import { generateCustomerInsights } from '../services/geminiService';
-import * as InitialData from '../data/initialData';
+import {
+    AuthSessionProfile,
+} from '../services/pocketbase/auth';
+import {
+    ApproveInterpretationResult,
+    buildPersistableSnapshot,
+    CorrectInterpretationResult,
+    createDefaultBusinessState,
+    getBusinessDataStorageKey,
+    hydrateBusinessState,
+    InterpretMessageResult,
+    PersistResult,
+    PocketBaseSyncError,
+    readLocalBusinessState,
+    RevertInterpretationResult,
+    writeLocalBusinessState,
+} from '../services/pocketbase/state';
+import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
 import * as Logic from '../utils/businessLogic';
+import { useCatalogActions } from './useCatalogActions';
 import { useInventoryActions } from './useInventoryActions';
 import { useSalesActions } from './useSalesActions';
-import { useCatalogActions } from './useCatalogActions';
 import { useSystemActions } from './useSystemActions';
 
-const BUSINESS_DATA_STORAGE_KEY = 'miApp/businessData';
+interface UseBusinessDataOptions {
+    storageKey?: string;
+    hydratedSnapshot?: Record<string, unknown> | null;
+    hydrationKey?: string | null;
+    authProfile?: AuthSessionProfile | null;
+    authEnabled?: boolean;
+    authError?: string | null;
+    workspaceLabel?: string | null;
+    remoteVersion?: number;
+    onPersistRemoteState?: (snapshot: ReturnType<typeof buildPersistableSnapshot>, expectedVersion: number) => Promise<PersistResult>;
+    onApproveRemoteInterpretation?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        messageId: string,
+        message: Message,
+        expectedVersion: number,
+    ) => Promise<ApproveInterpretationResult>;
+    onInterpretRemoteMessage?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        messageId: string,
+        message: Message,
+        expectedVersion: number,
+    ) => Promise<InterpretMessageResult | null>;
+    onCorrectRemoteInterpretation?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        messageId: string,
+        message: Message,
+        interpretation: ParsedMessage,
+        expectedVersion: number,
+    ) => Promise<CorrectInterpretationResult | null>;
+    onRevertRemoteInterpretation?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        messageId: string,
+        message: Message,
+        expectedVersion: number,
+        actionId?: string,
+    ) => Promise<RevertInterpretationResult | null>;
+    onSignOut?: () => void;
+}
 
-const reviveDates = (key: string, value: unknown) => {
-    const isISO8601 = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value);
-    if (isISO8601) { return new Date(value); }
-    return value;
+const applyUiInterpretationState = (currentState: BusinessState, interpretation: ParsedMessage): BusinessState => {
+    switch (interpretation.type) {
+        case InterpretationType.CAMBIO_VISTA:
+            return {
+                ...currentState,
+                currentView: interpretation.data.view,
+                aiCustomerSummary: interpretation.data.view !== 'customers' ? null : currentState.aiCustomerSummary,
+            };
+        case InterpretationType.APLICAR_FILTRO: {
+            const nextState = { ...currentState };
+            const { filterType, filterValue, targetView } = interpretation.data;
+
+            if (targetView === 'inventory') {
+                if (filterType === 'product') {
+                    const productGroup = currentState.productGroups.find((item) => item.name.toLowerCase() === filterValue.toLowerCase());
+                    nextState.productFilter = productGroup ? productGroup.id : 'all';
+                } else if (filterType === 'warehouse') {
+                    const warehouse = currentState.warehouses.find((item) => item.name.toLowerCase() === filterValue.toLowerCase());
+                    nextState.warehouseFilter = warehouse ? warehouse.id : 'all';
+                }
+            } else if (targetView === 'salesLog') {
+                if (filterType === 'saleStatus') {
+                    nextState.saleStatusFilter = filterValue as BusinessState['saleStatusFilter'];
+                } else if (filterType === 'paymentStatus') {
+                    nextState.paymentStatusFilter = filterValue as BusinessState['paymentStatusFilter'];
+                }
+            }
+
+            return nextState;
+        }
+        default:
+            return currentState;
+    }
 };
 
-const getInitialState = (): BusinessState => {
-    try {
-        const savedData = window.localStorage.getItem(BUSINESS_DATA_STORAGE_KEY);
-        if (savedData) {
-            const parsed = JSON.parse(savedData, reviveDates);
-            if (!parsed.suppliers) parsed.suppliers = InitialData.INITIAL_SUPPLIERS;
-            if (!parsed.purchaseOrders) parsed.purchaseOrders = InitialData.INITIAL_PURCHASE_ORDERS;
-            if (!parsed.payments) parsed.payments = [];
-            if (!parsed.crateTypes) parsed.crateTypes = InitialData.INITIAL_CRATE_TYPES;
-            if (!parsed.crateInventory) parsed.crateInventory = InitialData.INITIAL_CRATE_INVENTORY;
-            if (!parsed.aiCustomerSummary) parsed.aiCustomerSummary = null;
-            if (parsed.isGeneratingSummary === undefined) parsed.isGeneratingSummary = false;
-            if (!parsed.currentRole) parsed.currentRole = 'Admin';
-            if (!parsed.cashDrawers) parsed.cashDrawers = [{ id: 'cd1', name: 'Caja Principal', balance: 5000, status: 'Cerrada' }];
-            if (!parsed.cashDrawerActivities) parsed.cashDrawerActivities = [];
-            if (!parsed.messageTemplates) parsed.messageTemplates = InitialData.INITIAL_MESSAGE_TEMPLATES;
-            return parsed;
-        }
-    } catch (e) {
-        console.error("Failed to load state from localStorage", e);
+const applyInterpretationLocally = (
+    currentState: BusinessState,
+    messageId: string,
+): { nextState: BusinessState; interpretation: ParsedMessage | null } => {
+    const message = currentState.messages.find((item) => item.id === messageId);
+    if (!message?.interpretation) {
+        return { nextState: currentState, interpretation: null as ParsedMessage | null };
     }
+
+    const interpretation = message.interpretation;
+    let result: ActionResult = { nextState: currentState };
+
+    switch (interpretation.type) {
+        case InterpretationType.VENTA:
+            result = Logic.addSaleAction(currentState, interpretation as SaleInterpretation);
+            break;
+        case InterpretationType.ORDEN_COMPRA:
+            result = Logic.addPurchaseOrderAction(currentState, interpretation as PurchaseOrderInterpretation);
+            break;
+        case InterpretationType.VENTA_ACTIVO_FIJO:
+            result = Logic.addFixedAssetSaleAction(currentState, interpretation as FixedAssetSaleInterpretation);
+            break;
+        case InterpretationType.ACTUALIZACION_PRECIO:
+            result = Logic.updatePriceAction(currentState, interpretation as PriceUpdateInterpretation);
+            break;
+        case InterpretationType.MOVIMIENTO_ESTADO:
+            result.nextState = Logic.changeProductStateAction(currentState, interpretation as StateChangeInterpretation);
+            break;
+        case InterpretationType.TRANSFERENCIA_BODEGA:
+            result.nextState = Logic.transferWarehouseAction(currentState, interpretation as WarehouseTransferInterpretation);
+            break;
+        case InterpretationType.ASIGNACION_ENTREGA:
+            result.nextState = Logic.assignDeliveryAction(currentState, interpretation as AssignmentInterpretation);
+            break;
+        case InterpretationType.PRESTAMO_CAJA:
+            result = Logic.addCrateLoanAction(currentState, interpretation as CrateLoanInterpretation);
+            break;
+        case InterpretationType.LLEGADA_EMPLEADO:
+            result.nextState = Logic.addActivityAction(currentState, interpretation as EmployeeCheckInInterpretation);
+            break;
+        case InterpretationType.CAMBIO_VISTA:
+            result.nextState = Logic.changeViewAction(currentState, interpretation as ViewChangeInterpretation);
+            break;
+        case InterpretationType.APLICAR_FILTRO:
+            result.nextState = Logic.applyFilterAction(currentState, interpretation as FilterInterpretation);
+            break;
+        case InterpretationType.CREAR_OFERTA:
+            result.nextState = Logic.createOfferAction(currentState, interpretation as OfferInterpretation);
+            break;
+    }
+
+    const finalMessages: Message[] = result.nextState.messages.map((item) =>
+        item.id === messageId ? { ...item, status: 'approved' as const } : item,
+    );
+    if (result.notification) {
+        finalMessages.push({
+            id: `msg_sys_${Date.now()}`,
+            sender: 'Sistema',
+            text: result.notification.text,
+            timestamp: new Date(),
+            status: 'approved' as const,
+            isSystemNotification: true,
+        });
+    }
+
     return {
-        productGroups: InitialData.INITIAL_PRODUCT_GROUPS,
-        warehouses: InitialData.INITIAL_WAREHOUSES,
-        employees: InitialData.INITIAL_EMPLOYEES,
-        prices: InitialData.INITIAL_PRICES,
-        inventory: InitialData.INITIAL_INVENTORY,
-        customers: InitialData.INITIAL_CUSTOMERS,
-        suppliers: InitialData.INITIAL_SUPPLIERS,
-        sales: [],
-        payments: [],
-        purchaseOrders: InitialData.INITIAL_PURCHASE_ORDERS,
-        crateLoans: [],
-        crateTypes: InitialData.INITIAL_CRATE_TYPES,
-        crateInventory: InitialData.INITIAL_CRATE_INVENTORY,
-        activities: [],
-        activityLog: [],
-        messages: InitialData.INITIAL_INTERPRETED_MESSAGES,
-        systemPrompt: InitialData.INITIAL_SYSTEM_PROMPT,
-        fixedAssets: InitialData.INITIAL_FIXED_ASSETS,
-        expenses: InitialData.INITIAL_EXPENSES,
-        categoryIcons: InitialData.INITIAL_CATEGORY_ICONS,
-        sizes: InitialData.INITIAL_SIZES,
-        qualities: InitialData.INITIAL_QUALITIES,
-        stateIcons: InitialData.INITIAL_STATE_ICONS,
-        ripeningRules: InitialData.INITIAL_RIPENING_RULES,
-        inventoryRecommendations: [],
-        actionItems: [],
-        cashDrawers: [{ id: 'cd1', name: 'Caja Principal', balance: 5000, status: 'Cerrada' }],
-        cashDrawerActivities: [],
-        messageTemplates: InitialData.INITIAL_MESSAGE_TEMPLATES,
-        aiCustomerSummary: null,
-        isGeneratingSummary: false,
-        theme: 'dark',
-        currentView: 'dashboard',
-        currentRole: 'Admin',
-        currentCustomerId: null,
-        currentSupplierId: null,
-        productFilter: 'all',
-        warehouseFilter: 'all',
-        saleStatusFilter: 'all',
-        paymentStatusFilter: 'all',
+        nextState: {
+            ...result.nextState,
+            messages: finalMessages,
+        },
+        interpretation,
     };
 };
 
-export const useBusinessData = () => {
-  const [state, setState] = useState<BusinessState>(getInitialState);
+const canUserSwitchRoles = (profile: AuthSessionProfile | null | undefined) =>
+    !profile || profile.role === 'Admin' || profile.canSwitchRoles;
 
-  const inventoryActions = useInventoryActions(setState);
-  const salesActions = useSalesActions(setState);
-  const catalogActions = useCatalogActions(setState);
-  const systemActions = useSystemActions(setState);
+const buildHydratedState = (
+    storageKey: string,
+    snapshot: Record<string, unknown> | null | undefined,
+    profile: AuthSessionProfile | null | undefined,
+) => {
+    const localFallbackState = readLocalBusinessState(storageKey) || createDefaultBusinessState();
+    return snapshot ? hydrateBusinessState(snapshot, localFallbackState, profile || null) : localFallbackState;
+};
 
-  useEffect(() => {
-    try { window.localStorage.setItem(BUSINESS_DATA_STORAGE_KEY, JSON.stringify(state)); } 
-    catch (e) { console.error("Failed to save state to localStorage", e); }
-  }, [state]);
+const normalizeCorrectedInterpretation = (message: Message, interpretation: ParsedMessage): ParsedMessage => ({
+    ...interpretation,
+    originalMessage: interpretation.originalMessage || message.text,
+    sender: interpretation.sender || message.sender,
+});
 
-  const addInterpretedMessage = useCallback((interpretation: ParsedMessage) => {
-    const newMessage: Message = { id: `msg_reco_${Date.now()}`, sender: 'Sistema (Recomendación)', text: interpretation.originalMessage, timestamp: new Date(), status: 'interpreted', interpretation: interpretation };
-    setState(s => ({ ...s, messages: [...s.messages, newMessage], currentView: 'messages' }));
-  }, []);
-  
-  const generateActionItems = useCallback(() => {
-    const items: ActionItem[] = [];
-    const now = new Date();
-    state.sales.filter(s => s.status === 'Pendiente de Empaque').forEach(sale => { items.push({ id: `action_pack_${sale.id}`, type: 'PACK_ORDER', title: `Empacar pedido para ${sale.customer}`, description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`, relatedId: sale.id, cta: { text: 'Ver Entregas', targetView: 'deliveries' } }); });
-    state.sales.filter(s => s.status === 'Listo para Entrega').forEach(sale => { items.push({ id: `action_assign_${sale.id}`, type: 'ASSIGN_DELIVERY', title: `Asignar repartidor para ${sale.customer}`, description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`, relatedId: sale.id, cta: { text: 'Asignar', targetView: 'deliveries' } }); });
-    state.crateLoans.filter(l => l.status === 'Prestado' && new Date(l.dueDate) < now).forEach(loan => { const crateType = state.crateTypes.find(ct => ct.id === loan.crateTypeId); items.push({ id: `action_crate_${loan.id}`, type: 'FOLLOW_UP_CRATE', title: `Seguimiento de caja vencida`, description: `${loan.quantity} x ${crateType?.name || 'Caja'} para ${loan.customer}`, relatedId: loan.id, cta: { text: 'Ver Cliente', targetView: 'customers' } }); });
-    state.purchaseOrders.filter(po => po.status === 'Ordenado').forEach(po => { items.push({ id: `action_po_${po.id}`, type: 'CONFIRM_PURCHASE_ORDER', title: 'Confirmar recepción de mercancía', description: `De ${state.suppliers.find(s=>s.id === po.supplierId)?.name || 'N/A'}`, relatedId: po.id, cta: { text: 'Ver Orden', targetView: 'suppliers' } }); });
-    state.inventory.forEach(batch => { if ((batch.state === 'Maduro' || batch.state === 'Suave') && batch.location === 'Cámara Fría') { const productInfo = state.productGroups.flatMap(pg => pg.varieties.map(v => ({...v, groupName: pg.name}))).find(v => v.id === batch.varietyId); items.push({ id: `action_move_out_${batch.id}`, type: 'SMART_MOVE', title: 'Sacar a Piso (Afuera)', description: `${batch.quantity} ${productInfo?.name} ${batch.size} (${batch.state}) en Cámara.`, relatedId: batch.id, cta: { text: 'Ir a Inventario', targetView: 'inventory' } }); } });
-    setState(s => ({ ...s, actionItems: items }));
-  }, [state.sales, state.crateLoans, state.purchaseOrders, state.suppliers, state.crateTypes, state.inventory, state.productGroups]);
+const buildUnknownInterpretation = (message: Message, explanation: string): ParsedMessage => ({
+    type: InterpretationType.DESCONOCIDO,
+    originalMessage: message.text,
+    certainty: 0.1,
+    explanation,
+    data: {},
+    sender: message.sender,
+});
 
-  const generateProactiveRecommendations = useCallback(() => {
-    let recommendations: InventoryRecommendation[] = [];
-    const weekday = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-    const today = new Date();
-    const todayDay = weekday[today.getDay()];
-    state.customers.forEach(customer => {
-        if (customer.schedule?.days.includes(todayDay)) {
-            const customerDebt = state.sales.filter(s => s.customer === customer.name && s.paymentStatus === 'En Deuda' && s.status === 'Completado').reduce((sum, s) => sum + s.price, 0);
-            const pendingCrates = state.crateLoans.filter(l => l.customer === customer.name && l.status === 'Prestado' && new Date(l.dueDate) < today);
-            if (customerDebt > 1000 || pendingCrates.length > 0) {
-                let message = `¡Hola ${customer.name}! ¿Te preparamos tu pedido de hoy?`;
-                if (customerDebt > 1000) { const suggestedPayment = Math.round(customerDebt * 0.15 / 100) * 100; message += ` Para ayudarte a ponerte al día, ¿te gustaría abonar ${suggestedPayment.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })} a tu cuenta?`; }
-                if (pendingCrates.length > 0) { const crateCount = pendingCrates.reduce((sum, l) => sum + l.quantity, 0); message += ` Adicionalmente, te recordamos devolver ${crateCount} caja(s) pendiente(s).`; }
-                recommendations.push({ id: `reco_msg_${customer.id}`, type: 'PROACTIVE_MESSAGE', reason: `${customer.name} tiene una deuda o cajas pendientes y compra los ${todayDay}.`, data: { customerName: customer.name, suggestedMessage: message } });
-            }
-        }
-    });
-    setState(s => ({ ...s, inventoryRecommendations: recommendations }));
-  }, [state.customers, state.sales, state.crateLoans]);
+const updateMessageCollection = (
+    messages: Message[],
+    messageId: string,
+    updater: (message: Message) => Message,
+) => messages.map((message) => (message.id === messageId ? updater(message) : message));
 
-  useEffect(() => {
-    const recoTimer = setTimeout(generateProactiveRecommendations, 2000);
-    const actionTimer = setTimeout(generateActionItems, 1000);
-    return () => { clearTimeout(recoTimer); clearTimeout(actionTimer); };
-  }, [generateProactiveRecommendations, generateActionItems]);
+const buildCorrectionUndoState = (message: Message, actionId?: string) => ({
+    actionId,
+    previousInterpretation: message.interpretation,
+    previousStatus: message.status,
+});
 
-  const addMessage = useCallback((text: string, sender: string) => { setState(s => ({...s, messages: [...s.messages, { id: `msg_${Date.now()}`, sender, text, timestamp: new Date(), status: 'pending' }]})); }, []);
-  const markMessageAsInterpreting = useCallback((messageId: string) => { setState(s => ({...s, messages: s.messages.map(msg => msg.id === messageId ? {...msg, status: 'interpreting'} : msg)})); }, []);
-  const setInterpretationForMessage = useCallback((messageId: string, interpretation: ParsedMessage) => { setState(s => ({...s, messages: s.messages.map(msg => msg.id === messageId ? {...msg, interpretation, status: 'interpreted'} : msg)})); }, []);
-  
-  const approveInterpretation = useCallback((messageId: string) => {
-    setState(s => {
-        const message = s.messages.find(m => m.id === messageId);
-        if (!message || !message.interpretation) return s;
-        const { interpretation } = message;
-        let result: ActionResult = { nextState: s };
-        switch (interpretation.type) {
-            case InterpretationType.VENTA: result = Logic.addSaleAction(s, interpretation as SaleInterpretation); break;
-            case InterpretationType.ORDEN_COMPRA: result = Logic.addPurchaseOrderAction(s, interpretation as PurchaseOrderInterpretation); break;
-            case InterpretationType.VENTA_ACTIVO_FIJO: result = Logic.addFixedAssetSaleAction(s, interpretation as FixedAssetSaleInterpretation); break;
-            case InterpretationType.ACTUALIZACION_PRECIO: result = Logic.updatePriceAction(s, interpretation as PriceUpdateInterpretation); break;
-            case InterpretationType.MOVIMIENTO_ESTADO: result.nextState = Logic.changeProductStateAction(s, interpretation as StateChangeInterpretation); break;
-            case InterpretationType.TRANSFERENCIA_BODEGA: result.nextState = Logic.transferWarehouseAction(s, interpretation as WarehouseTransferInterpretation); break;
-            case InterpretationType.ASIGNACION_ENTREGA: result.nextState = Logic.assignDeliveryAction(s, interpretation as AssignmentInterpretation); break;
-            case InterpretationType.PRESTAMO_CAJA: result = Logic.addCrateLoanAction(s, interpretation as CrateLoanInterpretation); break;
-            case InterpretationType.LLEGADA_EMPLEADO: result.nextState = Logic.addActivityAction(s, interpretation as EmployeeCheckInInterpretation); break;
-            case InterpretationType.CAMBIO_VISTA: result.nextState = Logic.changeViewAction(s, interpretation as ViewChangeInterpretation); break;
-            case InterpretationType.APLICAR_FILTRO: result.nextState = Logic.applyFilterAction(s, interpretation as FilterInterpretation); break;
-            case InterpretationType.CREAR_OFERTA: result.nextState = Logic.createOfferAction(s, interpretation as OfferInterpretation); break;
-        }
-        const finalMessages: Message[] = result.nextState.messages.map(msg => { if (msg.id === messageId) return { ...msg, status: 'approved' }; return msg; });
-        if(result.notification) { finalMessages.push({ id: `msg_sys_${Date.now()}`, sender: 'Sistema', text: result.notification.text, timestamp: new Date(), status: 'approved', isSystemNotification: true }); }
-        return {...result.nextState, messages: finalMessages};
-    });
-  }, []);
+const applyCorrectionToMessage = (
+    message: Message,
+    interpretation: ParsedMessage,
+    correctionSource: Message,
+    actionId?: string,
+): Message => ({
+    ...message,
+    interpretation,
+    status: 'interpreted',
+    undoState: {
+        ...message.undoState,
+        correction: buildCorrectionUndoState(correctionSource, actionId),
+    },
+});
 
-  const generateCustomerSummary = useCallback(async (customerId: string) => {
-    setState(s => ({ ...s, isGeneratingSummary: true, aiCustomerSummary: null }));
-    const customer = state.customers.find(c => c.id === customerId);
-    if (!customer) { setState(s => ({...s, isGeneratingSummary: false, aiCustomerSummary: { content: '', error: 'Cliente no encontrado' }})); return; }
-    const customerSales = state.sales.filter(sale => sale.customer === customer.name);
-    const customerPayments = state.payments.filter(p => p.customerId === customerId);
-    const customerCrateLoans = state.crateLoans.filter(l => l.customer === customer.name);
-    try {
-        const summary = await generateCustomerInsights(customer, customerSales, customerPayments, customerCrateLoans, state.crateTypes);
-        setState(s => ({ ...s, isGeneratingSummary: false, aiCustomerSummary: { content: summary, error: null } }));
-    } catch (e: unknown) {
-        setState(s => ({ ...s, isGeneratingSummary: false, aiCustomerSummary: { content: '', error: e instanceof Error ? e.message : 'Error al generar resumen.' } }));
-    }
-  }, [state]);
+const clearCorrectionUndoState = (message: Message): Message => {
+    if (!message.undoState?.correction) return message;
 
-  // Adjust implementations that need state/logic not in SystemActions but conceptually there
-  const setCurrentRole = useCallback((role: UserRole, entityId?: string) => {
-    setState(s => {
-        let customerId: string | null = null;
-        let supplierId: string | null = null;
-        if (role === 'Cliente') customerId = entityId || s.customers[0]?.id || null;
-        if (role === 'Proveedor') supplierId = entityId || s.suppliers[0]?.id || null;
-        return { ...s, currentRole: role, currentCustomerId: customerId, currentSupplierId: supplierId };
-    });
-  }, []);
+    const nextUndoState = { ...message.undoState };
+    delete nextUndoState.correction;
 
-  const toggleTheme = useCallback(() => setState(s => ({ ...s, theme: s.theme === 'light' ? 'dark' : 'light' })), []);
-  const setCurrentView = useCallback((view: View) => { setState(s => ({ ...s, currentView: view, aiCustomerSummary: view !== 'customers' ? null : s.aiCustomerSummary })); }, []);
+    return {
+        ...message,
+        undoState: Object.keys(nextUndoState).length ? nextUndoState : undefined,
+    };
+};
 
-  return {
+const applyApprovalUndoState = (
+    state: BusinessState,
+    messageId: string,
+    approvalSnapshot: ReturnType<typeof buildPersistableSnapshot>,
+    actionId?: string,
+): BusinessState => ({
     ...state,
-    ...inventoryActions,
-    ...salesActions,
-    ...catalogActions,
-    ...systemActions,
-    setCurrentRole, // Override systemActions.setCurrentRole since we have a smarter one
-    toggleTheme, // Override since systemActions expects a ThemeInfo string but we toggle it
-    setCurrentView, // Override to clear aiCustomerSummary
-    addMessage,
-    markMessageAsInterpreting,
-    setInterpretationForMessage,
-    approveInterpretation,
-    addInterpretedMessage,
-    generateCustomerSummary,
-  };
+    messages: updateMessageCollection(state.messages, messageId, (message) => ({
+        ...message,
+        status: 'approved',
+        undoState: {
+            ...message.undoState,
+            approval: {
+                actionId,
+                snapshot: approvalSnapshot,
+                previousStatus: message.status,
+            },
+        },
+    })),
+});
+
+export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
+    const storageKey = options.storageKey || getBusinessDataStorageKey(options.authProfile?.id || 'local');
+
+    const [state, setState] = useState<BusinessState>(() => buildHydratedState(storageKey, options.hydratedSnapshot, options.authProfile));
+    const stateRef = useRef(state);
+
+    const lastStorageKeyRef = useRef(storageKey);
+    const lastHydrationKeyRef = useRef<string | null>(options.hydrationKey || null);
+    const remoteVersionRef = useRef<number>(options.remoteVersion || 0);
+
+    const inventoryActions = useInventoryActions(setState);
+    const salesActions = useSalesActions(setState);
+    const catalogActions = useCatalogActions(setState);
+    const systemActions = useSystemActions(setState);
+
+    stateRef.current = state;
+
+    useEffect(() => {
+        if (storageKey === lastStorageKeyRef.current) return;
+        setState(buildHydratedState(storageKey, options.hydratedSnapshot, options.authProfile));
+        lastStorageKeyRef.current = storageKey;
+    }, [options.authProfile, options.hydratedSnapshot, storageKey]);
+
+    useEffect(() => {
+        if (!options.hydrationKey || options.hydrationKey === lastHydrationKeyRef.current) return;
+        setState((currentState) => hydrateBusinessState(options.hydratedSnapshot, currentState, options.authProfile || null));
+        lastHydrationKeyRef.current = options.hydrationKey;
+    }, [options.authProfile, options.hydratedSnapshot, options.hydrationKey]);
+
+    useEffect(() => {
+        if (typeof options.remoteVersion === 'number') {
+            remoteVersionRef.current = options.remoteVersion;
+        }
+    }, [options.remoteVersion]);
+
+    useEffect(() => {
+        writeLocalBusinessState(storageKey, state);
+    }, [state, storageKey]);
+
+    useEffect(() => {
+        if (!options.onPersistRemoteState) return;
+
+        const persistHandle = window.setTimeout(() => {
+            const snapshot = buildPersistableSnapshot(state);
+            void options
+                .onPersistRemoteState?.(snapshot, remoteVersionRef.current)
+                .then((result) => {
+                    remoteVersionRef.current = result.version;
+                })
+                .catch((error) => {
+                    console.error('No se pudo persistir el snapshot en PocketBase.', error);
+                });
+        }, 650);
+
+        return () => window.clearTimeout(persistHandle);
+    }, [options.onPersistRemoteState, state]);
+
+    const addInterpretedMessage = useCallback((interpretation: ParsedMessage) => {
+        const messageId = `msg_reco_${Date.now()}`;
+        const newMessage: Message = {
+            id: messageId,
+            sender: interpretation.sender || 'Sistema (Recomendacion)',
+            text: interpretation.originalMessage,
+            timestamp: new Date(),
+            status: 'interpreted',
+            interpretation,
+        };
+        setState((currentState) => ({
+            ...currentState,
+            messages: [...currentState.messages, newMessage],
+            currentView: 'messages',
+        }));
+        return messageId;
+    }, []);
+
+    const generateActionItems = useCallback(() => {
+        const items: ActionItem[] = [];
+        const now = new Date();
+
+        state.sales
+            .filter((sale) => sale.status === 'Pendiente de Empaque')
+            .forEach((sale) => {
+                items.push({
+                    id: `action_pack_${sale.id}`,
+                    type: 'PACK_ORDER',
+                    title: `Empacar pedido para ${sale.customer}`,
+                    description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`,
+                    relatedId: sale.id,
+                    cta: { text: 'Ver Entregas', targetView: 'deliveries' },
+                });
+            });
+
+        state.sales
+            .filter((sale) => sale.status === 'Listo para Entrega')
+            .forEach((sale) => {
+                items.push({
+                    id: `action_assign_${sale.id}`,
+                    type: 'ASSIGN_DELIVERY',
+                    title: `Asignar repartidor para ${sale.customer}`,
+                    description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`,
+                    relatedId: sale.id,
+                    cta: { text: 'Asignar', targetView: 'deliveries' },
+                });
+            });
+
+        state.crateLoans
+            .filter((loan) => loan.status === 'Prestado' && new Date(loan.dueDate) < now)
+            .forEach((loan) => {
+                const crateType = state.crateTypes.find((item) => item.id === loan.crateTypeId);
+                items.push({
+                    id: `action_crate_${loan.id}`,
+                    type: 'FOLLOW_UP_CRATE',
+                    title: 'Seguimiento de caja vencida',
+                    description: `${loan.quantity} x ${crateType?.name || 'Caja'} para ${loan.customer}`,
+                    relatedId: loan.id,
+                    cta: { text: 'Ver Cliente', targetView: 'customers' },
+                });
+            });
+
+        state.purchaseOrders
+            .filter((purchaseOrder) => purchaseOrder.status === 'Ordenado')
+            .forEach((purchaseOrder) => {
+                items.push({
+                    id: `action_po_${purchaseOrder.id}`,
+                    type: 'CONFIRM_PURCHASE_ORDER',
+                    title: 'Confirmar recepcion de mercancia',
+                    description: `De ${state.suppliers.find((supplier) => supplier.id === purchaseOrder.supplierId)?.name || 'N/A'}`,
+                    relatedId: purchaseOrder.id,
+                    cta: { text: 'Ver Orden', targetView: 'suppliers' },
+                });
+            });
+
+        state.inventory.forEach((batch) => {
+            if ((batch.state === 'Maduro' || batch.state === 'Suave') && batch.location === 'Cámara Fría') {
+                const productInfo = state.productGroups
+                    .flatMap((productGroup) => productGroup.varieties.map((variety) => ({ ...variety, groupName: productGroup.name })))
+                    .find((variety) => variety.id === batch.varietyId);
+                items.push({
+                    id: `action_move_out_${batch.id}`,
+                    type: 'SMART_MOVE',
+                    title: 'Sacar a piso',
+                    description: `${batch.quantity} ${productInfo?.name} ${batch.size} (${batch.state}) en camara.`,
+                    relatedId: batch.id,
+                    cta: { text: 'Ir a Inventario', targetView: 'inventory' },
+                });
+            }
+        });
+
+        setState((currentState) => ({ ...currentState, actionItems: items }));
+    }, [state.crateLoans, state.crateTypes, state.inventory, state.productGroups, state.purchaseOrders, state.sales, state.suppliers]);
+
+    const generateProactiveRecommendations = useCallback(() => {
+        const recommendations: InventoryRecommendation[] = [];
+        const weekday = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const today = new Date();
+        const todayDay = weekday[today.getDay()];
+
+        state.customers.forEach((customer) => {
+            if (!customer.schedule?.days.includes(todayDay)) return;
+
+            const customerDebt = state.sales
+                .filter((sale) => saleBelongsToCustomer(sale, customer) && sale.paymentStatus === 'En Deuda' && sale.status === 'Completado')
+                .reduce((sum, sale) => sum + sale.price, 0);
+            const pendingCrates = state.crateLoans.filter((loan) => loanBelongsToCustomer(loan, customer) && loan.status === 'Prestado' && new Date(loan.dueDate) < today);
+
+            if (customerDebt > 1000 || pendingCrates.length > 0) {
+                let message = `Hola ${customer.name}. Te preparamos tu pedido de hoy?`;
+                if (customerDebt > 1000) {
+                    const suggestedPayment = Math.round((customerDebt * 0.15) / 100) * 100;
+                    message += ` Para ayudarte a ponerte al dia, puedes abonar ${suggestedPayment.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}.`;
+                }
+                if (pendingCrates.length > 0) {
+                    const crateCount = pendingCrates.reduce((sum, loan) => sum + loan.quantity, 0);
+                    message += ` Tambien te recordamos devolver ${crateCount} caja(s) pendientes.`;
+                }
+
+                recommendations.push({
+                    id: `reco_msg_${customer.id}`,
+                    type: 'PROACTIVE_MESSAGE',
+                    reason: `${customer.name} tiene deuda o cajas pendientes y compra los ${todayDay}.`,
+                    data: {
+                        customerName: customer.name,
+                        suggestedMessage: message,
+                    },
+                });
+            }
+        });
+
+        setState((currentState) => ({ ...currentState, inventoryRecommendations: recommendations }));
+    }, [state.crateLoans, state.customers, state.sales]);
+
+    useEffect(() => {
+        const recommendationTimer = window.setTimeout(generateProactiveRecommendations, 2000);
+        const actionTimer = window.setTimeout(generateActionItems, 1000);
+        return () => {
+            window.clearTimeout(recommendationTimer);
+            window.clearTimeout(actionTimer);
+        };
+    }, [generateActionItems, generateProactiveRecommendations]);
+
+    const addMessage = useCallback((text: string, sender: string) => {
+        setState((currentState) => ({
+            ...currentState,
+            messages: [...currentState.messages, { id: `msg_${Date.now()}`, sender, text, timestamp: new Date(), status: 'pending' }],
+        }));
+    }, []);
+
+    const markMessageAsInterpreting = useCallback((messageId: string) => {
+        setState((currentState) => ({
+            ...currentState,
+            messages: currentState.messages.map((message) => (message.id === messageId ? { ...message, status: 'interpreting' } : message)),
+        }));
+    }, []);
+
+    const setInterpretationForMessage = useCallback((messageId: string, interpretation: ParsedMessage) => {
+        setState((currentState) => ({
+            ...currentState,
+            messages: currentState.messages.map((message) =>
+                message.id === messageId ? { ...message, interpretation, status: 'interpreted' } : message,
+            ),
+        }));
+    }, []);
+
+    const correctInterpretation = useCallback(
+        async (messageId: string, interpretation: ParsedMessage) => {
+            const currentState = stateRef.current;
+            const message = currentState.messages.find((item) => item.id === messageId);
+            if (!message) return;
+
+            const normalizedInterpretation = normalizeCorrectedInterpretation(message, interpretation);
+            const correctedMessages = updateMessageCollection(currentState.messages, messageId, (currentMessage) =>
+                currentMessage.id === messageId
+                    ? applyCorrectionToMessage(currentMessage, normalizedInterpretation, message)
+                    : currentMessage,
+            );
+            const correctedState = {
+                ...currentState,
+                messages: correctedMessages,
+            };
+            const correctedMessage = correctedMessages.find((currentMessage) => currentMessage.id === messageId) || {
+                ...message,
+                interpretation: normalizedInterpretation,
+                status: 'interpreted' as const,
+            };
+
+            setState(correctedState);
+
+            if (options.onCorrectRemoteInterpretation) {
+                try {
+                    const result = await options.onCorrectRemoteInterpretation(
+                        buildPersistableSnapshot(correctedState),
+                        messageId,
+                        correctedMessage,
+                        normalizedInterpretation,
+                        remoteVersionRef.current,
+                    );
+
+                    if (result?.snapshot && typeof result.version === 'number') {
+                        remoteVersionRef.current = result.version;
+                        setState((previousState) => {
+                            const hydratedState = hydrateBusinessState(result.snapshot, previousState, options.authProfile || null);
+                            return {
+                                ...hydratedState,
+                                messages: updateMessageCollection(hydratedState.messages, messageId, (currentMessage) =>
+                                    currentMessage.id === messageId
+                                        ? applyCorrectionToMessage(
+                                              currentMessage,
+                                              normalizeCorrectedInterpretation(message, result.interpretation || normalizedInterpretation),
+                                              message,
+                                              result.actionLogId,
+                                          )
+                                        : currentMessage,
+                                ),
+                            };
+                        });
+                        return;
+                    }
+
+                    if (result?.interpretation) {
+                        setState((previousState) => ({
+                            ...previousState,
+                            messages: updateMessageCollection(previousState.messages, messageId, (currentMessage) =>
+                                currentMessage.id === messageId
+                                    ? applyCorrectionToMessage(
+                                          currentMessage,
+                                          normalizeCorrectedInterpretation(message, result.interpretation as ParsedMessage),
+                                          message,
+                                          result.actionLogId,
+                                      )
+                                    : currentMessage,
+                            ),
+                        }));
+                        return;
+                    }
+                } catch (error) {
+                    if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                        console.error('No se pudo corregir la interpretacion en PocketBase por un conflicto de version.', error);
+                        return;
+                    }
+
+                    console.error('No se pudo corregir la interpretacion en PocketBase. Seguimos con el flujo local.', error);
+                }
+            }
+        },
+        [options.authProfile, options.onCorrectRemoteInterpretation],
+    );
+
+    const interpretPendingMessage = useCallback(
+        async (messageId: string) => {
+            const currentState = stateRef.current;
+            const message = currentState.messages.find((item) => item.id === messageId);
+            if (!message || message.status !== 'pending') return;
+
+            markMessageAsInterpreting(messageId);
+
+            const interpretLocally = async () => {
+                const { interpretMessage } = await import('../services/geminiService');
+                return interpretMessage(message.text, message.sender, currentState.systemPrompt);
+            };
+
+            try {
+                if (options.onInterpretRemoteMessage) {
+                    const remoteResult = await options.onInterpretRemoteMessage(
+                        buildPersistableSnapshot(currentState),
+                        messageId,
+                        message,
+                        remoteVersionRef.current,
+                    );
+
+                    if (remoteResult?.snapshot && typeof remoteResult.version === 'number') {
+                        remoteVersionRef.current = remoteResult.version;
+                        setState((previousState) => {
+                            const hydratedState = hydrateBusinessState(remoteResult.snapshot, previousState, options.authProfile || null);
+                            if (!remoteResult.interpretation) {
+                                return hydratedState;
+                            }
+
+                            return {
+                                ...hydratedState,
+                                messages: hydratedState.messages.map((currentMessage) =>
+                                    currentMessage.id === messageId
+                                        ? { ...currentMessage, interpretation: remoteResult.interpretation, status: 'interpreted' }
+                                        : currentMessage,
+                                ),
+                            };
+                        });
+                        return;
+                    }
+
+                    if (remoteResult?.interpretation) {
+                        setInterpretationForMessage(messageId, remoteResult.interpretation);
+                        return;
+                    }
+                }
+            } catch (error) {
+                if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                    console.error('No se pudo interpretar el mensaje en PocketBase por un conflicto de version.', error);
+                    setState((previousState) => ({
+                        ...previousState,
+                        messages: previousState.messages.map((currentMessage) =>
+                            currentMessage.id === messageId && currentMessage.status === 'interpreting'
+                                ? { ...currentMessage, status: 'pending' }
+                                : currentMessage,
+                        ),
+                    }));
+                    return;
+                }
+
+                console.error('No se pudo interpretar el mensaje en PocketBase. Seguimos con la interpretacion local.', error);
+            }
+
+            try {
+                const localInterpretation = await interpretLocally();
+                setInterpretationForMessage(messageId, localInterpretation);
+            } catch (error) {
+                console.error('No se pudo interpretar el mensaje ni en remoto ni en local.', error);
+                setInterpretationForMessage(
+                    messageId,
+                    buildUnknownInterpretation(message, 'No se pudo procesar el mensaje en este momento.'),
+                );
+            }
+        },
+        [markMessageAsInterpreting, options.authProfile, options.onInterpretRemoteMessage, setInterpretationForMessage],
+    );
+
+    const approveInterpretation = useCallback(
+        async (messageId: string) => {
+            const currentState = stateRef.current;
+            const message = currentState.messages.find((item) => item.id === messageId);
+            if (!message?.interpretation) return;
+            const approvalSnapshot = buildPersistableSnapshot(currentState);
+
+            if (options.onApproveRemoteInterpretation) {
+                try {
+                    const result = await options.onApproveRemoteInterpretation(
+                        buildPersistableSnapshot(currentState),
+                        messageId,
+                        message,
+                        remoteVersionRef.current,
+                    );
+                    remoteVersionRef.current = result.version;
+                    setState((previousState) =>
+                        applyApprovalUndoState(
+                            applyUiInterpretationState(
+                                hydrateBusinessState(result.snapshot, previousState, options.authProfile || null),
+                                message.interpretation as ParsedMessage,
+                            ),
+                            messageId,
+                            approvalSnapshot,
+                            result.actionLogId,
+                        ),
+                    );
+                    return;
+                } catch (error) {
+                    if (!(error instanceof PocketBaseSyncError) || (error.code !== 'offline' && error.code !== 'cancelled')) {
+                        console.error('No se pudo aprobar la accion en PocketBase.', error);
+                        return;
+                    }
+                }
+            }
+
+            setState((previousState) => applyApprovalUndoState(applyInterpretationLocally(previousState, messageId).nextState, messageId, approvalSnapshot));
+        },
+        [options.authProfile, options.onApproveRemoteInterpretation],
+    );
+
+    const revertInterpretation = useCallback(
+        async (messageId: string) => {
+            const currentState = stateRef.current;
+            const message = currentState.messages.find((item) => item.id === messageId);
+            if (!message) return;
+
+            const approvalUndo = message.undoState?.approval;
+            const approvalSnapshot = approvalUndo?.snapshot;
+            if (approvalUndo) {
+                if (options.onRevertRemoteInterpretation) {
+                    try {
+                        const result = await options.onRevertRemoteInterpretation(
+                            buildPersistableSnapshot(currentState),
+                            messageId,
+                            message,
+                            remoteVersionRef.current,
+                            approvalUndo.actionId,
+                        );
+
+                        if (result?.snapshot && typeof result.version === 'number') {
+                            remoteVersionRef.current = result.version;
+                            setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                            return;
+                        }
+                    } catch (error) {
+                        if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                            console.error('No se pudo revertir la aprobacion en PocketBase por un conflicto de version.', error);
+                        } else {
+                            console.error('No se pudo revertir la aprobacion en PocketBase. Seguimos con el flujo local.', error);
+                        }
+                    }
+                }
+
+                if (!approvalSnapshot) return;
+
+                const revertedState = hydrateBusinessState(approvalSnapshot, currentState, options.authProfile || null);
+                setState(revertedState);
+                return;
+            }
+
+            const correctionUndo = message.undoState?.correction;
+            if (!correctionUndo) return;
+
+            const revertedMessages = updateMessageCollection(currentState.messages, messageId, (currentMessage) =>
+                currentMessage.id === messageId
+                    ? clearCorrectionUndoState({
+                          ...currentMessage,
+                          interpretation: correctionUndo.previousInterpretation,
+                          status: correctionUndo.previousStatus,
+                      })
+                    : currentMessage,
+            );
+            const revertedState = {
+                ...currentState,
+                messages: revertedMessages,
+            };
+            const revertedMessage = revertedMessages.find((item) => item.id === messageId);
+
+            setState(revertedState);
+
+            if (!options.onRevertRemoteInterpretation || !revertedMessage) return;
+
+            try {
+                const result = await options.onRevertRemoteInterpretation(
+                    buildPersistableSnapshot(revertedState),
+                    messageId,
+                    revertedMessage,
+                    remoteVersionRef.current,
+                    correctionUndo.actionId,
+                );
+
+                if (result?.snapshot && typeof result.version === 'number') {
+                    remoteVersionRef.current = result.version;
+                    setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                }
+            } catch (error) {
+                if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                    console.error('No se pudo revertir la correccion en PocketBase por un conflicto de version.', error);
+                    return;
+                }
+
+                console.error('No se pudo revertir la correccion en PocketBase. Seguimos con el flujo local.', error);
+            }
+        },
+        [options.authProfile, options.onRevertRemoteInterpretation],
+    );
+
+    const generateCustomerSummary = useCallback(
+        async (customerId: string) => {
+            setState((currentState) => ({ ...currentState, isGeneratingSummary: true, aiCustomerSummary: null }));
+
+            const customer = state.customers.find((item) => item.id === customerId);
+            if (!customer) {
+                setState((currentState) => ({
+                    ...currentState,
+                    isGeneratingSummary: false,
+                    aiCustomerSummary: { content: '', error: 'Cliente no encontrado' },
+                }));
+                return;
+            }
+
+            const customerSales = state.sales.filter((sale) => saleBelongsToCustomer(sale, customer));
+            const customerPayments = state.payments.filter((payment) => payment.customerId === customerId);
+            const customerCrateLoans = state.crateLoans.filter((loan) => loanBelongsToCustomer(loan, customer));
+
+            try {
+                const { generateCustomerInsights } = await import('../services/geminiService');
+                const summary = await generateCustomerInsights(customer, customerSales, customerPayments, customerCrateLoans, state.crateTypes);
+                setState((currentState) => ({
+                    ...currentState,
+                    isGeneratingSummary: false,
+                    aiCustomerSummary: { content: summary, error: null },
+                }));
+            } catch (error: unknown) {
+                setState((currentState) => ({
+                    ...currentState,
+                    isGeneratingSummary: false,
+                    aiCustomerSummary: { content: '', error: error instanceof Error ? error.message : 'Error al generar resumen.' },
+                }));
+            }
+        },
+        [state],
+    );
+
+    const authCanSwitchRoles = useMemo(() => canUserSwitchRoles(options.authProfile), [options.authProfile]);
+
+    const setCurrentRole = useCallback(
+        (role: UserRole, entityId?: string) => {
+            setState((currentState) => {
+                if (!authCanSwitchRoles && options.authProfile) {
+                    return {
+                        ...currentState,
+                        currentRole: options.authProfile.role,
+                        currentCustomerId: options.authProfile.role === 'Cliente' ? options.authProfile.customerId : null,
+                        currentSupplierId: options.authProfile.role === 'Proveedor' ? options.authProfile.supplierId : null,
+                    };
+                }
+
+                let customerId: string | null = null;
+                let supplierId: string | null = null;
+                if (role === 'Cliente') customerId = entityId || currentState.customers[0]?.id || null;
+                if (role === 'Proveedor') supplierId = entityId || currentState.suppliers[0]?.id || null;
+
+                return {
+                    ...currentState,
+                    currentRole: role,
+                    currentCustomerId: customerId,
+                    currentSupplierId: supplierId,
+                };
+            });
+        },
+        [authCanSwitchRoles, options.authProfile],
+    );
+
+    const toggleTheme = useCallback(() => {
+        setState((currentState) => ({ ...currentState, theme: currentState.theme === 'light' ? 'dark' : 'light' }));
+    }, []);
+
+    const setCurrentView = useCallback((view: View) => {
+        setState((currentState) => ({
+            ...currentState,
+            currentView: view,
+            aiCustomerSummary: view !== 'customers' ? null : currentState.aiCustomerSummary,
+        }));
+    }, []);
+
+    return {
+        ...state,
+        ...inventoryActions,
+        ...salesActions,
+        ...catalogActions,
+        ...systemActions,
+        setCurrentRole,
+        toggleTheme,
+        setCurrentView,
+        addMessage,
+        markMessageAsInterpreting,
+        setInterpretationForMessage,
+        correctInterpretation,
+        revertInterpretation,
+        interpretPendingMessage,
+        approveInterpretation,
+        addInterpretedMessage,
+        generateCustomerSummary,
+        authEnabled: Boolean(options.authEnabled),
+        authProfile: options.authProfile || null,
+        authError: options.authError || null,
+        workspaceLabel: options.workspaceLabel || null,
+        signOut: options.onSignOut,
+        canSwitchRoles: authCanSwitchRoles,
+    };
 };
 
 export type BusinessData = ReturnType<typeof useBusinessData>;

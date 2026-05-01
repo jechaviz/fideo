@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { BusinessState, PaymentStatus, PaymentMethod, ActivityLog, CashDrawerActivity, CrateLoanStatus, Quality, FruitState, Customer } from '../types';
+import { findCustomerForSale } from '../utils/customerIdentity';
 import * as Logic from '../utils/businessLogic';
 
 export const useSalesActions = (setState: React.Dispatch<React.SetStateAction<BusinessState>>) => {
@@ -16,7 +17,7 @@ export const useSalesActions = (setState: React.Dispatch<React.SetStateAction<Bu
     setState(s => {
         let nextState = {...s};
         const sale = nextState.sales.find(sl => sl.id === saleId);
-        const customer = nextState.customers.find(c => c.name === sale?.customer);
+        const customer = sale ? findCustomerForSale(nextState.customers, sale) : undefined;
         if (sale && customer) {
             const newPaymentStatus = paymentStatus === 'Pagado' ? 'Pagado' : 'En Deuda';
             if (paymentMethod === 'Efectivo') {

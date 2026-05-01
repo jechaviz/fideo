@@ -219,6 +219,7 @@ export interface Sale {
   id:string;
   productGroupId: string;
   varietyId: string;
+  customerId?: string;
   productGroupName: string;
   varietyName: string;
   size: string;
@@ -242,6 +243,7 @@ export interface Sale {
 
 export interface CrateLoan {
   id: string;
+  customerId?: string;
   customer: string;
   crateTypeId: string;
   quantity: number;
@@ -265,14 +267,30 @@ export interface ActivityLog {
     details: Record<string, string | number>;
 }
 
+export type MessageStatus = 'pending' | 'interpreting' | 'interpreted' | 'approved';
+
+export interface MessageUndoState {
+  correction?: {
+    actionId?: string;
+    previousInterpretation?: ParsedMessage;
+    previousStatus: MessageStatus;
+  };
+  approval?: {
+    actionId?: string;
+    snapshot?: Record<string, unknown>;
+    previousStatus: MessageStatus;
+  };
+}
+
 export interface Message {
   id: string;
   sender: string;
   text: string;
   timestamp: Date;
-  status: 'pending' | 'interpreting' | 'interpreted' | 'approved';
+  status: MessageStatus;
   interpretation?: ParsedMessage;
   isSystemNotification?: boolean;
+  undoState?: MessageUndoState;
 }
 
 export type CashDrawerStatus = 'Abierta' | 'Cerrada';
