@@ -6,7 +6,7 @@ import {
     restoreAuthProfile,
     signInWithPassword,
 } from '../services/pocketbase/auth';
-import { isPocketBaseEnabled } from '../services/pocketbase/client';
+import { isPocketBaseEnabled, requirePocketBaseClient } from '../services/pocketbase/client';
 import { Message } from '../types';
 import { TaskReportInput } from '../types';
 import {
@@ -19,8 +19,10 @@ import {
     InterpretMessageResult,
     isPocketBaseRouteUnavailable,
     normalizePocketBaseError,
+    pingRemoteWorkspacePresence,
     PersistableBusinessState,
     PersistResult,
+    PresencePingResult,
     persistRemoteWorkspaceSnapshot,
     PocketBaseSyncError,
     revertRemoteWorkspaceInterpretation,
@@ -59,6 +61,108 @@ const areSnapshotsEqual = (left: Record<string, unknown> | null | undefined, rig
     }
 };
 
+const POCKETBASE_SNAPSHOT_COLLECTION = 'fideo_state_snapshots';
+
+const readRealtimeSnapshotVersion = (record: Record<string, unknown> | null | undefined): number | null => {
+    const rawVersion = record?.version;
+    if (typeof rawVersion === 'number' && Number.isFinite(rawVersion)) {
+        return rawVersion;
+    }
+
+    if (typeof rawVersion === 'string' && rawVersion.trim()) {
+        const parsedVersion = Number(rawVersion);
+        if (Number.isFinite(parsedVersion)) {
+            return parsedVersion;
+        }
+    }
+
+    return null;
+};
+
+const FIDEO_PRESENCE_SESSION_KEY = 'fideo/presence/session-id';
+const FIDEO_PRESENCE_DEVICE_KEY = 'fideo/presence/device-id';
+const FIDEO_PRESENCE_INSTALLATION_KEY = 'fideo/presence/installation-id';
+const FIDEO_PRESENCE_HEARTBEAT_MS = 60_000;
+
+const createSessionToken = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+
+    return `fideo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const readOrCreateStorageValue = (storage: Storage, key: string) => {
+    const existingValue = storage.getItem(key)?.trim();
+    if (existingValue) return existingValue;
+
+    const nextValue = createSessionToken();
+    storage.setItem(key, nextValue);
+    return nextValue;
+};
+
+const resolvePresenceStatus = (): 'active' | 'background' | 'idle' | 'offline' => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return 'offline';
+    }
+
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return 'background';
+    }
+
+    return 'active';
+};
+
+const resolvePresenceDeviceName = () => {
+    if (typeof navigator === 'undefined') return 'web';
+
+    const navigatorWithUA = navigator as Navigator & {
+        userAgentData?: {
+            mobile?: boolean;
+            platform?: string;
+        };
+    };
+
+    const platform =
+        typeof navigatorWithUA.userAgentData?.platform === 'string' && navigatorWithUA.userAgentData.platform.trim()
+            ? navigatorWithUA.userAgentData.platform.trim()
+            : typeof navigatorWithUA.platform === 'string' && navigatorWithUA.platform.trim()
+              ? navigatorWithUA.platform.trim()
+              : 'web';
+
+    const isMobile = Boolean(navigatorWithUA.userAgentData?.mobile) || /android|iphone|ipad|mobile/i.test(navigatorWithUA.userAgent || '');
+    return isMobile ? `movil ${platform}` : `desktop ${platform}`;
+};
+
+const resolvePresenceContext = () => {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const navigatorWithUA = navigator as Navigator & {
+            userAgentData?: {
+                mobile?: boolean;
+                platform?: string;
+            };
+        };
+
+        return {
+            sessionId: readOrCreateStorageValue(window.sessionStorage, FIDEO_PRESENCE_SESSION_KEY),
+            deviceId: readOrCreateStorageValue(window.localStorage, FIDEO_PRESENCE_DEVICE_KEY),
+            installationId: readOrCreateStorageValue(window.localStorage, FIDEO_PRESENCE_INSTALLATION_KEY),
+            deviceName: resolvePresenceDeviceName(),
+            platform:
+                (typeof navigator !== 'undefined'
+                    && (navigatorWithUA.userAgentData?.platform || navigatorWithUA.platform || navigatorWithUA.userAgent))
+                || 'web',
+            appVersion: typeof import.meta.env.VITE_APP_VERSION === 'string' && import.meta.env.VITE_APP_VERSION.trim()
+                ? import.meta.env.VITE_APP_VERSION.trim()
+                : 'web',
+        };
+    } catch {
+        return null;
+    }
+};
+
 export const usePocketBaseSession = () => {
     const enabled = useMemo(() => isPocketBaseEnabled(), []);
     const [sessionState, setSessionState] = useState<SessionState>({
@@ -73,10 +177,13 @@ export const usePocketBaseSession = () => {
     const pendingPersistRef = useRef<QueuedPersistSnapshot | null>(null);
     const workspaceEpochRef = useRef(0);
     const persistSequenceRef = useRef<Promise<void>>(Promise.resolve());
+    const realtimeRefreshPromiseRef = useRef<Promise<RemoteWorkspaceSnapshot | null> | null>(null);
+    const realtimeRefreshTargetVersionRef = useRef(0);
     const remoteCorrectionRouteAvailableRef = useRef(true);
     const remoteInterpretationRouteAvailableRef = useRef(true);
     const remoteRevertRouteAvailableRef = useRef(true);
     const remoteTaskReportRouteAvailableRef = useRef(true);
+    const remotePresenceRouteAvailableRef = useRef(true);
 
     useEffect(() => {
         profileRef.current = sessionState.profile;
@@ -90,10 +197,13 @@ export const usePocketBaseSession = () => {
         profileRef.current = null;
         workspaceRef.current = null;
         pendingPersistRef.current = null;
+        realtimeRefreshPromiseRef.current = null;
+        realtimeRefreshTargetVersionRef.current = 0;
         remoteCorrectionRouteAvailableRef.current = true;
         remoteInterpretationRouteAvailableRef.current = true;
         remoteRevertRouteAvailableRef.current = true;
         remoteTaskReportRouteAvailableRef.current = true;
+        remotePresenceRouteAvailableRef.current = true;
         workspaceEpochRef.current += 1;
         setSessionState({
             status,
@@ -115,10 +225,12 @@ export const usePocketBaseSession = () => {
             profileRef.current = resolvedWorkspace.profile;
             workspaceRef.current = resolvedWorkspace;
             pendingPersistRef.current = null;
+            realtimeRefreshTargetVersionRef.current = resolvedWorkspace.version;
             remoteCorrectionRouteAvailableRef.current = true;
             remoteInterpretationRouteAvailableRef.current = true;
             remoteRevertRouteAvailableRef.current = true;
             remoteTaskReportRouteAvailableRef.current = true;
+            remotePresenceRouteAvailableRef.current = true;
             workspaceEpochRef.current += 1;
             setSessionState({
                 status: 'authenticated',
@@ -141,6 +253,42 @@ export const usePocketBaseSession = () => {
         });
     }, []);
 
+    const applyPresenceToSession = useCallback((result: PresencePingResult) => {
+        setSessionState((previous) => {
+            if (previous.status !== 'authenticated' || !previous.profile || !previous.workspace) {
+                return previous;
+            }
+
+            const nextProfile = mergeAuthSessionProfiles(
+                {
+                    ...previous.profile,
+                    pushExternalId: result.pushExternalId ?? previous.profile.pushExternalId,
+                    lastSeenAt: result.lastSeenAt ?? previous.profile.lastSeenAt,
+                    presence: result.presence ?? previous.profile.presence,
+                },
+                previous.profile,
+            );
+
+            if (!nextProfile) {
+                return previous;
+            }
+
+            const nextWorkspace: RemoteWorkspaceSnapshot = {
+                ...previous.workspace,
+                profile: nextProfile,
+            };
+
+            profileRef.current = nextProfile;
+            workspaceRef.current = nextWorkspace;
+
+            return {
+                ...previous,
+                profile: nextProfile,
+                workspace: nextWorkspace,
+            };
+        });
+    }, []);
+
     const loadWorkspace = useCallback(
         async (options: { showBootstrapping?: boolean; errorAfterLoad?: string | null; fallbackProfile?: AuthSessionProfile | null } = {}) => {
             if (options.showBootstrapping) {
@@ -150,6 +298,74 @@ export const usePocketBaseSession = () => {
             return setAuthenticatedWorkspace(workspace, options.errorAfterLoad ?? null, options.fallbackProfile ?? profileRef.current);
         },
         [setAuthenticatedWorkspace],
+    );
+
+    const refreshWorkspaceFromRealtime = useCallback(
+        async (snapshotRecordId: string, minimumVersion?: number): Promise<RemoteWorkspaceSnapshot | null> => {
+            if (!enabled) return null;
+
+            const currentWorkspace = workspaceRef.current;
+            if (!currentWorkspace || currentWorkspace.snapshotRecordId !== snapshotRecordId) {
+                return null;
+            }
+
+            const targetVersion = minimumVersion ?? currentWorkspace.version + 1;
+            realtimeRefreshTargetVersionRef.current = Math.max(realtimeRefreshTargetVersionRef.current, targetVersion);
+
+            if (realtimeRefreshPromiseRef.current) {
+                return realtimeRefreshPromiseRef.current;
+            }
+
+            let refreshPromise: Promise<RemoteWorkspaceSnapshot | null> | null = null;
+
+            refreshPromise = (async () => {
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    const workspaceBeforeRefresh = workspaceRef.current;
+                    if (!workspaceBeforeRefresh || workspaceBeforeRefresh.snapshotRecordId !== snapshotRecordId) {
+                        return null;
+                    }
+
+                    const remoteWorkspace = await bootstrapRemoteWorkspace();
+                    const latestWorkspace = workspaceRef.current;
+                    if (!latestWorkspace || latestWorkspace.snapshotRecordId !== snapshotRecordId) {
+                        return null;
+                    }
+
+                    const requiredVersion = realtimeRefreshTargetVersionRef.current;
+
+                    if (
+                        latestWorkspace.version >= requiredVersion
+                        && latestWorkspace.version >= remoteWorkspace.version
+                    ) {
+                        realtimeRefreshTargetVersionRef.current = latestWorkspace.version;
+                        return latestWorkspace;
+                    }
+
+                    const resolvedWorkspace =
+                        remoteWorkspace.version > latestWorkspace.version
+                            ? setAuthenticatedWorkspace(remoteWorkspace, null, profileRef.current)
+                            : latestWorkspace;
+
+                    if (resolvedWorkspace.version >= requiredVersion) {
+                        realtimeRefreshTargetVersionRef.current = resolvedWorkspace.version;
+                        return resolvedWorkspace;
+                    }
+
+                    await new Promise((resolve) => setTimeout(resolve, 150));
+                }
+
+                return workspaceRef.current;
+            })();
+
+            realtimeRefreshPromiseRef.current = refreshPromise.finally(() => {
+                if (realtimeRefreshPromiseRef.current === refreshPromise) {
+                    realtimeRefreshPromiseRef.current = null;
+                }
+            });
+
+            return realtimeRefreshPromiseRef.current;
+        },
+        [enabled, setAuthenticatedWorkspace],
     );
 
     const enqueuePersistTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
@@ -830,6 +1046,214 @@ export const usePocketBaseSession = () => {
     useEffect(() => {
         void restore();
     }, [restore]);
+
+    useEffect(() => {
+        if (!enabled || sessionState.status !== 'authenticated') return;
+
+        const snapshotRecordId = sessionState.workspace?.snapshotRecordId;
+        if (!snapshotRecordId) return;
+
+        const pb = requirePocketBaseClient();
+        let isDisposed = false;
+        let unsubscribe: (() => Promise<void>) | null = null;
+
+        const handleRefreshError = (error: unknown) => {
+            const normalizedError = normalizePocketBaseError(
+                error,
+                'No se pudo refrescar el workspace despues de un cambio remoto en PocketBase.',
+            );
+
+            if (normalizedError.code === 'auth' || normalizedError.code === 'forbidden') {
+                clearAuthSession();
+                resetWorkspaceSession('unauthenticated', normalizedError.message);
+                return;
+            }
+
+            setAuthenticatedError(normalizedError.message);
+            console.error(normalizedError);
+        };
+
+        const handleRealtimeChange = (event: { action: string; record: Record<string, unknown> }) => {
+            if (isDisposed) return;
+
+            const currentWorkspace = workspaceRef.current;
+            if (!currentWorkspace || currentWorkspace.snapshotRecordId !== snapshotRecordId) {
+                return;
+            }
+
+            if (event.action === 'delete') {
+                void refreshWorkspaceFromRealtime(snapshotRecordId).catch(handleRefreshError);
+                return;
+            }
+
+            const incomingVersion = readRealtimeSnapshotVersion(event.record);
+            if (incomingVersion !== null && incomingVersion <= currentWorkspace.version) {
+                return;
+            }
+
+            void refreshWorkspaceFromRealtime(snapshotRecordId, incomingVersion ?? undefined).catch(handleRefreshError);
+        };
+
+        void pb.collection(POCKETBASE_SNAPSHOT_COLLECTION)
+            .subscribe(snapshotRecordId, handleRealtimeChange)
+            .then((unsubscribeHandler) => {
+                if (isDisposed) {
+                    void unsubscribeHandler().catch((error) => {
+                        console.error(error);
+                    });
+                    return;
+                }
+
+                unsubscribe = unsubscribeHandler;
+            })
+            .catch((error) => {
+                if (isDisposed) return;
+
+                const normalizedError = normalizePocketBaseError(
+                    error,
+                    'No se pudo activar la suscripcion realtime de PocketBase para esta sesion.',
+                );
+                console.warn('PocketBase realtime no estuvo disponible para la sesion actual.', normalizedError);
+            });
+
+        return () => {
+            isDisposed = true;
+            if (!unsubscribe) return;
+
+            void unsubscribe().catch((error) => {
+                console.error(error);
+            });
+        };
+    }, [
+        enabled,
+        refreshWorkspaceFromRealtime,
+        resetWorkspaceSession,
+        sessionState.status,
+        sessionState.workspace?.snapshotRecordId,
+        setAuthenticatedError,
+    ]);
+
+    useEffect(() => {
+        if (!enabled || sessionState.status !== 'authenticated' || !sessionState.workspace?.workspaceId) {
+            return;
+        }
+
+        if (!remotePresenceRouteAvailableRef.current) {
+            return;
+        }
+
+        const presenceContext = resolvePresenceContext();
+        if (!presenceContext) {
+            return;
+        }
+
+        let isDisposed = false;
+        let isSyncing = false;
+
+        const syncPresence = async (reason: string) => {
+            if (isDisposed || isSyncing || !remotePresenceRouteAvailableRef.current) {
+                return;
+            }
+
+            const currentWorkspace = workspaceRef.current;
+            const currentProfile = profileRef.current;
+            if (!currentWorkspace?.workspaceId || !currentProfile) {
+                return;
+            }
+
+            isSyncing = true;
+
+            try {
+                const result = await pingRemoteWorkspacePresence({
+                    workspaceId: currentWorkspace.workspaceId,
+                    sessionId: presenceContext.sessionId,
+                    deviceId: presenceContext.deviceId,
+                    deviceName: presenceContext.deviceName,
+                    installationId: presenceContext.installationId,
+                    platform: presenceContext.platform,
+                    appVersion: presenceContext.appVersion,
+                    status: resolvePresenceStatus(),
+                    pushExternalId: currentProfile.pushExternalId,
+                    meta: {
+                        reason,
+                        role: currentProfile.role,
+                        canSwitchRoles: currentProfile.canSwitchRoles,
+                    },
+                });
+
+                if (isDisposed) return;
+                applyPresenceToSession(result);
+            } catch (error) {
+                if (isPocketBaseRouteUnavailable(error)) {
+                    remotePresenceRouteAvailableRef.current = false;
+                    return;
+                }
+
+                const normalizedError = normalizePocketBaseError(
+                    error,
+                    'No se pudo actualizar la presencia del workspace en PocketBase.',
+                );
+
+                if (normalizedError.code === 'auth' || normalizedError.code === 'forbidden') {
+                    clearAuthSession();
+                    resetWorkspaceSession('unauthenticated', normalizedError.message);
+                    return;
+                }
+
+                if (
+                    normalizedError.code !== 'offline'
+                    && normalizedError.code !== 'cancelled'
+                    && normalizedError.code !== 'unknown'
+                ) {
+                    console.warn('No se pudo sincronizar presencia con PocketBase.', normalizedError);
+                }
+            } finally {
+                isSyncing = false;
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            void syncPresence(document.visibilityState === 'hidden' ? 'background' : 'foreground');
+        };
+
+        const handleOnline = () => {
+            void syncPresence('online');
+        };
+
+        const handleOffline = () => {
+            void syncPresence('offline');
+        };
+
+        const handlePageHide = () => {
+            void syncPresence('pagehide');
+        };
+
+        void syncPresence('session_ready');
+
+        const intervalId = window.setInterval(() => {
+            void syncPresence('heartbeat');
+        }, FIDEO_PRESENCE_HEARTBEAT_MS);
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        window.addEventListener('pagehide', handlePageHide);
+
+        return () => {
+            isDisposed = true;
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+            window.removeEventListener('pagehide', handlePageHide);
+        };
+    }, [
+        applyPresenceToSession,
+        enabled,
+        resetWorkspaceSession,
+        sessionState.status,
+        sessionState.workspace?.workspaceId,
+    ]);
 
     useEffect(() => {
         if (!enabled || typeof window === 'undefined') return;

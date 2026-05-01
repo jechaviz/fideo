@@ -4,10 +4,12 @@ import type { AuthSessionProfile } from '../pocketbase/auth';
 import type { RemoteWorkspaceSnapshot } from '../pocketbase/state';
 
 const PUSH_TAG_KEYS = [
+    'app',
     'role',
     'workspace_id',
     'workspace_slug',
     'channel',
+    'employee_id',
     'customer_id',
     'supplier_id',
     'can_switch_roles',
@@ -49,6 +51,7 @@ export interface OneSignalPushIdentity {
     workspaceId: string;
     workspaceSlug: string;
     channel: 'internal' | 'portal';
+    employeeId: string | null;
     customerId: string | null;
     supplierId: string | null;
     canSwitchRoles: boolean;
@@ -99,6 +102,7 @@ function buildIdentityKey(identity: OneSignalPushIdentity) {
         identity.workspaceId,
         identity.workspaceSlug,
         identity.channel,
+        identity.employeeId || '',
         identity.customerId || '',
         identity.supplierId || '',
         identity.canSwitchRoles ? '1' : '0',
@@ -116,6 +120,7 @@ function getPushSupport() {
 
 function buildTagMap(identity: OneSignalPushIdentity) {
     const tags: Record<string, string> = {
+        app: 'fideo',
         role: identity.role,
         workspace_id: identity.workspaceId,
         workspace_slug: identity.workspaceSlug,
@@ -124,10 +129,17 @@ function buildTagMap(identity: OneSignalPushIdentity) {
         auth_source: 'pocketbase',
     };
 
+    if (identity.employeeId) tags.employee_id = identity.employeeId;
     if (identity.customerId) tags.customer_id = identity.customerId;
     if (identity.supplierId) tags.supplier_id = identity.supplierId;
 
     return tags;
+}
+
+function resolvePushExternalId(profile: AuthSessionProfile) {
+    const explicitExternalId = typeof profile.pushExternalId === 'string' ? profile.pushExternalId.trim() : '';
+    if (explicitExternalId) return explicitExternalId;
+    return String(profile.id);
 }
 
 function applyDefaultStateOverlays(state: OneSignalPushState) {
@@ -200,11 +212,12 @@ export const buildOneSignalIdentity = (
     if (!profile || !workspace) return null;
 
     return {
-        externalId: String(profile.id),
+        externalId: resolvePushExternalId(profile),
         role: profile.role,
         workspaceId: workspace.workspaceId,
         workspaceSlug: workspace.workspaceSlug,
         channel: isPortalRole(profile.role) ? 'portal' : 'internal',
+        employeeId: profile.employeeId,
         customerId: profile.customerId,
         supplierId: profile.supplierId,
         canSwitchRoles: profile.canSwitchRoles,

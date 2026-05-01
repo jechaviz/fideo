@@ -34,7 +34,7 @@ import {
     View,
     Warehouse,
 } from '../../types';
-import { AuthSessionProfile } from './auth';
+import { AuthPresenceState, AuthSessionProfile } from './auth';
 import { requirePocketBaseClient } from './client';
 
 export interface RemoteWorkspaceSnapshot {
@@ -50,6 +50,27 @@ export interface PersistResult {
     version: number;
     snapshotRecordId: string;
     updatedAt: string;
+}
+
+export interface PresencePingPayload {
+    workspaceId: string;
+    sessionId: string;
+    deviceId?: string;
+    deviceName?: string;
+    installationId?: string;
+    platform?: string;
+    appVersion?: string;
+    status?: AuthPresenceState['status'];
+    pushExternalId?: string | null;
+    meta?: Record<string, unknown>;
+}
+
+export interface PresencePingResult {
+    ok: boolean;
+    workspaceId: string;
+    pushExternalId: string | null;
+    lastSeenAt: string | null;
+    presence: AuthPresenceState | null;
 }
 
 type PocketBaseNotification = { text: string; isError: boolean };
@@ -627,6 +648,40 @@ const normalizeTaskReportResponse = (response: unknown): SubmitTaskReportResult 
     };
 };
 
+const normalizePresenceState = (value: unknown): AuthPresenceState | null => {
+    if (!isRecord(value)) return null;
+
+    const normalizePresenceStatus = (status: unknown): AuthPresenceState['status'] => {
+        if (status === 'background' || status === 'idle' || status === 'offline') return status;
+        return 'active';
+    };
+
+    return {
+        sessionKey: readString(value.sessionKey) || null,
+        status: normalizePresenceStatus(value.status),
+        sessionId: readString(value.sessionId) || null,
+        deviceId: readString(value.deviceId) || null,
+        deviceName: readString(value.deviceName) || null,
+        installationId: readString(value.installationId) || null,
+        platform: readString(value.platform) || null,
+        appVersion: readString(value.appVersion) || null,
+        pushExternalId: readString(value.pushExternalId) || null,
+        meta: isRecord(value.meta) ? value.meta : null,
+    };
+};
+
+const normalizePresencePingResponse = (response: unknown): PresencePingResult => {
+    const payload = isRecord(response) ? response : {};
+
+    return {
+        ok: Boolean(payload.ok),
+        workspaceId: readString(payload.workspaceId) || '',
+        pushExternalId: readString(payload.pushExternalId) || null,
+        lastSeenAt: readString(payload.lastSeenAt) || null,
+        presence: normalizePresenceState(payload.presence),
+    };
+};
+
 export const interpretRemoteWorkspaceMessage = async (
     workspaceId: string,
     snapshot: PersistableBusinessState,
@@ -717,4 +772,16 @@ export const submitRemoteWorkspaceTaskReport = async (
     });
 
     return normalizeTaskReportResponse(response);
+};
+
+export const pingRemoteWorkspacePresence = async (
+    payload: PresencePingPayload,
+): Promise<PresencePingResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/presence/ping', {
+        method: 'POST',
+        body: JSON.parse(JSON.stringify(payload)),
+    });
+
+    return normalizePresencePingResponse(response);
 };

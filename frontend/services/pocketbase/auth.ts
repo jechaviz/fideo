@@ -1,6 +1,21 @@
 import { UserRole } from '../../types';
 import { POCKETBASE_AUTH_COLLECTION, requirePocketBaseClient } from './client';
 
+export type AuthPresenceStatus = 'active' | 'background' | 'idle' | 'offline';
+
+export interface AuthPresenceState {
+    sessionKey: string | null;
+    status: AuthPresenceStatus;
+    sessionId: string | null;
+    deviceId: string | null;
+    deviceName: string | null;
+    installationId: string | null;
+    platform: string | null;
+    appVersion: string | null;
+    pushExternalId: string | null;
+    meta: Record<string, unknown> | null;
+}
+
 export interface AuthSessionProfile {
     id: string;
     email: string;
@@ -10,6 +25,9 @@ export interface AuthSessionProfile {
     customerId: string | null;
     supplierId: string | null;
     employeeId: string | null;
+    pushExternalId: string | null;
+    lastSeenAt: string | null;
+    presence: AuthPresenceState | null;
     canSwitchRoles: boolean;
 }
 
@@ -34,6 +52,15 @@ const normalizeOptionalId = (value: unknown): string | null => {
     return normalized ? normalized : null;
 };
 
+const resolveOptionalText = (...values: unknown[]): string | null => {
+    for (const value of values) {
+        const normalized = normalizeOptionalId(value);
+        if (normalized) return normalized;
+    }
+
+    return null;
+};
+
 const resolveRequiredText = (...values: unknown[]): string => {
     for (const value of values) {
         if (typeof value !== 'string') continue;
@@ -44,6 +71,32 @@ const resolveRequiredText = (...values: unknown[]): string => {
     return '';
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+
+const normalizePresenceStatus = (value: unknown): AuthPresenceStatus => {
+    if (value === 'background' || value === 'idle' || value === 'offline') return value;
+    return 'active';
+};
+
+const mapPresenceState = (value: unknown): AuthPresenceState | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+
+    return {
+        sessionKey: resolveOptionalText(record.sessionKey),
+        status: normalizePresenceStatus(record.status),
+        sessionId: resolveOptionalText(record.sessionId),
+        deviceId: resolveOptionalText(record.deviceId),
+        deviceName: resolveOptionalText(record.deviceName),
+        installationId: resolveOptionalText(record.installationId),
+        platform: resolveOptionalText(record.platform),
+        appVersion: resolveOptionalText(record.appVersion),
+        pushExternalId: resolveOptionalText(record.pushExternalId),
+        meta: asRecord(record.meta),
+    };
+};
+
 const mapAuthRecord = (record: Record<string, unknown> | null | undefined): AuthSessionProfile | null => {
     if (!record) return null;
 
@@ -52,10 +105,13 @@ const mapAuthRecord = (record: Record<string, unknown> | null | undefined): Auth
         email: resolveRequiredText(record.email),
         name: resolveRequiredText(record.name, record.email) || 'Fideo User',
         role: normalizeRole(record.role),
-        workspaceId: normalizeOptionalId(record.workspace),
-        customerId: normalizeOptionalId(record.customerId),
-        supplierId: normalizeOptionalId(record.supplierId),
-        employeeId: normalizeOptionalId(record.employeeId),
+        workspaceId: resolveOptionalText(record.workspaceId, record.workspace),
+        customerId: resolveOptionalText(record.customerId),
+        supplierId: resolveOptionalText(record.supplierId),
+        employeeId: resolveOptionalText(record.employeeId),
+        pushExternalId: resolveOptionalText(record.pushExternalId),
+        lastSeenAt: resolveOptionalText(record.lastSeenAt),
+        presence: mapPresenceState(record.presence),
         canSwitchRoles: Boolean(record.canSwitchRoles),
     };
 };
@@ -71,10 +127,13 @@ export const mergeAuthSessionProfiles = (
         email: resolveRequiredText(primary?.email, fallback?.email),
         name: resolveRequiredText(primary?.name, fallback?.name, primary?.email, fallback?.email) || 'Fideo User',
         role: normalizeRole(primary?.role ?? fallback?.role),
-        workspaceId: normalizeOptionalId(primary?.workspaceId) ?? normalizeOptionalId(fallback?.workspaceId),
-        customerId: normalizeOptionalId(primary?.customerId) ?? normalizeOptionalId(fallback?.customerId),
-        supplierId: normalizeOptionalId(primary?.supplierId) ?? normalizeOptionalId(fallback?.supplierId),
-        employeeId: normalizeOptionalId(primary?.employeeId) ?? normalizeOptionalId(fallback?.employeeId),
+        workspaceId: resolveOptionalText(primary?.workspaceId, fallback?.workspaceId),
+        customerId: resolveOptionalText(primary?.customerId, fallback?.customerId),
+        supplierId: resolveOptionalText(primary?.supplierId, fallback?.supplierId),
+        employeeId: resolveOptionalText(primary?.employeeId, fallback?.employeeId),
+        pushExternalId: resolveOptionalText(primary?.pushExternalId, fallback?.pushExternalId),
+        lastSeenAt: resolveOptionalText(primary?.lastSeenAt, fallback?.lastSeenAt),
+        presence: primary?.presence || fallback?.presence || null,
         canSwitchRoles: typeof primary?.canSwitchRoles === 'boolean' ? primary.canSwitchRoles : Boolean(fallback?.canSwitchRoles),
     };
 };
