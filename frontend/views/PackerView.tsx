@@ -3,6 +3,22 @@ import { BusinessData } from '../hooks/useBusinessData';
 import { Sale } from '../types';
 
 type TaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
+type TaskReportMode = 'note' | 'blocked' | 'completed';
+type TaskReportPayload = {
+    kind: TaskReportMode;
+    summary: string;
+    taskId: string;
+    saleId: string;
+    taskKind: string;
+    taskTitle: string;
+    role: string;
+    statusBefore: TaskStatus;
+    createdAt: string;
+    reporter?: {
+        employeeId?: string | null;
+        name?: string | null;
+    };
+};
 
 interface TaskAssignment {
     id: string;
@@ -25,10 +41,14 @@ interface TaskViewBridge {
     acknowledgeTask?: (taskId: string) => void;
     startTask?: (taskId: string) => void;
     blockTask?: (taskId: string, reason: string) => void;
+    completeTask?: (taskId: string) => void;
+    submitTaskReport?: (taskId: string, report: TaskReportPayload) => void | Promise<void>;
 }
 
 const surfaceClass = 'glass-panel-dark rounded-[1.6rem] border border-white/10';
 const labelClass = 'text-[10px] font-black uppercase tracking-[0.28em] text-slate-500';
+const fieldClass =
+    'mt-2 block w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-brand-400/40 focus:ring-2 focus:ring-brand-400/20';
 const secondaryButtonClass =
     'inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10 hover:text-white';
 
@@ -63,6 +83,51 @@ const statusRank: Record<TaskStatus, number> = {
     done: 4,
 };
 
+const reportMeta: Record<
+    TaskReportMode,
+    {
+        badge: string;
+        title: string;
+        label: string;
+        placeholder: string;
+        submitLabel: string;
+        icon: string;
+        accent: string;
+        activeTone: string;
+    }
+> = {
+    note: {
+        badge: 'Nota',
+        title: 'Registrar nota operativa',
+        label: 'Nota breve',
+        placeholder: 'Ej. pedido revisado, etiquetado o listo para pesado',
+        submitLabel: 'Guardar nota',
+        icon: 'fa-note-sticky',
+        accent: 'bg-brand-400 text-slate-950 hover:bg-brand-300',
+        activeTone: 'border-brand-400/40 bg-brand-400/10 text-brand-100',
+    },
+    blocked: {
+        badge: 'Bloqueo',
+        title: 'Reportar bloqueo',
+        label: 'Motivo',
+        placeholder: 'Ej. falta producto o empaque',
+        submitLabel: 'Guardar bloqueo',
+        icon: 'fa-hand',
+        accent: 'bg-rose-400 text-slate-950 hover:bg-rose-300',
+        activeTone: 'border-rose-400/40 bg-rose-400/10 text-rose-100',
+    },
+    completed: {
+        badge: 'Cierre',
+        title: 'Cerrar empaque',
+        label: 'Cierre breve',
+        placeholder: 'Ej. pedido armado, revisado y listo para entrega',
+        submitLabel: 'Cerrar tarea',
+        icon: 'fa-box-check',
+        accent: 'bg-emerald-400 text-slate-950 hover:bg-emerald-300',
+        activeTone: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100',
+    },
+};
+
 const normalize = (value?: string | null) => value?.trim().toLowerCase() || '';
 
 const isPackerTask = (task: TaskAssignment) => normalize(task.role) === 'empacador';
@@ -72,6 +137,33 @@ const formatTaskTime = (sale?: Sale) =>
 
 const buildSaleSummary = (sale?: Sale) =>
     sale ? `${sale.quantity} x ${sale.productGroupName} ${sale.varietyName} (${sale.size})` : null;
+
+const getDefaultReportSummary = (mode: TaskReportMode, task: TaskAssignment) => {
+    if (mode === 'blocked') return task.blockReason || '';
+    if (mode === 'completed') return 'Pedido empacado y listo para entrega.';
+    return '';
+};
+
+const buildTaskReportPayload = (
+    task: TaskAssignment,
+    mode: TaskReportMode,
+    summary: string,
+    authProfile?: TaskViewBridge['authProfile'],
+): TaskReportPayload => ({
+    kind: mode,
+    summary: summary.trim(),
+    taskId: task.id,
+    saleId: task.saleId,
+    taskKind: task.kind,
+    taskTitle: task.title,
+    role: task.role,
+    statusBefore: task.status,
+    createdAt: new Date().toISOString(),
+    reporter: {
+        employeeId: authProfile?.employeeId ?? task.employeeId ?? null,
+        name: authProfile?.name ?? null,
+    },
+});
 
 const SectionHeader: React.FC<{ title: string; count: number }> = ({ title, count }) => (
     <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 pb-4">
@@ -91,47 +183,121 @@ const EmptySection: React.FC<{ title: string }> = ({ title }) => (
     </div>
 );
 
-const BlockTaskModal: React.FC<{
+const TaskReportModal: React.FC<{
     task: TaskAssignment | null;
-    reason: string;
-    onReasonChange: (value: string) => void;
+    sale?: Sale;
+    mode: TaskReportMode;
+    summary: string;
+    canNote: boolean;
+    canBlock: boolean;
+    canComplete: boolean;
+    isSubmitting: boolean;
+    error: string | null;
+    onModeChange: (value: TaskReportMode) => void;
+    onSummaryChange: (value: string) => void;
     onClose: () => void;
     onConfirm: () => void;
-}> = ({ task, reason, onReasonChange, onClose, onConfirm }) => {
+}> = ({
+    task,
+    sale,
+    mode,
+    summary,
+    canNote,
+    canBlock,
+    canComplete,
+    isSubmitting,
+    error,
+    onModeChange,
+    onSummaryChange,
+    onClose,
+    onConfirm,
+}) => {
     if (!task) return null;
+
+    const meta = reportMeta[mode];
+    const modeOptions: Array<{ mode: TaskReportMode; enabled: boolean; label: string }> = [
+        { mode: 'note', enabled: canNote, label: 'Nota' },
+        { mode: 'blocked', enabled: canBlock, label: 'Bloqueo' },
+        { mode: 'completed', enabled: canComplete, label: 'Cierre' },
+    ];
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-            <div className={`${surfaceClass} w-full max-w-md p-6 md:p-7`}>
+            <div className={`${surfaceClass} w-full max-w-lg p-6 md:p-7`}>
                 <div className="mb-6">
-                    <p className="text-[10px] font-black uppercase tracking-[0.32em] text-rose-300">Bloqueo</p>
-                    <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Reportar bloqueo</h2>
+                    <p className="text-[10px] font-black uppercase tracking-[0.32em] text-brand-200">{meta.badge}</p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-white">{meta.title}</h2>
                     <p className="mt-3 text-sm leading-6 text-slate-300">
-                        Deja una nota breve para la tarea <span className="font-bold text-white">{task.title}</span>.
+                        Reporta un movimiento corto y estructurado para{' '}
+                        <span className="font-bold text-white">{sale?.customer || task.title}</span>.
                     </p>
                 </div>
 
-                <div>
-                    <label className={labelClass}>Motivo</label>
+                <div className="grid grid-cols-3 gap-2">
+                    {modeOptions.map((option) => {
+                        const optionMeta = reportMeta[option.mode];
+                        const isActive = option.mode === mode;
+                        return (
+                            <button
+                                key={option.mode}
+                                type="button"
+                                onClick={() => onModeChange(option.mode)}
+                                disabled={!option.enabled || isSubmitting}
+                                className={`inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-black transition ${
+                                    isActive
+                                        ? optionMeta.activeTone
+                                        : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white'
+                                } disabled:cursor-not-allowed disabled:opacity-40`}
+                            >
+                                <i className={`fa-solid ${optionMeta.icon} text-xs`}></i>
+                                <span>{option.label}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 rounded-2xl border border-white/8 bg-slate-950/60 p-4">
+                    <div>
+                        <p className={labelClass}>Pedido</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-200">{task.saleId}</p>
+                    </div>
+                    <div>
+                        <p className={labelClass}>Estado</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-200">{statusMeta[task.status].label}</p>
+                    </div>
+                    <div>
+                        <p className={labelClass}>Hora</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-200">{formatTaskTime(sale)}</p>
+                    </div>
+                </div>
+
+                <div className="mt-5">
+                    <label className={labelClass}>{meta.label}</label>
                     <textarea
-                        value={reason}
-                        onChange={(event) => onReasonChange(event.target.value)}
+                        value={summary}
+                        onChange={(event) => onSummaryChange(event.target.value)}
                         rows={3}
-                        placeholder="Ej. falta producto o empaque"
-                        className="mt-2 block w-full resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-rose-400/40 focus:ring-2 focus:ring-rose-400/20"
+                        placeholder={meta.placeholder}
+                        className={`${fieldClass} resize-none`}
                     />
                 </div>
 
+                {error ? (
+                    <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                        {error}
+                    </div>
+                ) : null}
+
                 <div className="mt-6 flex justify-end gap-3">
-                    <button onClick={onClose} className={secondaryButtonClass}>
+                    <button onClick={onClose} className={secondaryButtonClass} disabled={isSubmitting}>
                         Cancelar
                     </button>
                     <button
                         onClick={onConfirm}
-                        disabled={!reason.trim()}
-                        className="rounded-2xl bg-rose-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!summary.trim() || isSubmitting}
+                        className={`rounded-2xl px-5 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${meta.accent}`}
                     >
-                        Guardar bloqueo
+                        {isSubmitting ? 'Guardando...' : meta.submitLabel}
                     </button>
                 </div>
             </div>
@@ -144,11 +310,12 @@ const PackerTaskCard: React.FC<{
     task: TaskAssignment;
     onAcknowledge?: (taskId: string) => void;
     onStart?: (taskId: string) => void;
-    onBlock?: (task: TaskAssignment) => void;
-    onPack: (saleId: string) => void;
-}> = ({ sale, task, onAcknowledge, onStart, onBlock, onPack }) => {
+    canReportNote: boolean;
+    canReportBlock: boolean;
+    canReportComplete: boolean;
+    onReport: (task: TaskAssignment, mode: TaskReportMode, sale?: Sale) => void;
+}> = ({ sale, task, onAcknowledge, onStart, canReportNote, canReportBlock, canReportComplete, onReport }) => {
     const saleSummary = buildSaleSummary(sale);
-    const canPack = Boolean(sale);
 
     return (
         <div className="flex h-full flex-col justify-between rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 transition hover:border-white/15 hover:bg-white/[0.06]">
@@ -214,19 +381,24 @@ const PackerTaskCard: React.FC<{
                     </button>
                 ) : null}
 
-                {task.status === 'in_progress' ? (
+                {task.status === 'in_progress' && canReportComplete ? (
                     <button
-                        onClick={() => sale && onPack(sale.id)}
-                        disabled={!canPack}
+                        onClick={() => onReport(task, 'completed', sale)}
                         className="inline-flex flex-1 items-center justify-center rounded-2xl bg-emerald-400 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                        Marcar empacado
+                        Cerrar empaque
                     </button>
                 ) : null}
 
-                {task.status !== 'blocked' && onBlock ? (
-                    <button onClick={() => onBlock(task)} className={secondaryButtonClass}>
-                        Bloquear
+                {canReportNote ? (
+                    <button onClick={() => onReport(task, 'note', sale)} className={secondaryButtonClass}>
+                        Nota
+                    </button>
+                ) : null}
+
+                {canReportBlock ? (
+                    <button onClick={() => onReport(task, 'blocked', sale)} className={secondaryButtonClass}>
+                        {task.status === 'blocked' ? 'Actualizar bloqueo' : 'Bloquear'}
                     </button>
                 ) : null}
             </div>
@@ -237,12 +409,16 @@ const PackerTaskCard: React.FC<{
 const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
     const taskData = data as BusinessData & TaskViewBridge;
     const { sales, markOrderAsPacked } = data;
-    const { acknowledgeTask, authProfile, blockTask, startTask, taskAssignments = [] } = taskData;
+    const { acknowledgeTask, authProfile, blockTask, completeTask, startTask, submitTaskReport, taskAssignments = [] } = taskData;
 
-    const [blockingTask, setBlockingTask] = useState<TaskAssignment | null>(null);
-    const [blockReason, setBlockReason] = useState('');
+    const [reportTask, setReportTask] = useState<TaskAssignment | null>(null);
+    const [reportMode, setReportMode] = useState<TaskReportMode>('note');
+    const [reportSummary, setReportSummary] = useState('');
+    const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+    const [reportError, setReportError] = useState<string | null>(null);
 
     const currentEmployeeId = authProfile?.employeeId || null;
+    const canSubmitNotes = Boolean(submitTaskReport);
 
     const salesById = useMemo(() => new Map(sales.map((sale) => [sale.id, sale])), [sales]);
 
@@ -284,20 +460,72 @@ const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
         [visibleTasks],
     );
 
-    const handleBlockOpen = (task: TaskAssignment) => {
-        setBlockingTask(task);
-        setBlockReason(task.blockReason || '');
+    const handleReportOpen = (task: TaskAssignment, mode: TaskReportMode) => {
+        setReportTask(task);
+        setReportMode(mode);
+        setReportSummary(getDefaultReportSummary(mode, task));
+        setReportError(null);
     };
 
-    const handleBlockClose = () => {
-        setBlockingTask(null);
-        setBlockReason('');
+    const handleReportClose = () => {
+        setReportTask(null);
+        setReportMode('note');
+        setReportSummary('');
+        setReportError(null);
     };
 
-    const handleConfirmBlock = () => {
-        if (!blockingTask || !blockTask || !blockReason.trim()) return;
-        blockTask(blockingTask.id, blockReason.trim());
-        handleBlockClose();
+    const handleReportModeChange = (mode: TaskReportMode) => {
+        if (!reportTask) return;
+        if (mode === 'note' && !canSubmitNotes) return;
+        if (mode === 'blocked' && !blockTask) return;
+        if (mode === 'completed' && reportTask.status !== 'in_progress') return;
+
+        setReportMode(mode);
+        setReportSummary(getDefaultReportSummary(mode, reportTask));
+        setReportError(null);
+    };
+
+    const handleConfirmReport = async () => {
+        if (!reportTask) return;
+
+        const summary = reportSummary.trim();
+        if (!summary) return;
+
+        const sale = salesById.get(reportTask.saleId);
+        const canCompleteTask = reportMode === 'completed' && reportTask.status === 'in_progress' && Boolean(sale);
+        const canBlockTask = reportMode === 'blocked' && Boolean(blockTask);
+        const canSaveNote = reportMode === 'note' && canSubmitNotes;
+
+        if (!canCompleteTask && !canBlockTask && !canSaveNote) return;
+
+        setIsSubmittingReport(true);
+        setReportError(null);
+
+        try {
+            if (submitTaskReport) {
+                await Promise.resolve(
+                    submitTaskReport(
+                        reportTask.id,
+                        buildTaskReportPayload(reportTask, reportMode, summary, authProfile),
+                    ),
+                );
+            }
+
+            if (reportMode === 'blocked' && blockTask) {
+                blockTask(reportTask.id, summary);
+            }
+
+            if (reportMode === 'completed' && sale) {
+                markOrderAsPacked(sale.id);
+                completeTask?.(reportTask.id);
+            }
+
+            handleReportClose();
+        } catch (error) {
+            setReportError(error instanceof Error ? error.message : 'No se pudo guardar el reporte.');
+        } finally {
+            setIsSubmittingReport(false);
+        }
     };
 
     return (
@@ -342,8 +570,10 @@ const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
                                         sale={salesById.get(task.saleId)}
                                         onAcknowledge={acknowledgeTask}
                                         onStart={startTask}
-                                        onBlock={blockTask ? handleBlockOpen : undefined}
-                                        onPack={markOrderAsPacked}
+                                        canReportNote={canSubmitNotes}
+                                        canReportBlock={Boolean(blockTask)}
+                                        canReportComplete={false}
+                                        onReport={handleReportOpen}
                                     />
                                 ))
                             ) : (
@@ -363,8 +593,10 @@ const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
                                         sale={salesById.get(task.saleId)}
                                         onAcknowledge={acknowledgeTask}
                                         onStart={startTask}
-                                        onBlock={blockTask ? handleBlockOpen : undefined}
-                                        onPack={markOrderAsPacked}
+                                        canReportNote={canSubmitNotes}
+                                        canReportBlock={Boolean(blockTask)}
+                                        canReportComplete={Boolean(salesById.get(task.saleId))}
+                                        onReport={handleReportOpen}
                                     />
                                 ))
                             ) : (
@@ -384,8 +616,10 @@ const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
                                         sale={salesById.get(task.saleId)}
                                         onAcknowledge={acknowledgeTask}
                                         onStart={startTask}
-                                        onBlock={undefined}
-                                        onPack={markOrderAsPacked}
+                                        canReportNote={canSubmitNotes}
+                                        canReportBlock={Boolean(blockTask)}
+                                        canReportComplete={false}
+                                        onReport={handleReportOpen}
                                     />
                                 ))
                             ) : (
@@ -401,12 +635,20 @@ const PackerView: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </section>
             )}
 
-            <BlockTaskModal
-                task={blockingTask}
-                reason={blockReason}
-                onReasonChange={setBlockReason}
-                onClose={handleBlockClose}
-                onConfirm={handleConfirmBlock}
+            <TaskReportModal
+                task={reportTask}
+                sale={reportTask ? salesById.get(reportTask.saleId) : undefined}
+                mode={reportMode}
+                summary={reportSummary}
+                canNote={canSubmitNotes}
+                canBlock={Boolean(blockTask)}
+                canComplete={Boolean(reportTask && reportTask.status === 'in_progress' && salesById.get(reportTask.saleId))}
+                isSubmitting={isSubmittingReport}
+                error={reportError}
+                onModeChange={handleReportModeChange}
+                onSummaryChange={setReportSummary}
+                onClose={handleReportClose}
+                onConfirm={handleConfirmReport}
             />
         </div>
     );

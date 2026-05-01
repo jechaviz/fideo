@@ -7,7 +7,40 @@ import { SparklesIcon } from './icons/Icons';
 type OperationalTaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
 type OperationalTaskStage = 'packing' | 'assignment' | 'route' | 'other';
 type LooseRecord = Record<string, unknown>;
-type DashboardTask = { saleId?: string; stage: OperationalTaskStage; status: OperationalTaskStatus };
+type TaskSource = 'assignment' | 'fallback';
+type TaskReportKind = 'report' | 'blocker' | 'escalation';
+
+type TaskReport = {
+    id: string;
+    kind: TaskReportKind;
+    summary: string;
+    detail?: string;
+    authorName?: string;
+    createdAt?: Date;
+};
+
+type TaskSignal = {
+    id: string;
+    label: string;
+    tone: string;
+};
+
+type DashboardTask = {
+    saleId?: string;
+    source: TaskSource;
+    stage: OperationalTaskStage;
+    status: OperationalTaskStatus;
+    title: string;
+    customerName?: string;
+    assigneeName?: string;
+    ownerName?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+    acknowledgedAt?: Date;
+    blockedAt?: Date;
+    reports: TaskReport[];
+    signals: TaskSignal[];
+};
 
 const saleStatusToStageMap: Partial<Record<Sale['status'], OperationalTaskStage>> = {
     'Pendiente de Empaque': 'packing',
@@ -23,6 +56,13 @@ const saleStatusToTaskStatusMap: Partial<Record<Sale['status'], OperationalTaskS
     Cancelado: 'done',
 };
 
+const stageLabelMap: Record<OperationalTaskStage, string> = {
+    packing: 'Empaque',
+    assignment: 'Asignacion',
+    route: 'Ruta',
+    other: 'Operacion',
+};
+
 const asRecord = (value: unknown): LooseRecord | null => (value && typeof value === 'object' ? (value as LooseRecord) : null);
 
 const readString = (sources: Array<LooseRecord | null>, keys: string[]) => {
@@ -34,6 +74,201 @@ const readString = (sources: Array<LooseRecord | null>, keys: string[]) => {
         }
     }
     return undefined;
+};
+
+const toDate = (value: unknown) => {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return undefined;
+};
+
+const readDate = (sources: Array<LooseRecord | null>, keys: string[]) => {
+    for (const source of sources) {
+        if (!source) continue;
+        for (const key of keys) {
+            const parsed = toDate(source[key]);
+            if (parsed) return parsed;
+        }
+    }
+    return undefined;
+};
+
+const readValue = (sources: Array<LooseRecord | null>, keys: string[]) => {
+    for (const source of sources) {
+        if (!source) continue;
+        for (const key of keys) {
+            const value = source[key];
+            if (value !== undefined && value !== null) return value;
+        }
+    }
+    return undefined;
+};
+
+const readBoolean = (sources: Array<LooseRecord | null>, keys: string[]) => {
+    const value = readValue(sources, keys);
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'si', 'urgent'].includes(normalized)) return true;
+        if (['false', '0', 'no'].includes(normalized)) return false;
+    }
+    return undefined;
+};
+
+const collectValues = (sources: Array<LooseRecord | null>, keys: string[]) => {
+    const values: unknown[] = [];
+    for (const source of sources) {
+        if (!source) continue;
+        for (const key of keys) {
+            const value = source[key];
+            if (value === undefined || value === null) continue;
+            if (Array.isArray(value)) {
+                values.push(...value);
+                continue;
+            }
+            values.push(value);
+        }
+    }
+    return values;
+};
+
+const formatAgeCompact = (timestamp?: Date) => {
+    if (!timestamp) return undefined;
+    const elapsedMinutes = Math.max(1, Math.floor((Date.now() - timestamp.getTime()) / 60000));
+    if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    if (elapsedHours < 24) return `${elapsedHours}h`;
+    return `${Math.floor(elapsedHours / 24)}d`;
+};
+
+const normalizeReportKind = (value: unknown, summary = ''): TaskReportKind => {
+    const normalized = typeof value === 'string' ? value.toLowerCase().trim() : '';
+    const haystack = `${normalized} ${summary}`.toLowerCase();
+    if (/escal/.test(haystack)) return 'escalation';
+    if (/(block|bloque|inciden|hold|issue)/.test(haystack)) return 'blocker';
+    return 'report';
+};
+
+const buildTaskReport = (input: unknown, fallbackAuthor: string | undefined, index: number): TaskReport | null => {
+    if (typeof input === 'string' && input.trim()) {
+        const summary = input.trim();
+        return {
+            id: `report_${index}_${summary.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+            kind: normalizeReportKind(undefined, summary),
+            summary,
+            authorName: fallbackAuthor,
+        };
+    }
+
+    const report = asRecord(input);
+    if (!report) return null;
+
+    const sources = [report, asRecord(report.payload), asRecord(report.context), asRecord(report.metadata)];
+    const summary =
+        readString(sources, ['summary', 'title', 'label', 'message', 'text', 'note', 'statusText', 'headline']) ||
+        readString(sources, ['description', 'detail', 'body']);
+    if (!summary) return null;
+
+    const detail = readString(sources, ['description', 'detail', 'body', 'context', 'notes', 'resolution']);
+
+    return {
+        id: readString(sources, ['id']) || `report_${index}_${summary.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+        kind: normalizeReportKind(readString(sources, ['kind', 'type', 'category', 'status']), summary),
+        summary,
+        detail: detail && detail !== summary ? detail : undefined,
+        authorName: readString(sources, ['authorName', 'reporterName', 'employeeName', 'userName', 'ownerName', 'assigneeName']) || fallbackAuthor,
+        createdAt: readDate(sources, ['createdAt', 'updatedAt', 'timestamp', 'reportedAt', 'loggedAt', 'at']),
+    };
+};
+
+const buildTaskReports = (
+    sources: Array<LooseRecord | null>,
+    fallbackAuthor: string | undefined,
+    blockedReason?: string,
+    blockedAt?: Date,
+) => {
+    const reportCandidates = [
+        ...collectValues(sources, ['reports', 'taskReports', 'statusReports', 'updates', 'reportLog', 'timeline', 'events', 'activity']),
+        ...collectValues(sources, ['latestReport', 'lastReport', 'report', 'statusReport', 'latestUpdate']),
+    ];
+
+    if (blockedReason) {
+        reportCandidates.push({
+            id: `blocked_${blockedReason.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+            kind: 'blocker',
+            summary: blockedReason,
+            createdAt: blockedAt,
+            authorName: fallbackAuthor,
+        });
+    }
+
+    const reports = reportCandidates
+        .map((candidate, index) => buildTaskReport(candidate, fallbackAuthor, index))
+        .filter((report): report is TaskReport => Boolean(report))
+        .sort((left, right) => (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0));
+
+    const seen = new Set<string>();
+    return reports.filter((report) => {
+        const key = `${report.kind}|${report.createdAt?.getTime() || 0}|${report.summary.toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
+const buildEscalationLabel = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return `Escalada L${value}`;
+    if (typeof value === 'string' && value.trim()) {
+        const trimmed = value.trim();
+        return /^\d+$/.test(trimmed) ? `Escalada L${trimmed}` : `Escalada ${trimmed}`;
+    }
+    return 'Escalada';
+};
+
+const buildTaskSignals = ({
+    sources,
+    status,
+    createdAt,
+    acknowledgedAt,
+    reports,
+    allowAckSignal,
+}: {
+    sources: Array<LooseRecord | null>;
+    status: OperationalTaskStatus;
+    createdAt?: Date;
+    acknowledgedAt?: Date;
+    reports: TaskReport[];
+    allowAckSignal: boolean;
+}) => {
+    const signals: TaskSignal[] = [];
+    const escalationLevel = readValue(sources, ['escalationLevel', 'escalationTier', 'severity']);
+    const escalated =
+        readBoolean(sources, ['escalated', 'isEscalated', 'needsEscalation', 'requiresAttention']) ||
+        Boolean(readDate(sources, ['escalatedAt', 'escalationAt', 'escalationRequestedAt'])) ||
+        Boolean(readString(sources, ['escalationReason', 'escalationSummary', 'escalationNote'])) ||
+        reports.some((report) => report.kind === 'escalation');
+
+    if (escalated) {
+        signals.push({
+            id: 'escalation',
+            label: buildEscalationLabel(escalationLevel),
+            tone: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+        });
+    }
+
+    if (allowAckSignal && status === 'assigned' && !acknowledgedAt) {
+        signals.push({
+            id: 'no_ack',
+            label: createdAt ? `Sin acuse ${formatAgeCompact(createdAt)}` : 'Sin acuse',
+            tone: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+        });
+    }
+
+    return signals;
 };
 
 const normalizeTaskStatus = (value: unknown): OperationalTaskStatus | undefined => {
@@ -79,10 +314,45 @@ const buildDashboardTask = (input: unknown, sales: Sale[]): DashboardTask | null
 
     if (status === 'done') return null;
 
+    const title =
+        readString(sources, ['title', 'label', 'name']) ||
+        (sale ? `${sale.customer}` : 'Tarea operativa');
+    const customerName = readString(sources, ['customerName', 'customer', 'clientName']) || sale?.customer;
+    const timestamp = readDate(sources, ['dueAt', 'scheduledAt', 'createdAt', 'updatedAt', 'timestamp']) || sale?.timestamp || new Date();
+    const createdAt = readDate(sources, ['createdAt', 'timestamp']) || sale?.timestamp || timestamp;
+    const updatedAt = readDate(sources, ['updatedAt', 'lastUpdatedAt', 'timestamp']) || createdAt;
+    const acknowledgedAt =
+        readDate(sources, ['acknowledgedAt', 'ackedAt', 'startedAt']) ||
+        (status === 'acknowledged' || status === 'in_progress' ? timestamp : undefined);
+    const blockedAt = readDate(sources, ['blockedAt', 'holdAt']) || (status === 'blocked' ? updatedAt : undefined);
+    const blockedReason = status === 'blocked' ? readString(sources, ['blockedReason', 'blockReason', 'issue', 'holdReason']) : undefined;
+    const assigneeName = readString(sources, ['assigneeName', 'employeeName', 'driverName', 'ownerName']);
+    const ownerName = readString(sources, ['ownerName', 'resolverName']) || assigneeName;
+    const reports = buildTaskReports(sources, ownerName || assigneeName, blockedReason, blockedAt);
+    const signals = buildTaskSignals({
+        sources,
+        status,
+        createdAt,
+        acknowledgedAt,
+        reports,
+        allowAckSignal: true,
+    });
+
     return {
         saleId,
+        source: 'assignment',
         stage: inferTaskStage(stageSignals, sale),
         status,
+        title,
+        customerName,
+        assigneeName,
+        ownerName,
+        createdAt,
+        updatedAt,
+        acknowledgedAt,
+        blockedAt,
+        reports,
+        signals,
     };
 };
 
@@ -90,7 +360,34 @@ const buildDashboardTaskFromSale = (sale: Sale): DashboardTask | null => {
     const stage = saleStatusToStageMap[sale.status];
     const status = saleStatusToTaskStatusMap[sale.status];
     if (!stage || !status || status === 'done') return null;
-    return { saleId: sale.id, stage, status };
+    return {
+        saleId: sale.id,
+        source: 'fallback',
+        stage,
+        status,
+        title: sale.customer,
+        customerName: sale.customer,
+        assigneeName: undefined,
+        ownerName: undefined,
+        createdAt: sale.timestamp,
+        updatedAt: sale.timestamp,
+        acknowledgedAt: stage === 'route' ? sale.timestamp : undefined,
+        blockedAt: undefined,
+        reports: [],
+        signals: [],
+    };
+};
+
+const reportToneMap: Record<TaskReportKind, string> = {
+    report: 'border-white/10 bg-white/[0.03] text-slate-200',
+    blocker: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+    escalation: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+};
+
+const reportIconMap: Record<TaskReportKind, string> = {
+    report: 'fa-file-lines',
+    blocker: 'fa-circle-exclamation',
+    escalation: 'fa-bolt',
 };
 
 const KpiCard: React.FC<{ title: string; value: string; subtext?: string; icon: string; accent: string }> = ({ title, value, subtext, icon, accent }) => (
@@ -257,6 +554,33 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 byStage: Record<OperationalTaskStage, number>;
             },
         );
+        const operationalIndicators = operationalTasks.reduce(
+            (accumulator, task) => {
+                if (task.signals.some((signal) => signal.id === 'no_ack')) accumulator.noAck += 1;
+                if (task.signals.some((signal) => signal.id === 'escalation')) accumulator.escalated += 1;
+                if (task.reports.length > 0) accumulator.reported += task.reports.length;
+                if (task.status === 'blocked' && (task.ownerName || task.assigneeName)) accumulator.blockedOwned += 1;
+                return accumulator;
+            },
+            {
+                noAck: 0,
+                escalated: 0,
+                reported: 0,
+                blockedOwned: 0,
+            },
+        );
+        const recentReports = operationalTasks
+            .flatMap((task) =>
+                task.reports.map((report) => ({
+                    ...report,
+                    taskTitle: task.title,
+                    customerName: task.customerName,
+                    ownerName: task.ownerName || task.assigneeName,
+                    stage: task.stage,
+                })),
+            )
+            .sort((left, right) => (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
+            .slice(0, 6);
 
         const last7Days = new Date();
         last7Days.setDate(last7Days.getDate() - 6);
@@ -302,6 +626,8 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             margenBrutoHoy,
             ticketPromedio,
             taskSignals,
+            operationalIndicators,
+            recentReports,
             salesByDay,
             salesCompositionData,
             top5Products,
@@ -356,6 +682,21 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                         </div>
                     </div>
                 </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                    <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                        Reportes {dashboardData.operationalIndicators.reported}
+                    </span>
+                    <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
+                        Escaladas {dashboardData.operationalIndicators.escalated}
+                    </span>
+                    <span className="inline-flex rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
+                        Sin acuse {dashboardData.operationalIndicators.noAck}
+                    </span>
+                    <span className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
+                        Bloqueos c/owner {dashboardData.operationalIndicators.blockedOwned}
+                    </span>
+                </div>
             </section>
 
             <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -381,6 +722,73 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 <div className="glass-panel-dark rounded-[1.6rem] border border-white/10 px-4 py-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Ventas hoy</p>
                     <p className="mt-2 text-2xl font-black text-white">{dashboardData.ventasRegistradas}</p>
+                </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+                    <div className="mb-5">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Pulso operativo</p>
+                        <h2 className="mt-2 text-xl font-black tracking-tight text-white">Escalacion y acuses</h2>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100">Sin acuse</p>
+                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.noAck}</p>
+                        </div>
+                        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-100">Escaladas</p>
+                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.escalated}</p>
+                        </div>
+                        <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-100">Bloqueos c/owner</p>
+                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.blockedOwned}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Reportes</p>
+                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.reported}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+                    <div className="mb-5 flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Reportes</p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Actividad reciente</h2>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
+                            {dashboardData.recentReports.length}
+                        </span>
+                    </div>
+
+                    {dashboardData.recentReports.length > 0 ? (
+                        <div className="space-y-3">
+                            {dashboardData.recentReports.map((report) => (
+                                <div key={`${report.id}_${report.createdAt?.getTime() || 0}`} className={`rounded-2xl border px-4 py-3 ${reportToneMap[report.kind]}`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-current">{report.summary}</p>
+                                            {report.detail && <p className="mt-1 text-xs leading-5 text-slate-300">{report.detail}</p>}
+                                            <p className="mt-2 text-[11px] font-semibold text-slate-400">
+                                                {[report.customerName || report.taskTitle, report.ownerName, report.createdAt?.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })].filter(Boolean).join(' / ')}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="rounded-full border border-white/10 bg-slate-950/60 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                                {stageLabelMap[report.stage]}
+                                            </span>
+                                            <i className={`fa-solid ${reportIconMap[report.kind]} text-xs opacity-80`}></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
+                            <p className="text-sm font-semibold text-white">Sin reportes recientes.</p>
+                        </div>
+                    )}
                 </div>
             </section>
 
