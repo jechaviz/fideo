@@ -14,6 +14,22 @@ const FIDEO_TASK_ACK_ESCALATION_MINUTES = (() => {
     const parsed = Number($os.getenv('FIDEO_TASK_ACK_ESCALATION_MINUTES') || $os.getenv('TASK_ACK_ESCALATION_MINUTES') || 20);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
 })();
+const FIDEO_PRESENCE_ACTIVE_MINUTES = (() => {
+    const parsed = Number($os.getenv('FIDEO_PRESENCE_ACTIVE_MINUTES') || $os.getenv('FIDEO_STAFF_ACTIVE_MINUTES') || 6);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6;
+})();
+const FIDEO_PRESENCE_RECENT_HOURS = (() => {
+    const parsed = Number($os.getenv('FIDEO_PRESENCE_RECENT_HOURS') || $os.getenv('FIDEO_STAFF_RECENT_HOURS') || 18);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 18;
+})();
+const FIDEO_CASH_IDLE_MINUTES = (() => {
+    const parsed = Number($os.getenv('FIDEO_CASH_IDLE_MINUTES') || $os.getenv('FIDEO_DRAWER_IDLE_MINUTES') || 90);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+})();
+const FIDEO_RUNTIME_MAX_EXCEPTIONS = (() => {
+    const parsed = Number($os.getenv('FIDEO_RUNTIME_MAX_EXCEPTIONS') || 40);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 40;
+})();
 
 function fideoPushText(value, fallback) {
     return value === undefined || value === null || value === '' ? (fallback || '') : String(value);
@@ -822,6 +838,595 @@ function fideoPresenceFindLatest(app, workspaceId, actorId) {
     }
 
     return null;
+}
+
+function fideoRuntimeIsInternalRole(role) {
+    return ['Admin', 'Empacador', 'Repartidor', 'Cajero'].indexOf(fideoPushText(role, '')) >= 0;
+}
+
+function fideoRuntimeParseClosingDifference(value) {
+    const match = fideoPushText(value, '').match(/Diferencia al cierre:\s*([+-]?\d+(?:\.\d+)?)/i);
+    if (!match) {
+        return null;
+    }
+
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fideoRuntimeListPresenceLogs(app, workspaceId, limit) {
+    const normalizedWorkspaceId = fideoPushText(workspaceId, '').trim();
+    if (!normalizedWorkspaceId) {
+        return [];
+    }
+
+    try {
+        return app.findRecordsByFilter(
+            'fideo_action_logs',
+            "workspace = '" + fideoPushEscapeFilterLiteral(normalizedWorkspaceId) + "'",
+            '-updated',
+            Number(limit || 1000),
+            0,
+        ).filter((record) => {
+            const action = fideoPushText(record.get('action'), '');
+            return action.indexOf('presence_ping:') === 0 || action === 'presence_ping';
+        });
+    } catch (_) {
+        return [];
+    }
+}
+
+function fideoRuntimeResolvePresenceState(presence, nowMs) {
+    const normalized = fideoPushObject(presence);
+    const lastSeenAt = fideoPushText(normalized.lastSeenAt, '');
+    const lastSeenMs = fideoPushParseTime(lastSeenAt);
+    const ageMinutes = lastSeenMs > 0 ? Math.max(0, Math.round((nowMs - lastSeenMs) / 60000)) : null;
+    const recentWindowMs = FIDEO_PRESENCE_RECENT_HOURS * 60 * 60 * 1000;
+    const activeWindowMinutes = FIDEO_PRESENCE_ACTIVE_MINUTES;
+    const incomingStatus = fideoPresenceNormalizeStatus(normalized.status);
+
+    let status = 'offline';
+    if (lastSeenMs > 0 && nowMs - lastSeenMs <= recentWindowMs) {
+        if (incomingStatus === 'offline') {
+            status = 'offline';
+        } else if (incomingStatus === 'background') {
+            status = 'background';
+        } else if (incomingStatus === 'idle' || (ageMinutes !== null && ageMinutes > activeWindowMinutes)) {
+            status = 'idle';
+        } else {
+            status = 'active';
+        }
+    }
+
+    return {
+        status,
+        online: status !== 'offline',
+        lastSeenAt: lastSeenAt || null,
+        lastSeenMs,
+        ageMinutes,
+    };
+}
+
+function fideoRuntimeResolveStaffEntry(taskOrReport, rosterByEmployeeId, rosterByName) {
+    const normalized = fideoPushObject(taskOrReport);
+    const employeeId = fideoPushText(normalized.employeeId, '').trim();
+    if (employeeId && rosterByEmployeeId[employeeId]) {
+        return rosterByEmployeeId[employeeId];
+    }
+
+    const employeeName = fideoPushNormalizeText(normalized.employeeName || normalized.ownerName || normalized.assigneeName);
+    if (employeeName && rosterByName[employeeName]) {
+        return rosterByName[employeeName];
+    }
+
+    return null;
+}
+
+function fideoRuntimeBuildOverview(app, workspaceId, snapshot, options) {
+    const normalizedSnapshot = fideoPushObject(snapshot);
+    const nowMs = Date.now();
+    const generatedAt = new Date(nowMs).toISOString();
+    const workspaceSlug = fideoPushText(
+        fideoPushObject(options).workspaceSlug,
+        fideoPushGetWorkspaceSlug(app, workspaceId) || 'main',
+    );
+    const users = fideoPushFindWorkspaceUsers(app, workspaceId).filter(
+        (record) => !!record.get('canSwitchRoles') || fideoRuntimeIsInternalRole(record.get('role')),
+    );
+    const employees = fideoPushArray(normalizedSnapshot.employees).filter(
+        (item) => fideoRuntimeIsInternalRole(item && item.role),
+    );
+    const taskAssignments = fideoPushArray(normalizedSnapshot.taskAssignments).map((item) => fideoPushObject(item));
+    const taskReports = fideoPushArray(normalizedSnapshot.taskReports).map((item) => fideoPushObject(item));
+    const cashDrawers = fideoPushArray(normalizedSnapshot.cashDrawers).map((item) => fideoPushObject(item));
+    const cashDrawerActivities = fideoPushArray(normalizedSnapshot.cashDrawerActivities).map((item) => fideoPushObject(item));
+    const presenceLogs = fideoRuntimeListPresenceLogs(app, workspaceId, 1500);
+    const latestPresenceByActor = {};
+    const recentSessionsByActor = {};
+    const recentWindowMs = FIDEO_PRESENCE_RECENT_HOURS * 60 * 60 * 1000;
+    const employeeById = {};
+    const rosterByKey = {};
+    const rosterByEmployeeId = {};
+    const rosterByName = {};
+    const openReportByTaskId = {};
+    const roster = [];
+    const severityRank = { critical: 4, high: 3, medium: 2, low: 1 };
+    const seenExceptions = {};
+    const exceptions = [];
+
+    employees.forEach((employee) => {
+        const employeeId = fideoPushText(employee && employee.id, '').trim();
+        if (employeeId) {
+            employeeById[employeeId] = employee;
+        }
+    });
+
+    presenceLogs.forEach((record) => {
+        const actorId = fideoPushText(record.get('actor'), '').trim();
+        if (!actorId) {
+            return;
+        }
+
+        if (!latestPresenceByActor[actorId]) {
+            latestPresenceByActor[actorId] = fideoPresenceExtractState(record);
+        }
+
+        const state = fideoPresenceExtractState(record);
+        if (!state || !state.lastSeenAt) {
+            return;
+        }
+
+        const seenAtMs = fideoPushParseTime(state.lastSeenAt);
+        if (seenAtMs <= 0 || nowMs - seenAtMs > recentWindowMs) {
+            return;
+        }
+
+        if (!recentSessionsByActor[actorId]) {
+            recentSessionsByActor[actorId] = [];
+        }
+
+        if (recentSessionsByActor[actorId].length < 4) {
+            recentSessionsByActor[actorId].push({
+                sessionKey: fideoPushText(state.sessionKey, ''),
+                sessionId: fideoPushText(state.sessionId, ''),
+                deviceId: fideoPushText(state.deviceId, ''),
+                deviceName: fideoPushText(state.deviceName, ''),
+                installationId: fideoPushText(state.installationId, ''),
+                platform: fideoPushText(state.platform, ''),
+                appVersion: fideoPushText(state.appVersion, ''),
+                status: fideoPresenceNormalizeStatus(state.status),
+                lastSeenAt: fideoPushText(state.lastSeenAt, ''),
+            });
+        }
+    });
+
+    const upsertRosterEntry = (source) => {
+        const normalizedSource = source || {};
+        const employeeId = fideoPushText(normalizedSource.employeeId, '').trim();
+        const name = fideoPushText(normalizedSource.name, '').trim();
+        const role = fideoPushText(normalizedSource.role, 'Admin').trim() || 'Admin';
+        const key = employeeId
+            ? 'employee:' + employeeId
+            : (name ? 'name:' + fideoPushNormalizeText(name) + ':' + fideoPushNormalizeText(role) : 'user:' + fideoPushText(normalizedSource.userId, 'anon'));
+
+        let entry = rosterByKey[key];
+        if (!entry) {
+            entry = {
+                id: key,
+                employeeId: employeeId || null,
+                userId: normalizedSource.userId || null,
+                name: name || fideoPushText(normalizedSource.email, 'Sin nombre'),
+                role: role,
+                canSwitchRoles: !!normalizedSource.canSwitchRoles,
+                email: normalizedSource.email || null,
+                pushExternalId: normalizedSource.pushExternalId || null,
+                workspaceUser: !!normalizedSource.userId,
+            };
+            rosterByKey[key] = entry;
+            roster.push(entry);
+        } else {
+            if (!entry.userId && normalizedSource.userId) {
+                entry.userId = normalizedSource.userId;
+            }
+            if (!entry.employeeId && employeeId) {
+                entry.employeeId = employeeId;
+            }
+            if (!entry.email && normalizedSource.email) {
+                entry.email = normalizedSource.email;
+            }
+            if (!entry.pushExternalId && normalizedSource.pushExternalId) {
+                entry.pushExternalId = normalizedSource.pushExternalId;
+            }
+            entry.canSwitchRoles = entry.canSwitchRoles || !!normalizedSource.canSwitchRoles;
+            entry.workspaceUser = entry.workspaceUser || !!normalizedSource.userId;
+        }
+
+        if (entry.employeeId) {
+            rosterByEmployeeId[entry.employeeId] = entry;
+        }
+
+        if (entry.name) {
+            rosterByName[fideoPushNormalizeText(entry.name)] = entry;
+        }
+
+        return entry;
+    };
+
+    users.forEach((record) => {
+        const employeeId = fideoPushText(record.get('employeeId'), '').trim();
+        const linkedEmployee = employeeId ? employeeById[employeeId] || {} : {};
+        upsertRosterEntry({
+            userId: record.id,
+            employeeId: employeeId || fideoPushText(linkedEmployee.id, '').trim() || null,
+            name: fideoPushText(record.get('name'), '') || fideoPushText(linkedEmployee.name, '') || fideoPushText(record.get('email'), 'Fideo User'),
+            role: fideoPushText(record.get('role'), '') || fideoPushText(linkedEmployee.role, 'Admin') || 'Admin',
+            canSwitchRoles: !!record.get('canSwitchRoles'),
+            email: fideoPushText(record.get('email'), ''),
+            pushExternalId: fideoPushText(record.get('pushExternalId'), '').trim() || null,
+        });
+    });
+
+    employees.forEach((employee) => {
+        upsertRosterEntry({
+            employeeId: fideoPushText(employee && employee.id, '').trim() || null,
+            name: fideoPushText(employee && employee.name, '').trim() || 'Staff',
+            role: fideoPushText(employee && employee.role, 'Admin') || 'Admin',
+        });
+    });
+
+    roster.forEach((entry) => {
+        const latestPresence = entry.userId ? latestPresenceByActor[entry.userId] || null : null;
+        const presenceMeta = fideoRuntimeResolvePresenceState(latestPresence, nowMs);
+        const recentSessions = entry.userId ? (recentSessionsByActor[entry.userId] || []) : [];
+        const deviceNames = fideoPushUnique(recentSessions.map((session) => session.deviceName).filter((value) => !!value));
+        const relatedTasks = taskAssignments.filter((task) => {
+            if (entry.employeeId && fideoPushText(task.employeeId, '').trim() === entry.employeeId) {
+                return true;
+            }
+
+            return entry.name && fideoPushNormalizeText(task.employeeName) === fideoPushNormalizeText(entry.name);
+        });
+        const openTasks = relatedTasks.filter((task) => fideoPushText(task.status, 'assigned') !== 'done');
+        const blockedCount = openTasks.filter((task) => fideoPushText(task.status, '') === 'blocked').length;
+        const ackPendingCount = openTasks.filter((task) => fideoPushIsTaskAckOverdue(task, nowMs)).length;
+        const inProgressCount = openTasks.filter((task) => fideoPushText(task.status, '') === 'in_progress').length;
+        const acknowledgedCount = openTasks.filter((task) => fideoPushText(task.status, '') === 'acknowledged').length;
+
+        entry.presenceStatus = presenceMeta.status;
+        entry.online = presenceMeta.online;
+        entry.lastSeenAt = presenceMeta.lastSeenAt;
+        entry.lastSeenMinutes = presenceMeta.ageMinutes;
+        entry.recentSessionCount = recentSessions.length;
+        entry.recentSessions = recentSessions;
+        entry.deviceNames = deviceNames;
+        entry.taskLoad = {
+            openCount: openTasks.length,
+            assignedCount: openTasks.filter((task) => fideoPushText(task.status, '') === 'assigned').length,
+            acknowledgedCount,
+            inProgressCount,
+            blockedCount,
+            ackPendingCount,
+        };
+    });
+
+    taskReports.forEach((report) => {
+        const taskId = fideoPushText(report.taskId, '').trim();
+        if (!taskId) {
+            return;
+        }
+
+        const status = fideoPushText(report.status, 'resolved');
+        const isOpen = status !== 'resolved' && status !== 'closed';
+        if (!isOpen) {
+            return;
+        }
+
+        const previous = openReportByTaskId[taskId];
+        if (!previous || fideoPushParseTime(report.createdAt) >= fideoPushParseTime(previous.createdAt)) {
+            openReportByTaskId[taskId] = report;
+        }
+    });
+
+    const pushException = (item) => {
+        const normalized = fideoPushObject(item);
+        const id = fideoPushText(normalized.id, '').trim();
+        if (!id || seenExceptions[id]) {
+            return;
+        }
+
+        seenExceptions[id] = true;
+        exceptions.push(normalized);
+    };
+
+    taskReports.forEach((report) => {
+        const status = fideoPushText(report.status, 'resolved');
+        const escalationStatus = fideoPushText(report.escalationStatus, 'none');
+        const reportId = fideoPushText(report.id, '').trim();
+        if (!reportId) {
+            return;
+        }
+
+        if (
+            status === 'resolved'
+            || status === 'closed'
+            || (!fideoPushShouldEscalateTaskReport(report) && escalationStatus !== 'pending' && escalationStatus !== 'sent')
+        ) {
+            return;
+        }
+
+        const owner = fideoRuntimeResolveStaffEntry(report, rosterByEmployeeId, rosterByName);
+        pushException({
+            id: 'task_report:' + reportId,
+            type: 'task_report',
+            domain: 'operations',
+            queue: 'admin',
+            severity: fideoPushText(report.severity, 'normal') === 'high' || fideoPushText(report.kind, '') === 'blocker' ? 'high' : 'medium',
+            title: fideoPushText(report.taskTitle, 'Reporte operativo'),
+            summary: fideoPushText(report.summary, 'Reporte abierto'),
+            detail: fideoPushText(report.detail, ''),
+            createdAt: fideoPushText(report.createdAt, ''),
+            ageMinutes: (() => {
+                const createdAtMs = fideoPushParseTime(report.createdAt);
+                return createdAtMs > 0 ? Math.max(0, Math.round((nowMs - createdAtMs) / 60000)) : null;
+            })(),
+            taskId: fideoPushText(report.taskId, ''),
+            reportId: reportId,
+            role: fideoPushText(report.role, owner ? owner.role : ''),
+            employeeId: owner ? owner.employeeId : fideoPushText(report.employeeId, ''),
+            employeeName: owner ? owner.name : fideoPushText(report.employeeName, ''),
+            customerName: fideoPushText(report.customerName, ''),
+            escalationStatus: escalationStatus,
+            presenceStatus: owner ? owner.presenceStatus : 'offline',
+            lastSeenAt: owner ? owner.lastSeenAt : null,
+        });
+    });
+
+    taskAssignments.forEach((task) => {
+        const taskId = fideoPushText(task.id, '').trim();
+        if (!taskId) {
+            return;
+        }
+
+        const owner = fideoRuntimeResolveStaffEntry(task, rosterByEmployeeId, rosterByName);
+        const status = fideoPushText(task.status, 'assigned');
+        const openReport = openReportByTaskId[taskId];
+        const hasOpenEscalatedReport = !!(
+            openReport
+            && (
+                fideoPushShouldEscalateTaskReport(openReport)
+                || ['pending', 'sent'].indexOf(fideoPushText(openReport.escalationStatus, 'none')) >= 0
+            )
+        );
+
+        if (status === 'blocked' && !hasOpenEscalatedReport) {
+            const blockedAt = fideoPushText(task.blockedAt, task.updatedAt || task.assignedAt);
+            const blockedAtMs = fideoPushParseTime(blockedAt);
+            pushException({
+                id: 'task_blocked:' + taskId,
+                type: 'task_blocked',
+                domain: 'operations',
+                queue: 'admin',
+                severity: 'high',
+                title: fideoPushText(task.title, 'Tarea bloqueada'),
+                summary: fideoPushText(task.blockedReason, 'Sin detalle de bloqueo'),
+                createdAt: blockedAt || null,
+                ageMinutes: blockedAtMs > 0 ? Math.max(0, Math.round((nowMs - blockedAtMs) / 60000)) : null,
+                taskId: taskId,
+                role: owner ? owner.role : fideoPushText(task.role, ''),
+                employeeId: owner ? owner.employeeId : fideoPushText(task.employeeId, ''),
+                employeeName: owner ? owner.name : fideoPushText(task.employeeName, ''),
+                customerName: fideoPushText(task.customerName, ''),
+                presenceStatus: owner ? owner.presenceStatus : 'offline',
+                lastSeenAt: owner ? owner.lastSeenAt : null,
+            });
+        }
+
+        if (fideoPushIsTaskAckOverdue(task, nowMs)) {
+            const assignedAt = fideoPushText(task.assignedAt, task.createdAt || task.updatedAt);
+            const assignedAtMs = fideoPushParseTime(assignedAt);
+            pushException({
+                id: 'task_ack_overdue:' + taskId,
+                type: 'task_ack_overdue',
+                domain: 'operations',
+                queue: 'admin',
+                severity: owner && owner.presenceStatus === 'offline' ? 'high' : 'medium',
+                title: fideoPushText(task.title, 'Tarea sin acuse'),
+                summary: 'Sigue sin acuse operativo.',
+                createdAt: assignedAt || null,
+                ageMinutes: assignedAtMs > 0 ? Math.max(0, Math.round((nowMs - assignedAtMs) / 60000)) : null,
+                taskId: taskId,
+                role: owner ? owner.role : fideoPushText(task.role, ''),
+                employeeId: owner ? owner.employeeId : fideoPushText(task.employeeId, ''),
+                employeeName: owner ? owner.name : fideoPushText(task.employeeName, ''),
+                customerName: fideoPushText(task.customerName, ''),
+                presenceStatus: owner ? owner.presenceStatus : 'offline',
+                lastSeenAt: owner ? owner.lastSeenAt : null,
+            });
+        }
+    });
+
+    roster.forEach((entry) => {
+        if (entry.taskLoad.openCount <= 0 || entry.online) {
+            return;
+        }
+
+        pushException({
+            id: 'staff_offline:' + (entry.employeeId || entry.userId || entry.name),
+            type: 'staff_offline_with_live_tasks',
+            domain: 'staff',
+            queue: 'admin',
+            severity: entry.taskLoad.blockedCount > 0 || entry.taskLoad.ackPendingCount > 0 ? 'high' : 'medium',
+            title: entry.name || 'Staff sin nombre',
+            summary: 'Sin presencia reciente con trabajo abierto.',
+            createdAt: entry.lastSeenAt,
+            ageMinutes: entry.lastSeenMinutes,
+            employeeId: entry.employeeId,
+            employeeName: entry.name,
+            role: entry.role,
+            presenceStatus: entry.presenceStatus,
+            lastSeenAt: entry.lastSeenAt,
+            openTaskCount: entry.taskLoad.openCount,
+        });
+    });
+
+    const openCashierCount = roster.filter((entry) => entry.role === 'Cajero' && entry.online).length;
+
+    cashDrawers.forEach((drawer) => {
+        const drawerId = fideoPushText(drawer.id, '').trim();
+        if (!drawerId) {
+            return;
+        }
+
+        const drawerActivities = cashDrawerActivities
+            .filter((activity) => fideoPushText(activity.drawerId, '') === drawerId)
+            .sort((left, right) => fideoPushParseTime(right.timestamp) - fideoPushParseTime(left.timestamp));
+        const lastActivity = drawerActivities[0] || null;
+        const lastActivityAt = lastActivity ? fideoPushText(lastActivity.timestamp, '') : '';
+        const lastActivityMs = fideoPushParseTime(lastActivityAt);
+        const balance = Number(drawer.balance || 0);
+
+        if (fideoPushText(drawer.status, 'Cerrada') === 'Abierta' && balance < 0) {
+            pushException({
+                id: 'cash_negative:' + drawerId,
+                type: 'cash_negative_balance',
+                domain: 'cash',
+                queue: 'cash',
+                severity: 'critical',
+                title: fideoPushText(drawer.name, 'Caja'),
+                summary: 'Saldo negativo en caja abierta.',
+                createdAt: lastActivityAt || fideoPushText(drawer.lastOpened, '') || null,
+                ageMinutes: lastActivityMs > 0 ? Math.max(0, Math.round((nowMs - lastActivityMs) / 60000)) : null,
+                drawerId: drawerId,
+                balance: balance,
+                presenceStatus: openCashierCount > 0 ? 'active' : 'offline',
+            });
+        }
+
+        if (
+            fideoPushText(drawer.status, 'Cerrada') === 'Abierta'
+            && lastActivityMs > 0
+            && nowMs - lastActivityMs >= FIDEO_CASH_IDLE_MINUTES * 60 * 1000
+        ) {
+            pushException({
+                id: 'cash_idle:' + drawerId,
+                type: 'cash_drawer_idle',
+                domain: 'cash',
+                queue: 'cash',
+                severity: openCashierCount > 0 ? 'medium' : 'high',
+                title: fideoPushText(drawer.name, 'Caja'),
+                summary: 'Caja abierta sin movimiento reciente.',
+                createdAt: lastActivityAt || fideoPushText(drawer.lastOpened, '') || null,
+                ageMinutes: Math.max(0, Math.round((nowMs - lastActivityMs) / 60000)),
+                drawerId: drawerId,
+                balance: balance,
+                presenceStatus: openCashierCount > 0 ? 'active' : 'offline',
+            });
+        }
+
+        if (fideoPushText(drawer.status, 'Cerrada') === 'Abierta' && openCashierCount <= 0) {
+            pushException({
+                id: 'cash_without_cashier:' + drawerId,
+                type: 'cash_drawer_without_cashier_presence',
+                domain: 'cash',
+                queue: 'cash',
+                severity: 'high',
+                title: fideoPushText(drawer.name, 'Caja'),
+                summary: 'Caja abierta sin Cajero con presencia reciente.',
+                createdAt: fideoPushText(drawer.lastOpened, '') || lastActivityAt || null,
+                ageMinutes: (() => {
+                    const baseMs = fideoPushParseTime(drawer.lastOpened) || lastActivityMs;
+                    return baseMs > 0 ? Math.max(0, Math.round((nowMs - baseMs) / 60000)) : null;
+                })(),
+                drawerId: drawerId,
+                balance: balance,
+                presenceStatus: 'offline',
+            });
+        }
+    });
+
+    cashDrawerActivities.forEach((activity) => {
+        const difference = fideoRuntimeParseClosingDifference(activity.notes);
+        const activityAtMs = fideoPushParseTime(activity.timestamp);
+        if (
+            difference === null
+            || !activityAtMs
+            || nowMs - activityAtMs > 24 * 60 * 60 * 1000
+        ) {
+            return;
+        }
+
+        pushException({
+            id: 'cash_close_difference:' + fideoPushText(activity.id, activity.drawerId + ':' + activity.timestamp),
+            type: 'cash_close_difference',
+            domain: 'cash',
+            queue: 'cash',
+            severity: Math.abs(difference) >= 500 ? 'critical' : 'high',
+            title: 'Corte con diferencia',
+            summary: 'Diferencia al cierre: ' + difference,
+            createdAt: fideoPushText(activity.timestamp, ''),
+            ageMinutes: Math.max(0, Math.round((nowMs - activityAtMs) / 60000)),
+            drawerId: fideoPushText(activity.drawerId, ''),
+            amount: difference,
+        });
+    });
+
+    exceptions.sort((left, right) => {
+        const severityDelta = (severityRank[fideoPushText(right.severity, 'low')] || 0) - (severityRank[fideoPushText(left.severity, 'low')] || 0);
+        if (severityDelta !== 0) {
+            return severityDelta;
+        }
+
+        return (Number(right.ageMinutes || 0)) - (Number(left.ageMinutes || 0));
+    });
+
+    const limitedExceptions = exceptions.slice(0, FIDEO_RUNTIME_MAX_EXCEPTIONS);
+    const summary = {
+        total: limitedExceptions.length,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        byDomain: {
+            operations: 0,
+            cash: 0,
+            staff: 0,
+        },
+    };
+
+    limitedExceptions.forEach((item) => {
+        const severity = fideoPushText(item.severity, 'low');
+        const domain = fideoPushText(item.domain, 'operations');
+        if (summary[severity] !== undefined) {
+            summary[severity] += 1;
+        }
+        if (summary.byDomain[domain] !== undefined) {
+            summary.byDomain[domain] += 1;
+        }
+    });
+
+    const presenceSummary = {
+        total: roster.length,
+        active: roster.filter((entry) => entry.presenceStatus === 'active').length,
+        background: roster.filter((entry) => entry.presenceStatus === 'background').length,
+        idle: roster.filter((entry) => entry.presenceStatus === 'idle').length,
+        offline: roster.filter((entry) => entry.presenceStatus === 'offline').length,
+        withOpenTasks: roster.filter((entry) => Number(entry.taskLoad.openCount || 0) > 0).length,
+        withExceptions: roster.filter((entry) => limitedExceptions.some((item) => item.employeeId && item.employeeId === entry.employeeId)).length,
+    };
+
+    return {
+        generatedAt,
+        workspaceId: fideoPushText(workspaceId, ''),
+        workspaceSlug,
+        staffPresence: {
+            summary: presenceSummary,
+            roster,
+        },
+        operationalExceptions: {
+            summary,
+            items: limitedExceptions,
+        },
+    };
 }
 
 routerAdd(
@@ -1849,6 +2454,12 @@ routerAdd(
             scope: canAccessFullWorkspace(authRecord) ? 'full' : buildProfile(authRecord).role,
         });
 
+        const runtimeOverview = canAccessFullWorkspace(authRecord)
+            ? fideoRuntimeBuildOverview(e.app, workspace.id, responseSnapshot, {
+                workspaceSlug: workspace.get('slug'),
+            })
+            : null;
+
         return e.json(200, {
             profile: buildProfile(authRecord),
             workspaceId: workspace.id,
@@ -1856,6 +2467,7 @@ routerAdd(
             snapshotRecordId: snapshotRecord.id,
             version: snapshotRecord.get('version') || 1,
             snapshot: scopedSnapshot,
+            runtimeOverview,
         });
         } catch (err) {
             console.log('BOOTSTRAP ERROR:', err.message);
@@ -1948,6 +2560,63 @@ routerAdd(
             pushExternalId: effectivePushExternalId || null,
             lastSeenAt: latestPresence && latestPresence.lastSeenAt ? latestPresence.lastSeenAt : nowIso,
             presence: latestPresence,
+        });
+    },
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/runtime/overview',
+    (e) => {
+        const authRecord = e.auth || e.requestInfo().auth;
+        if (!authRecord) {
+            throw new UnauthorizedError('Necesitas autenticarte para cargar la operacion de Fideo.');
+        }
+
+        const body = e.requestInfo().body || {};
+        const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '').trim();
+        const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
+        const role = fideoPushText(authRecord.get('role'), 'Admin');
+        const canAccessOverview = !!authRecord.get('canSwitchRoles') || fideoRuntimeIsInternalRole(role);
+
+        if (!workspaceId) {
+            throw new BadRequestError('Tu usuario no tiene workspace asignado para esta vista operativa.');
+        }
+
+        if (authWorkspaceId && workspaceId !== authWorkspaceId) {
+            throw new ForbiddenError('No tienes acceso a este workspace para revisar la operacion.');
+        }
+
+        if (!canAccessOverview) {
+            throw new ForbiddenError('Tu perfil no tiene acceso a esta vista operativa.');
+        }
+
+        let workspace = null;
+        try {
+            workspace = e.app.findRecordById('fideo_workspaces', workspaceId);
+        } catch (_) {
+            throw new ForbiddenError('No encontramos el workspace indicado para esta vista operativa.');
+        }
+
+        let snapshotRecord = null;
+        try {
+            snapshotRecord = e.app.findFirstRecordByData('fideo_state_snapshots', 'workspace', workspaceId);
+        } catch (_) {
+            snapshotRecord = null;
+        }
+
+        const snapshot = snapshotRecord ? snapshotRecord.get('snapshot') : {};
+        const runtimeOverview = fideoRuntimeBuildOverview(e.app, workspaceId, snapshot, {
+            workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
+        });
+
+        return e.json(200, {
+            workspaceId,
+            workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
+            snapshotRecordId: snapshotRecord ? snapshotRecord.id : null,
+            version: snapshotRecord ? Number(snapshotRecord.get('version') || 0) : 0,
+            runtimeOverview,
         });
     },
     $apis.requireAuth('fideo_users'),

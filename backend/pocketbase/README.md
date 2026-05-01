@@ -157,6 +157,7 @@ Con esto, el frontend puede seguir operando snapshot-first mientras PocketBase y
 
 - `POST /api/fideo/bootstrap`
 - `POST /api/fideo/presence/ping`
+- `POST /api/fideo/runtime/overview`
 - `POST /api/fideo/state/persist`
 - `POST /api/fideo/messages/interpret`
 - `POST /api/fideo/messages/approve`
@@ -175,9 +176,35 @@ Ambas rutas exigen auth real en `fideo_users`, validan ownership del workspace y
 Para presencia/identidad de dispositivo ahora hay un carril liviano:
 
 - `bootstrap` expone `profile.pushExternalId` cuando existe y tambien `profile.lastSeenAt` / `profile.presence` con la ultima sesion conocida del usuario
+- `bootstrap` ahora tambien puede devolver `runtimeOverview` para perfiles internos, sin tocar el contrato `snapshot`
 - `POST /api/fideo/presence/ping` acepta payload autenticado tipo `workspaceId`, `sessionId`, `deviceId`, `deviceName`, `installationId`, `platform`, `appVersion`, `status`, `pushExternalId` y `meta`
 - si `pushExternalId` llega informado, el hook lo guarda en `fideo_users.pushExternalId`
 - la presencia se persiste con upsert pragmatica por sesion en `fideo_action_logs` usando acciones `presence_ping:<sessionKey>`, para no meter ruido en `snapshot.activityLog`
+
+Encima de eso, ya existe una salida operativa de runtime:
+
+- `POST /api/fideo/runtime/overview` devuelve `runtimeOverview` para roles internos (`Admin`, `Cajero`, `Empacador`, `Repartidor` o perfiles con `canSwitchRoles`)
+- arma un roster global del staff mezclando `fideo_users`, `snapshot.employees` y sesiones recientes de presencia
+- resume por persona `presenceStatus`, `lastSeenAt`, sesiones recientes, dispositivos visibles y carga abierta de tareas
+- expone una cola de `operationalExceptions` pensada para `Admin/Cajero`, basada en:
+  - `taskAssignments` bloqueadas o sin acuse
+  - `taskReports` abiertos/escalados
+  - staff sin presencia reciente con trabajo vivo
+  - cajas abiertas sin Cajero activo, cajas ociosas, saldo negativo y diferencias recientes de cierre
+
+El snapshot sigue siendo snapshot-first; este overview sale por fuera del snapshot para no romper compatibilidad con el frontend actual.
+
+## Slice inmediato: presencia global + bandeja de excepciones
+
+Sobre ese carril liviano ya vivo, el siguiente runtime de backend queda definido asi:
+
+- consolidar presencia global del staff por `workspaceId`, `employeeId`, `sessionId` y `deviceId`,
+- derivar estados utiles (`online`, `idle`, `stale`, `offline`) desde `status` + `lastSeenAt`,
+- alimentar una sola bandeja de excepciones para `Admin` y `Cajero`,
+- reutilizar como fuentes `taskAssignments`, `taskReports`, alertas de caja, tareas sin acuse y silencios de roles criticos,
+- mantener PocketBase como fuente de verdad y OneSignal como carril de empuje para seguimiento y escalacion.
+
+La idea de este slice no es abrir otro workflow. Es cerrar coordinacion y caja sobre las mismas entidades ya materializadas por el runtime actual.
 
 ## OneSignal server-side
 
@@ -240,6 +267,8 @@ Los disparos viven tanto en:
 - `POST /api/fideo/messages/approve`
 
 Eso cubre acciones directas de UI y acciones aprobadas desde el loop IA. Si OneSignal no esta configurado o no encuentra audiencia, el intento igual queda trazado en `fideo_action_logs` dentro de `pushNotifications`.
+
+La misma base de push y logs es la que conviene reutilizar para el siguiente slice de presencia global + excepciones. No hace falta abrir otro carril tecnico para perseguir ausencia, bloqueo o alerta de caja.
 
 ## Scope por perfil
 
