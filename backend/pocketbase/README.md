@@ -135,16 +135,23 @@ El backend ya materializa tambien una segunda ola de normalizacion transaccional
 Estas colecciones siguen el mismo patron de `workspace` scoping y `externalId` para facilitar sync/import sin romper el contrato actual del snapshot.
 Los hooks de `/api/fideo/bootstrap` y `/api/fideo/state/persist` ya materializan y reconstruyen este slice tambien, asi que ventas, pagos, actividad, caja y prestamos ya sobreviven roundtrip real sobre PocketBase aunque el contrato publico del frontend siga siendo snapshot-first.
 
-## Slice operacional: task assignments
+## Slice operacional: task assignments + task reports
 
 El backend ya puede materializar un slice minimo `fideo_task_assignments` desde `snapshot.taskAssignments`.
 
 - conserva `taskId`, `employeeId`, `role`, `status` y timestamps de acuse/progreso/bloqueo/cierre
 - guarda tambien `payload` JSON para reconstruir el item snapshot-first sin inventar rutas nuevas
 - `/api/fideo/bootstrap` reconstruye `snapshot.taskAssignments` desde la coleccion si ya existe materializacion previa
+- deja una primera carril de escalacion para tareas bloqueadas o sin acuse prolongado
+
+Encima de eso, ahora tambien materializa `fideo_task_reports` desde `snapshot.taskReports`.
+
+- conserva el reporte estructurado por `taskId`: `kind`, `status`, `severity`, `summary`, `detail`, `evidence` y `escalationStatus`
+- guarda contexto operativo minimo (`saleId`, `role`, empleado, cliente, `taskTitle`) y `payload` JSON completo para roundtrip snapshot-first
+- `/api/fideo/bootstrap` reconstruye `snapshot.taskReports` desde la coleccion si ya existe materializacion previa
 - perfiles `Cliente` y `Proveedor` no reciben este slice en su snapshot recortado
 
-Con esto, el frontend puede seguir operando snapshot-first mientras PocketBase ya deja un carril real para asignaciones con acuse por empleado.
+Con esto, el frontend puede seguir operando snapshot-first mientras PocketBase ya deja un carril real para asignaciones con acuse por empleado y reportes operativos cortos por tarea.
 
 ## Rutas custom actuales
 
@@ -177,6 +184,7 @@ ONESIGNAL_ENABLED=1
 ONESIGNAL_APP_ID=tu_app_id
 ONESIGNAL_REST_API_KEY=tu_rest_api_key
 FIDEO_APP_URL=https://tu-host-de-fideo/
+FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 ```
 
 ### Identity contract recomendado
@@ -212,13 +220,18 @@ Hoy el hook detecta cambios utiles en el snapshot y manda pushes para:
 - `pedido listo` (`Listo para Entrega`) -> `Admin` / despacho
 - `asignacion de entrega` (`assignedEmployeeId` nuevo en `En Ruta`) -> `Repartidor`
 - `alerta de caja` -> `Admin`
+- `task report` abierto con `escalationStatus: pending` y severidad operativa (`blocker`, `incident` o `high`) -> `Admin`
+- `taskAssignment` que entra a `blocked` -> `Admin`
+- `taskAssignment` que sigue en `assigned` sin `acknowledgedAt` despues del umbral -> `Admin`
+
+El umbral de falta de acuse se controla con `FIDEO_TASK_ACK_ESCALATION_MINUTES` y por default cae en `20`.
 
 Los disparos viven tanto en:
 
 - `POST /api/fideo/state/persist`
 - `POST /api/fideo/messages/approve`
 
-Eso cubre acciones directas de UI y acciones aprobadas desde el loop IA.
+Eso cubre acciones directas de UI y acciones aprobadas desde el loop IA. Si OneSignal no esta configurado o no encuentra audiencia, el intento igual queda trazado en `fideo_action_logs` dentro de `pushNotifications`.
 
 ## Scope por perfil
 

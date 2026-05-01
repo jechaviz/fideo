@@ -10,6 +10,10 @@ const FIDEO_PUSH_URL =
     || $os.getenv('VITE_FIDEO_APP_URL')
     || $os.getenv('VITE_APP_URL')
     || '';
+const FIDEO_TASK_ACK_ESCALATION_MINUTES = (() => {
+    const parsed = Number($os.getenv('FIDEO_TASK_ACK_ESCALATION_MINUTES') || $os.getenv('TASK_ACK_ESCALATION_MINUTES') || 20);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
+})();
 
 function fideoPushText(value, fallback) {
     return value === undefined || value === null || value === '' ? (fallback || '') : String(value);
@@ -298,18 +302,109 @@ function fideoPushFindEmployee(snapshot, employeeId) {
     );
 }
 
+function fideoPushParseTime(value) {
+    const parsed = Date.parse(fideoPushText(value, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function fideoPushFindTaskReport(snapshot, taskId, preferredKinds) {
+    const normalizedTaskId = fideoPushText(taskId, '');
+    if (!normalizedTaskId) {
+        return null;
+    }
+
+    const kinds = fideoPushUnique(fideoPushArray(preferredKinds).map((kind) => fideoPushText(kind, '')));
+    let best = null;
+    let bestTime = 0;
+
+    fideoPushArray(fideoPushObject(snapshot).taskReports).forEach((item) => {
+        const report = fideoPushObject(item);
+        if (fideoPushText(report.taskId, '') !== normalizedTaskId) {
+            return;
+        }
+
+        const kind = fideoPushText(report.kind, '');
+        if (kinds.length && kinds.indexOf(kind) === -1) {
+            return;
+        }
+
+        const createdAt = fideoPushParseTime(report.createdAt);
+        if (!best || createdAt >= bestTime) {
+            best = report;
+            bestTime = createdAt;
+        }
+    });
+
+    return best;
+}
+
+function fideoPushShouldEscalateTaskReport(report) {
+    const normalized = fideoPushObject(report);
+    const kind = fideoPushText(normalized.kind, '');
+    const severity = fideoPushText(normalized.severity, 'normal');
+    return kind === 'blocker' || kind === 'incident' || severity === 'high';
+}
+
+function fideoPushIsTaskAckOverdue(task, nowMs) {
+    const normalized = fideoPushObject(task);
+    if (fideoPushText(normalized.status, 'assigned') !== 'assigned') {
+        return false;
+    }
+
+    if (
+        fideoPushText(normalized.acknowledgedAt, '')
+        || fideoPushText(normalized.startedAt, '')
+        || fideoPushText(normalized.blockedAt, '')
+        || fideoPushText(normalized.doneAt, '')
+        || fideoPushText(normalized.completedAt, '')
+    ) {
+        return false;
+    }
+
+    const assignedAt = fideoPushParseTime(normalized.assignedAt || normalized.createdAt || normalized.updatedAt);
+    return assignedAt > 0 && nowMs - assignedAt >= FIDEO_TASK_ACK_ESCALATION_MINUTES * 60 * 1000;
+}
+
 function fideoPushBuildOperationalPlans(options) {
     const normalized = fideoPushObject(options);
     const previousSnapshot = fideoPushObject(normalized.previousSnapshot);
     const nextSnapshot = fideoPushObject(normalized.nextSnapshot);
     const previousSalesById = {};
+    const previousTaskAssignmentsById = {};
+    const nextTaskAssignmentsById = {};
+    const previousTaskReportsById = {};
     const plans = [];
     const seen = {};
+    const nowMs = Date.now();
 
     fideoPushArray(previousSnapshot.sales).forEach((sale) => {
         const saleId = fideoPushText(sale && sale.id, '');
         if (saleId) {
             previousSalesById[saleId] = fideoPushObject(sale);
+        }
+    });
+
+    fideoPushArray(previousSnapshot.taskAssignments).forEach((item) => {
+        const task = fideoPushObject(item);
+        const taskId = fideoPushText(task.id, '');
+        if (taskId) {
+            previousTaskAssignmentsById[taskId] = task;
+        }
+    });
+
+    fideoPushArray(nextSnapshot.taskAssignments).forEach((item) => {
+        const task = fideoPushObject(item);
+        const taskId = fideoPushText(task.id, '');
+        if (taskId) {
+            nextTaskAssignmentsById[taskId] = task;
+        }
+    });
+
+    fideoPushArray(previousSnapshot.taskReports).forEach((item) => {
+        const report = fideoPushObject(item);
+        const reportId = fideoPushText(report.id, '');
+        if (reportId) {
+            previousTaskReportsById[reportId] = report;
         }
     });
 
@@ -425,6 +520,162 @@ function fideoPushBuildOperationalPlans(options) {
             });
         }
     }
+
+    fideoPushArray(nextSnapshot.taskReports).forEach((item) => {
+        const report = fideoPushObject(item);
+        const reportId = fideoPushText(report.id, '');
+        const taskId = fideoPushText(report.taskId, '');
+        if (!reportId || !taskId) {
+            return;
+        }
+
+        const previousReport = previousTaskReportsById[reportId] || {};
+        const status = fideoPushText(report.status, 'resolved');
+        const escalationStatus = fideoPushText(report.escalationStatus, 'none');
+        const previousEscalationStatus = fideoPushText(previousReport.escalationStatus, 'none');
+
+        if (
+            status !== 'open'
+            || escalationStatus !== 'pending'
+            || previousEscalationStatus === 'pending'
+            || previousEscalationStatus === 'sent'
+            || !fideoPushShouldEscalateTaskReport(report)
+        ) {
+            return;
+        }
+
+        const task = nextTaskAssignmentsById[taskId] || {};
+        const employeeId = fideoPushText(task.employeeId, fideoPushText(report.employeeId, ''));
+        const employee = fideoPushFindEmployee(nextSnapshot, employeeId) || {};
+        const employeeName = fideoPushText(
+            report.employeeName,
+            fideoPushText(task.employeeName, fideoPushText(employee.name, '')),
+        );
+        const taskTitle = fideoPushText(report.taskTitle, fideoPushText(task.title, 'Tarea operativa'));
+        const customerName = fideoPushText(report.customerName, fideoPushText(task.customerName, ''));
+        const summary = fideoPushText(report.summary, taskTitle);
+        const key = 'task_report_escalation::' + reportId;
+
+        if (seen[key]) {
+            return;
+        }
+
+        seen[key] = true;
+        plans.push({
+            audience: { roles: ['Admin'], dispatch: true },
+            title: fideoPushText(report.kind, '') === 'blocker' ? 'Bloqueo reportado' : 'Reporte operativo',
+            message:
+                taskTitle
+                + ': '
+                + summary
+                + (employeeName ? ' (' + employeeName + ')' : '')
+                + (customerName ? ' - ' + customerName : ''),
+            data: {
+                kind: 'task_report_escalation',
+                reportId,
+                taskId,
+                taskTitle,
+                reportKind: fideoPushText(report.kind, ''),
+                reportSeverity: fideoPushText(report.severity, 'normal'),
+                employeeId,
+                employeeName,
+                customerName,
+                saleId: fideoPushText(report.saleId, fideoPushText(task.saleId, '')),
+            },
+        });
+    });
+
+    fideoPushArray(nextSnapshot.taskAssignments).forEach((item) => {
+        const task = fideoPushObject(item);
+        const taskId = fideoPushText(task.id, '');
+        if (!taskId) {
+            return;
+        }
+
+        const previousTask = previousTaskAssignmentsById[taskId] || {};
+        const status = fideoPushText(task.status, 'assigned');
+        const previousStatus = fideoPushText(previousTask.status, '');
+        const employeeId = fideoPushText(task.employeeId, '');
+        const employee = fideoPushFindEmployee(nextSnapshot, employeeId) || {};
+        const employeeName = fideoPushText(task.employeeName, fideoPushText(employee.name, ''));
+        const customerName = fideoPushText(task.customerName, '');
+        const taskTitle = fideoPushText(task.title, 'Tarea operativa');
+        const openReport = fideoPushFindTaskReport(nextSnapshot, taskId, ['blocker', 'incident']) || {};
+        const reportId = fideoPushText(openReport.id, '');
+        const reportEscalationStatus = fideoPushText(openReport.escalationStatus, 'none');
+        const blockedAt = fideoPushText(task.blockedAt, '');
+        const previousBlockedAt = fideoPushText(previousTask.blockedAt, '');
+        const blockedReason = fideoPushText(task.blockedReason, fideoPushText(task.blockReason, fideoPushText(openReport.summary, '')));
+
+        if (
+            status === 'blocked'
+            && (previousStatus !== 'blocked' || blockedAt !== previousBlockedAt)
+            && !(reportId && (reportEscalationStatus === 'pending' || reportEscalationStatus === 'sent'))
+        ) {
+            const key = 'task_blocked::' + taskId + '::' + blockedAt;
+            if (!seen[key]) {
+                seen[key] = true;
+                plans.push({
+                    audience: { roles: ['Admin'], dispatch: true },
+                    title: 'Tarea bloqueada',
+                    message:
+                        taskTitle
+                        + ' quedo bloqueada'
+                        + (employeeName ? ' por ' + employeeName : '')
+                        + (customerName ? ' - ' + customerName : '')
+                        + (blockedReason ? ': ' + blockedReason : '.'),
+                    data: {
+                        kind: 'task_blocked',
+                        taskId,
+                        taskTitle,
+                        employeeId,
+                        employeeName,
+                        customerName,
+                        saleId: fideoPushText(task.saleId, ''),
+                        role: fideoPushText(task.role, ''),
+                        blockedAt,
+                        blockedReason,
+                        reportId,
+                    },
+                });
+            }
+        }
+
+        const nextAckOverdue = fideoPushIsTaskAckOverdue(task, nowMs);
+        const previousAckOverdue = fideoPushIsTaskAckOverdue(previousTask, nowMs);
+        if (nextAckOverdue && !previousAckOverdue) {
+            const assignedAtRaw = task.assignedAt || task.createdAt || task.updatedAt;
+            const assignedAt = fideoPushParseTime(assignedAtRaw);
+            const pendingMinutes = assignedAt > 0 ? Math.max(FIDEO_TASK_ACK_ESCALATION_MINUTES, Math.round((nowMs - assignedAt) / 60000)) : FIDEO_TASK_ACK_ESCALATION_MINUTES;
+            const key = 'task_ack_timeout::' + taskId;
+            if (!seen[key]) {
+                seen[key] = true;
+                plans.push({
+                    audience: { roles: ['Admin'], dispatch: true },
+                    title: 'Tarea sin acuse',
+                    message:
+                        taskTitle
+                        + ' sigue sin acuse'
+                        + (employeeName ? ' de ' + employeeName : '')
+                        + ' tras '
+                        + pendingMinutes
+                        + ' min.',
+                    data: {
+                        kind: 'task_ack_timeout',
+                        taskId,
+                        taskTitle,
+                        employeeId,
+                        employeeName,
+                        customerName,
+                        saleId: fideoPushText(task.saleId, ''),
+                        role: fideoPushText(task.role, ''),
+                        assignedAt: fideoPushText(assignedAtRaw, ''),
+                        pendingMinutes,
+                    },
+                });
+            }
+        }
+    });
 
     return plans;
 }
@@ -661,6 +912,22 @@ routerAdd(
                     return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
                 })
                 .filter((item) => !!item);
+        const normalizeTaskReportsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [
+                        toText(normalizedItem.taskId, ''),
+                        toText(normalizedItem.createdAt, ''),
+                        toText(normalizedItem.kind, ''),
+                        toText(normalizedItem.employeeId, ''),
+                    ]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
 
         const syncNormalizedFromSnapshot = (workspaceId, snapshot) => {
             replaceWorkspaceCollectionByExternalId('fideo_product_groups', workspaceId, snapshot.productGroups, (record, item) => {
@@ -810,6 +1077,29 @@ routerAdd(
                 record.set('blockedAt', toIsoString(item.blockedAt));
                 record.set('doneAt', toIsoString(item.doneAt));
                 record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_reports', workspaceId, normalizeTaskReportsForSync(snapshot.taskReports), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('saleId', toText(item.saleId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('employeeName', toText(item.employeeName, ''));
+                record.set('customerId', toText(item.customerId, ''));
+                record.set('customerName', toText(item.customerName, ''));
+                record.set('taskTitle', toText(item.taskTitle, ''));
+                record.set('kind', toText(item.kind, 'note'));
+                record.set('status', toText(item.status, 'resolved'));
+                record.set('severity', toText(item.severity, 'normal'));
+                record.set('summary', toText(item.summary, ''));
+                record.set('detail', toText(item.detail, ''));
+                record.set('evidence', toText(item.evidence, ''));
+                record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                record.set('createdAt', toIsoString(item.createdAt));
+                record.set('resolvedAt', toIsoString(item.resolvedAt));
+                record.set('escalatedAt', toIsoString(item.escalatedAt));
                 record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
         };
@@ -1092,6 +1382,74 @@ routerAdd(
                 return mapped;
             }), 'assignedAt');
 
+            const taskReports = sortByIsoDesc(getWorkspaceRecords('fideo_task_reports', workspaceId).map((record) => {
+                const payload = toObject(record.get('payload'));
+                const mapped = Object.assign({}, payload, {
+                    id: toText(record.get('externalId'), toText(payload.id, '')),
+                    taskId: toText(record.get('taskId'), toText(payload.taskId, '')),
+                    role: toText(record.get('role'), toText(payload.role, '')),
+                    taskTitle: toText(record.get('taskTitle'), toText(payload.taskTitle, '')),
+                    kind: toText(record.get('kind'), toText(payload.kind, 'note')),
+                    status: toText(record.get('status'), toText(payload.status, 'resolved')),
+                    severity: toText(record.get('severity'), toText(payload.severity, 'normal')),
+                    summary: toText(record.get('summary'), toText(payload.summary, '')),
+                    escalationStatus: toText(record.get('escalationStatus'), toText(payload.escalationStatus, 'none')),
+                });
+
+                const saleId = toText(record.get('saleId'), toText(payload.saleId, ''));
+                const employeeId = toText(record.get('employeeId'), toText(payload.employeeId, ''));
+                const employeeName = toText(record.get('employeeName'), toText(payload.employeeName, ''));
+                const customerId = toText(record.get('customerId'), toText(payload.customerId, ''));
+                const customerName = toText(record.get('customerName'), toText(payload.customerName, ''));
+                const detail = toText(record.get('detail'), toText(payload.detail, ''));
+                const evidence = toText(record.get('evidence'), toText(payload.evidence, ''));
+                const createdAt = toText(record.get('createdAt'), toText(payload.createdAt, ''));
+                const resolvedAt = toText(record.get('resolvedAt'), toText(payload.resolvedAt, ''));
+                const escalatedAt = toText(record.get('escalatedAt'), toText(payload.escalatedAt, ''));
+
+                if (saleId) {
+                    mapped.saleId = saleId;
+                }
+
+                if (employeeId) {
+                    mapped.employeeId = employeeId;
+                }
+
+                if (employeeName) {
+                    mapped.employeeName = employeeName;
+                }
+
+                if (customerId) {
+                    mapped.customerId = customerId;
+                }
+
+                if (customerName) {
+                    mapped.customerName = customerName;
+                }
+
+                if (detail) {
+                    mapped.detail = detail;
+                }
+
+                if (evidence) {
+                    mapped.evidence = evidence;
+                }
+
+                if (createdAt) {
+                    mapped.createdAt = createdAt;
+                }
+
+                if (resolvedAt) {
+                    mapped.resolvedAt = resolvedAt;
+                }
+
+                if (escalatedAt) {
+                    mapped.escalatedAt = escalatedAt;
+                }
+
+                return mapped;
+            }), 'createdAt');
+
             return {
                 productGroups,
                 warehouses,
@@ -1108,6 +1466,7 @@ routerAdd(
                 cashDrawers,
                 cashDrawerActivities,
                 taskAssignments,
+                taskReports,
             };
         };
 
@@ -1126,7 +1485,8 @@ routerAdd(
             || slice.activityLog.length > 0
             || slice.cashDrawers.length > 0
             || slice.cashDrawerActivities.length > 0
-            || slice.taskAssignments.length > 0;
+            || slice.taskAssignments.length > 0
+            || slice.taskReports.length > 0;
 
         const mergeNormalizedSlice = (baseSnapshot, slice) => {
             const merged = Object.assign({}, baseSnapshot);
@@ -1146,6 +1506,7 @@ routerAdd(
                 'cashDrawers',
                 'cashDrawerActivities',
                 'taskAssignments',
+                'taskReports',
             ];
 
             keys.forEach((key) => {
@@ -1254,6 +1615,7 @@ routerAdd(
                 baseSnapshot.cashDrawers = [];
                 baseSnapshot.cashDrawerActivities = [];
                 baseSnapshot.taskAssignments = [];
+                baseSnapshot.taskReports = [];
                 baseSnapshot.messageTemplates = [];
                 baseSnapshot.aiCustomerSummary = null;
                 baseSnapshot.isGeneratingSummary = false;
@@ -1298,6 +1660,7 @@ routerAdd(
                 baseSnapshot.cashDrawers = [];
                 baseSnapshot.cashDrawerActivities = [];
                 baseSnapshot.taskAssignments = [];
+                baseSnapshot.taskReports = [];
                 baseSnapshot.messageTemplates = [];
                 baseSnapshot.aiCustomerSummary = null;
                 baseSnapshot.isGeneratingSummary = false;
@@ -1591,6 +1954,22 @@ routerAdd(
                     return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
                 })
                 .filter((item) => !!item);
+        const normalizeTaskReportsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [
+                        toText(normalizedItem.taskId, ''),
+                        toText(normalizedItem.createdAt, ''),
+                        toText(normalizedItem.kind, ''),
+                        toText(normalizedItem.employeeId, ''),
+                    ]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
 
         const syncNormalizedFromSnapshot = (targetWorkspaceId, sourceSnapshot) => {
             const normalizedSnapshot = toObject(sourceSnapshot);
@@ -1744,6 +2123,29 @@ routerAdd(
                 record.set('blockedReason', toText(item.blockedReason, ''));
                 record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(normalizedSnapshot.taskReports), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('saleId', toText(item.saleId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('employeeName', toText(item.employeeName, ''));
+                record.set('customerId', toText(item.customerId, ''));
+                record.set('customerName', toText(item.customerName, ''));
+                record.set('taskTitle', toText(item.taskTitle, ''));
+                record.set('kind', toText(item.kind, 'note'));
+                record.set('status', toText(item.status, 'resolved'));
+                record.set('severity', toText(item.severity, 'normal'));
+                record.set('summary', toText(item.summary, ''));
+                record.set('detail', toText(item.detail, ''));
+                record.set('evidence', toText(item.evidence, ''));
+                record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                record.set('createdAt', toIsoString(item.createdAt));
+                record.set('resolvedAt', toIsoString(item.resolvedAt));
+                record.set('escalatedAt', toIsoString(item.escalatedAt));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+            });
         };
 
         if (!workspaceId || authWorkspaceId !== workspaceId) {
@@ -1798,6 +2200,362 @@ routerAdd(
             version: snapshotRecord.get('version'),
             snapshotRecordId: snapshotRecord.id,
             updatedAt: new Date().toISOString(),
+            pushNotifications: pushNotifications,
+        });
+    },
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/tasks/report',
+    (e) => {
+        const authRecord = e.auth || e.requestInfo().auth;
+        if (!authRecord) {
+            throw new UnauthorizedError('Necesitas autenticarte para reportar tareas de Fideo.');
+        }
+
+        const body = e.requestInfo().body || {};
+        const workspaceId = body.workspaceId || '';
+        const expectedVersion = Number(body.expectedVersion || 0);
+        const snapshot = body.snapshot || {};
+        const taskId = body.taskId || '';
+        const reportInput = body.report || {};
+        const authWorkspaceId = authRecord.get('workspace') || '';
+
+        const toText = (value, fallback) => (value === undefined || value === null || value === '' ? (fallback || '') : String(value));
+        const toArray = (value) => (Array.isArray(value) ? value : []);
+        const toObject = (value) => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                try {
+                    const normalized = JSON.parse(JSON.stringify(value));
+                    return normalized && typeof normalized === 'object' && !Array.isArray(normalized) ? normalized : {};
+                } catch (_) {
+                    return value;
+                }
+            }
+            if (typeof value === 'string' && value.trim()) {
+                try {
+                    const parsed = JSON.parse(value);
+                    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch (_) {
+                    return {};
+                }
+            }
+            return {};
+        };
+        const toNumber = (value, fallback) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+        const toBoolean = (value) => value === true || value === 'true' || value === 1;
+        const toIsoString = (value) => {
+            if (!value) return '';
+            if (typeof value === 'string') return value;
+            try {
+                return new Date(value).toISOString();
+            } catch (_) {
+                return '';
+            }
+        };
+        const cloneValue = (value, fallback) => JSON.parse(JSON.stringify(value === undefined ? fallback : value));
+        const canPersistWorkspaceSnapshot = () => {
+            const role = toText(authRecord.get('role'), 'Admin');
+            return !!authRecord.get('canSwitchRoles') || ['Admin', 'Empacador', 'Repartidor', 'Cajero'].indexOf(role) >= 0;
+        };
+        const findSnapshotByWorkspace = (targetWorkspaceId) => {
+            try {
+                return e.app.findFirstRecordByData('fideo_state_snapshots', 'workspace', targetWorkspaceId);
+            } catch (_) {
+                return null;
+            }
+        };
+        const writeActionLog = (targetWorkspaceId, actorId, action, payload) => {
+            const collection = e.app.findCollectionByNameOrId('fideo_action_logs');
+            const record = new Record(collection);
+            record.set('workspace', targetWorkspaceId);
+            record.set('actor', actorId || '');
+            record.set('action', action);
+            record.set('payload', payload || {});
+            e.app.save(record);
+            return record;
+        };
+        const backfillCustomerRefsInSnapshot = (sourceSnapshot) => {
+            const normalized = Object.assign({}, toObject(sourceSnapshot));
+            const customers = toArray(normalized.customers);
+            const uniqueCustomersByName = {};
+            const duplicateNames = {};
+
+            customers.forEach((customer) => {
+                const name = toText(customer && customer.name, '');
+                if (!name) return;
+                if (uniqueCustomersByName[name]) {
+                    duplicateNames[name] = true;
+                    return;
+                }
+                uniqueCustomersByName[name] = customer;
+            });
+
+            Object.keys(duplicateNames).forEach((name) => {
+                delete uniqueCustomersByName[name];
+            });
+
+            normalized.sales = toArray(normalized.sales).map((item) => {
+                const customerId = toText(item && item.customerId, '');
+                if (customerId) return item;
+                const customer = uniqueCustomersByName[toText(item && item.customer, '')];
+                if (!customer) return item;
+                return Object.assign({}, item, { customerId: toText(customer.id, '') });
+            });
+
+            normalized.crateLoans = toArray(normalized.crateLoans).map((item) => {
+                const customerId = toText(item && item.customerId, '');
+                if (customerId) return item;
+                const customer = uniqueCustomersByName[toText(item && item.customer, '')];
+                if (!customer) return item;
+                return Object.assign({}, item, { customerId: toText(customer.id, '') });
+            });
+
+            return normalized;
+        };
+        const getWorkspaceRecords = (collectionName, targetWorkspaceId) =>
+            e.app.findRecordsByFilter(collectionName, "workspace = '" + targetWorkspaceId + "'", '', 2000, 0);
+        const replaceWorkspaceCollectionByExternalId = (collectionName, targetWorkspaceId, items, assignRecord) => {
+            const collection = e.app.findCollectionByNameOrId(collectionName);
+            const existingRecords = getWorkspaceRecords(collectionName, targetWorkspaceId);
+            const existingByExternalId = {};
+            existingRecords.forEach((record) => {
+                existingByExternalId[toText(record.get('externalId'), '')] = record;
+            });
+
+            const seen = {};
+            toArray(items).forEach((item) => {
+                const externalId = toText(item && item.id, '');
+                if (!externalId) return;
+                seen[externalId] = true;
+                const record = existingByExternalId[externalId] || new Record(collection);
+                record.set('workspace', targetWorkspaceId);
+                record.set('externalId', externalId);
+                assignRecord(record, item || {});
+                e.app.save(record);
+            });
+
+            existingRecords.forEach((record) => {
+                const externalId = toText(record.get('externalId'), '');
+                if (!seen[externalId]) {
+                    e.app.delete(record);
+                }
+            });
+        };
+        const normalizeTaskAssignmentsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
+        const normalizeTaskReportsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [
+                        toText(normalizedItem.taskId, ''),
+                        toText(normalizedItem.createdAt, ''),
+                        toText(normalizedItem.kind, ''),
+                        toText(normalizedItem.employeeId, ''),
+                    ]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
+        const syncTaskSlices = (targetWorkspaceId, sourceSnapshot) => {
+            replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(sourceSnapshot.taskAssignments), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('status', toText(item.status, 'assigned'));
+                record.set('assignedAt', toIsoString(item.assignedAt || item.createdAt));
+                record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                record.set('startedAt', toIsoString(item.startedAt));
+                record.set('blockedAt', toIsoString(item.blockedAt));
+                record.set('doneAt', toIsoString(item.doneAt || item.completedAt));
+                record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(sourceSnapshot.taskReports), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('saleId', toText(item.saleId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('employeeName', toText(item.employeeName, ''));
+                record.set('customerId', toText(item.customerId, ''));
+                record.set('customerName', toText(item.customerName, ''));
+                record.set('taskTitle', toText(item.taskTitle, ''));
+                record.set('kind', toText(item.kind, 'note'));
+                record.set('status', toText(item.status, 'resolved'));
+                record.set('severity', toText(item.severity, 'normal'));
+                record.set('summary', toText(item.summary, ''));
+                record.set('detail', toText(item.detail, ''));
+                record.set('evidence', toText(item.evidence, ''));
+                record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                record.set('createdAt', toIsoString(item.createdAt));
+                record.set('resolvedAt', toIsoString(item.resolvedAt));
+                record.set('escalatedAt', toIsoString(item.escalatedAt));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+            });
+        };
+        const normalizeReportKind = (value) => {
+            const normalized = toText(value, '').trim().toLowerCase();
+            if (normalized === 'note' || normalized === 'nota') return 'note';
+            if (normalized === 'incident' || normalized === 'incidencia') return 'incident';
+            if (normalized === 'blocker' || normalized === 'blocked' || normalized === 'bloqueo') return 'blocker';
+            if (normalized === 'completion' || normalized === 'completed' || normalized === 'closure' || normalized === 'cierre') return 'completion';
+            return '';
+        };
+
+        if (!workspaceId || authWorkspaceId !== workspaceId) {
+            throw new ForbiddenError('No tienes acceso a este workspace.');
+        }
+
+        if (!canPersistWorkspaceSnapshot()) {
+            throw new ForbiddenError('Este perfil es de solo lectura y no puede reportar tareas en el workspace.');
+        }
+
+        if (!taskId) {
+            throw new BadRequestError('Necesitas indicar el taskId del reporte.');
+        }
+
+        let snapshotRecord = findSnapshotByWorkspace(workspaceId);
+        if (!snapshotRecord) {
+            const collection = e.app.findCollectionByNameOrId('fideo_state_snapshots');
+            snapshotRecord = new Record(collection);
+            snapshotRecord.set('workspace', workspaceId);
+            snapshotRecord.set('version', 1);
+        }
+
+        const currentVersion = Number(snapshotRecord.get('version') || 0);
+        if (expectedVersion && currentVersion && expectedVersion < currentVersion) {
+            return e.json(409, {
+                message: 'El snapshot remoto ya cambio. Recarga antes de volver a reportar.',
+                version: currentVersion,
+                snapshotRecordId: snapshotRecord.id,
+            });
+        }
+
+        const previousSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
+        const workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshot, {}));
+        const tasks = cloneValue(toArray(workingSnapshot.taskAssignments), []);
+        const taskIndex = tasks.findIndex((item) => toText(item && item.id, '') === toText(taskId, ''));
+        if (taskIndex < 0) {
+            throw new BadRequestError('No encontre la tarea indicada dentro del snapshot.');
+        }
+
+        const rawReport = toObject(reportInput);
+        const kind = normalizeReportKind(rawReport.kind || rawReport.type);
+        const summary = toText(rawReport.summary, toText(rawReport.message, '')).trim();
+        if (!kind || !summary) {
+            throw new BadRequestError('El reporte necesita al menos kind/type y summary/message.');
+        }
+
+        const nowIso = new Date().toISOString();
+        const task = toObject(tasks[taskIndex]);
+        const nextTaskStatus = (() => {
+            const explicit = toText(rawReport.nextTaskStatus, '');
+            if (['assigned', 'acknowledged', 'in_progress', 'blocked', 'done'].indexOf(explicit) >= 0) return explicit;
+            if (kind === 'blocker') return 'blocked';
+            if (kind === 'completion') return 'done';
+            return '';
+        })();
+
+        const updatedTask = {
+            ...task,
+            status: nextTaskStatus || toText(task.status, 'assigned'),
+            employeeId: toText(rawReport.employeeId, toText(task.employeeId, toText(authRecord.get('employeeId'), ''))),
+            employeeName: toText(rawReport.employeeName, toText(task.employeeName, toText(authRecord.get('name'), ''))),
+            updatedAt: nowIso,
+            blockedAt: nextTaskStatus === 'blocked' ? nowIso : (nextTaskStatus === 'done' ? '' : toText(task.blockedAt, '')),
+            blockedReason: nextTaskStatus === 'blocked'
+                ? toText(rawReport.detail, summary)
+                : (nextTaskStatus === 'done' ? '' : toText(task.blockedReason, '')),
+            completedAt: nextTaskStatus === 'done' ? nowIso : toText(task.completedAt, ''),
+        };
+        tasks[taskIndex] = updatedTask;
+
+        const severity = toText(rawReport.severity, kind === 'blocker' ? 'high' : 'normal');
+        const reportStatus = kind === 'note' || kind === 'completion' ? 'resolved' : toText(rawReport.status, 'open');
+        const escalationStatus = toText(rawReport.escalationStatus, (kind === 'blocker' || severity === 'high') ? 'pending' : 'none');
+        const report = {
+            id: toText(rawReport.id, 'task_report_' + Date.now() + '_' + Math.round(Math.random() * 100000)),
+            taskId: toText(task.id, taskId),
+            saleId: toText(task.saleId, ''),
+            role: toText(task.role, 'Admin'),
+            employeeId: toText(rawReport.employeeId, toText(updatedTask.employeeId, '')),
+            employeeName: toText(rawReport.employeeName, toText(updatedTask.employeeName, '')),
+            customerId: toText(task.customerId, ''),
+            customerName: toText(task.customerName, ''),
+            taskTitle: toText(task.title, ''),
+            kind: kind,
+            status: reportStatus,
+            severity: severity,
+            summary: summary,
+            detail: toText(rawReport.detail, ''),
+            evidence: toText(rawReport.evidence, ''),
+            escalationStatus: escalationStatus,
+            createdAt: toIsoString(rawReport.createdAt || nowIso),
+            resolvedAt: reportStatus === 'resolved' ? toIsoString(rawReport.resolvedAt || nowIso) : '',
+            escalatedAt: toIsoString(rawReport.escalatedAt),
+        };
+
+        const nextSnapshot = backfillCustomerRefsInSnapshot({
+            ...workingSnapshot,
+            taskAssignments: tasks,
+            taskReports: [report].concat(toArray(workingSnapshot.taskReports)),
+        });
+
+        snapshotRecord.set('snapshot', nextSnapshot);
+        snapshotRecord.set('version', currentVersion > 0 ? currentVersion + 1 : 1);
+        snapshotRecord.set('updatedBy', authRecord.id);
+        e.app.save(snapshotRecord);
+
+        syncTaskSlices(workspaceId, nextSnapshot);
+
+        const pushNotifications = fideoPushDispatchOperational(e.app, {
+            workspaceId: workspaceId,
+            workspaceSlug: fideoPushGetWorkspaceSlug(e.app, workspaceId),
+            previousSnapshot: previousSnapshot,
+            nextSnapshot: nextSnapshot,
+        });
+
+        const actionLogRecord = writeActionLog(workspaceId, authRecord.id, 'submit_task_report', {
+            taskId: taskId,
+            report: cloneValue(report, {}),
+            taskAssignment: cloneValue(updatedTask, {}),
+            previousTaskAssignment: cloneValue(task, {}),
+            version: snapshotRecord.get('version'),
+            previousVersion: currentVersion || 0,
+            pushNotifications: pushNotifications,
+        });
+
+        return e.json(200, {
+            version: snapshotRecord.get('version'),
+            snapshotRecordId: snapshotRecord.id,
+            updatedAt: new Date().toISOString(),
+            snapshot: nextSnapshot,
+            report: report,
+            taskAssignment: updatedTask,
+            actionLogId: actionLogRecord.id,
+            notification: kind === 'blocker'
+                ? { text: 'Bloqueo reportado para ' + toText(task.customerName, toText(task.title, 'la tarea')), isError: true }
+                : null,
             pushNotifications: pushNotifications,
         });
     },
@@ -2550,6 +3308,22 @@ routerAdd(
                     return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
                 })
                 .filter((item) => !!item);
+        const normalizeTaskReportsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [
+                        toText(normalizedItem.taskId, ''),
+                        toText(normalizedItem.createdAt, ''),
+                        toText(normalizedItem.kind, ''),
+                        toText(normalizedItem.employeeId, ''),
+                    ]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
         const syncTouchedCollections = (targetWorkspaceId, sourceSnapshot, touchedCollections) => {
             if (touchedCollections.sales) {
                 replaceWorkspaceCollectionByExternalId('fideo_sales', targetWorkspaceId, sourceSnapshot.sales, (record, item) => {
@@ -2684,6 +3458,31 @@ routerAdd(
                     record.set('blockedAt', toIsoString(item.blockedAt));
                     record.set('doneAt', toIsoString(item.doneAt));
                     record.set('blockedReason', toText(item.blockedReason, ''));
+                    record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+                });
+            }
+
+            if (touchedCollections.taskReports) {
+                replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(sourceSnapshot.taskReports), (record, item) => {
+                    const payload = toObject(item);
+                    record.set('taskId', toText(item.taskId, ''));
+                    record.set('saleId', toText(item.saleId, ''));
+                    record.set('role', toText(item.role, ''));
+                    record.set('employeeId', toText(item.employeeId, ''));
+                    record.set('employeeName', toText(item.employeeName, ''));
+                    record.set('customerId', toText(item.customerId, ''));
+                    record.set('customerName', toText(item.customerName, ''));
+                    record.set('taskTitle', toText(item.taskTitle, ''));
+                    record.set('kind', toText(item.kind, 'note'));
+                    record.set('status', toText(item.status, 'resolved'));
+                    record.set('severity', toText(item.severity, 'normal'));
+                    record.set('summary', toText(item.summary, ''));
+                    record.set('detail', toText(item.detail, ''));
+                    record.set('evidence', toText(item.evidence, ''));
+                    record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                    record.set('createdAt', toIsoString(item.createdAt));
+                    record.set('resolvedAt', toIsoString(item.resolvedAt));
+                    record.set('escalatedAt', toIsoString(item.escalatedAt));
                     record.set('payload', Object.keys(payload).length > 0 ? payload : null);
                 });
             }
@@ -3413,6 +4212,7 @@ routerAdd(
             });
         }
 
+        const storedSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
         let workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshot, {}));
         workingSnapshot = ensureMessageOnSnapshot(workingSnapshot);
         const approvalMessage = workingSnapshot._approvalMessage;
@@ -3445,6 +4245,7 @@ routerAdd(
             cashDrawers: false,
             cashDrawerActivities: false,
             taskAssignments: false,
+            taskReports: false,
         };
 
         let result = createActionResult(workingSnapshot, null);
@@ -3514,6 +4315,10 @@ routerAdd(
 
         if (JSON.stringify(toArray(workingSnapshot.taskAssignments)) !== JSON.stringify(toArray(result.nextState.taskAssignments))) {
             touchedCollections.taskAssignments = true;
+        }
+
+        if (JSON.stringify(toArray(storedSnapshot.taskReports)) !== JSON.stringify(toArray(result.nextState.taskReports))) {
+            touchedCollections.taskReports = true;
         }
 
         const finalMessages = toArray(result.nextState.messages).map((item) =>
@@ -4098,6 +4903,22 @@ const revertMessageActionHandler = (e) => {
                     return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
                 })
                 .filter((item) => !!item);
+        const normalizeTaskReportsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [
+                        toText(normalizedItem.taskId, ''),
+                        toText(normalizedItem.createdAt, ''),
+                        toText(normalizedItem.kind, ''),
+                        toText(normalizedItem.employeeId, ''),
+                    ]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
         const syncNormalizedFromSnapshot = (targetWorkspaceId, snapshot) => {
             replaceWorkspaceCollectionByExternalId('fideo_product_groups', targetWorkspaceId, snapshot.productGroups, (record, item) => {
                 record.set('name', toText(item.name, ''));
@@ -4246,6 +5067,29 @@ const revertMessageActionHandler = (e) => {
                 record.set('blockedAt', toIsoString(item.blockedAt));
                 record.set('doneAt', toIsoString(item.doneAt));
                 record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(snapshot.taskReports), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('saleId', toText(item.saleId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('employeeName', toText(item.employeeName, ''));
+                record.set('customerId', toText(item.customerId, ''));
+                record.set('customerName', toText(item.customerName, ''));
+                record.set('taskTitle', toText(item.taskTitle, ''));
+                record.set('kind', toText(item.kind, 'note'));
+                record.set('status', toText(item.status, 'resolved'));
+                record.set('severity', toText(item.severity, 'normal'));
+                record.set('summary', toText(item.summary, ''));
+                record.set('detail', toText(item.detail, ''));
+                record.set('evidence', toText(item.evidence, ''));
+                record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                record.set('createdAt', toIsoString(item.createdAt));
+                record.set('resolvedAt', toIsoString(item.resolvedAt));
+                record.set('escalatedAt', toIsoString(item.escalatedAt));
                 record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
         };
