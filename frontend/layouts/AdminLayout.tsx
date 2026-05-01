@@ -1,31 +1,52 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
-import Dashboard from '../components/Dashboard';
-import MessageFeed from '../components/MessageFeed';
-import Inventory from '../components/Inventory';
-import AITraining from '../components/AITraining';
-import SalesHistory from '../components/SalesLog';
-import Customers from '../components/Customers';
-import Settings from '../components/Settings';
-import History from '../components/History';
-import Deliveries from '../components/Deliveries';
-import Assets from '../components/Assets';
-import Finances from '../components/Finances';
-import Promotions from '../components/Promotions';
-import RipeningRules from '../components/RipeningRules';
-import Suppliers from '../components/Suppliers';
 import StatusBar from '../components/StatusBar';
 import VoiceControl from '../components/VoiceControl';
 import RoleSwitcher from '../components/RoleSwitcher';
-import PackerView from '../views/PackerView';
-import DelivererView from '../views/DelivererView';
-import ActionCenter from '../components/ActionCenter';
-import Planogram from '../components/Planogram';
 import { BusinessData } from '../hooks/useBusinessData';
+import { OneSignalPushController } from '../hooks/useOneSignalPush';
 import { Bars3Icon } from '../components/icons/Icons';
+import { UserRole } from '../types';
 
-const AdminLayout: React.FC<{ data: BusinessData }> = ({ data }) => {
+const Dashboard = lazy(() => import('../components/Dashboard'));
+const MessageFeed = lazy(() => import('../components/MessageFeed'));
+const Inventory = lazy(() => import('../components/Inventory'));
+const AITraining = lazy(() => import('../components/AITraining'));
+const SalesHistory = lazy(() => import('../components/SalesLog'));
+const Customers = lazy(() => import('../components/Customers'));
+const Settings = lazy(() => import('../components/Settings'));
+const History = lazy(() => import('../components/History'));
+const Deliveries = lazy(() => import('../components/Deliveries'));
+const Assets = lazy(() => import('../components/Assets'));
+const Finances = lazy(() => import('../components/Finances'));
+const Promotions = lazy(() => import('../components/Promotions'));
+const RipeningRules = lazy(() => import('../components/RipeningRules'));
+const Suppliers = lazy(() => import('../components/Suppliers'));
+const PackerView = lazy(() => import('../views/PackerView'));
+const DelivererView = lazy(() => import('../views/DelivererView'));
+const ActionCenter = lazy(() => import('../components/ActionCenter'));
+const Planogram = lazy(() => import('../components/Planogram'));
+
+const ROLE_META: Record<UserRole, string> = {
+    Admin: 'Admin',
+    Cajero: 'Caja',
+    Empacador: 'Empaque',
+    Repartidor: 'Ruta',
+    Cliente: 'Cliente',
+    Proveedor: 'Proveedor',
+};
+
+const ViewLoadingState: React.FC = () => (
+    <div className="flex min-h-[360px] items-center justify-center rounded-[1.8rem] border border-white/10 bg-white/[0.03] px-6 py-12">
+        <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-300">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-300 border-t-transparent" />
+            Cargando vista...
+        </div>
+    </div>
+);
+
+const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const { currentView, setCurrentView, theme, toggleTheme, currentRole } = data;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile toggle
     
@@ -84,7 +105,8 @@ const AdminLayout: React.FC<{ data: BusinessData }> = ({ data }) => {
     };
 
     return (
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        <div className="relative flex h-screen overflow-hidden bg-slate-950 text-slate-100">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.16),transparent_24%),radial-gradient(circle_at_left,rgba(56,189,248,0.12),transparent_20%)]" />
             <Sidebar 
                 currentView={currentView} 
                 setCurrentView={setCurrentView}
@@ -96,24 +118,43 @@ const AdminLayout: React.FC<{ data: BusinessData }> = ({ data }) => {
                 isCollapsed={isSidebarCollapsed}
                 toggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             />
-            <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-                <header className="p-2 border-b dark:border-gray-700 bg-white dark:bg-gray-800 sticky top-0 z-10 shadow-sm">
-                    <div className="flex justify-between items-center gap-4">
-                        {/* Hamburger only visible on mobile (< md) */}
-                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-600 dark:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-                            <Bars3Icon />
-                        </button>
-                        <div className="flex-grow hidden sm:block overflow-hidden">
-                             <StatusBar activities={data.activityLog} />
+            <main className="relative flex-1 flex min-w-0 flex-col h-full overflow-hidden">
+                <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/72 backdrop-blur-2xl">
+                    <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 md:px-6 lg:px-8">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10">
+                                    <Bars3Icon />
+                                </button>
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <h1 className="truncate text-2xl font-extrabold tracking-tight text-white md:text-3xl">
+                                            {currentView === 'dashboard' ? 'Centro Comercial' : currentView === 'actions' ? 'Acciones' : currentView === 'inventory' ? 'Inventario' : currentView === 'customers' ? 'Clientes' : currentView === 'deliveries' ? 'Entregas' : currentView === 'finances' ? 'Finanzas' : currentView === 'messages' ? 'Mensajes' : currentView === 'suppliers' ? 'Proveedores' : currentView === 'planogram' ? 'Planograma' : currentView === 'ripening' ? 'Maduracion' : currentView === 'history' ? 'Historial' : currentView === 'assets' ? 'Activos' : currentView === 'training' ? 'IA' : 'Fideo'}
+                                        </h1>
+                                        <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-brand-200">
+                                            <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_16px_rgba(163,230,53,0.7)]" />
+                                            {ROLE_META[currentRole]}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex-shrink-0">
+                                <RoleSwitcher data={data} push={push} />
+                            </div>
                         </div>
-                        <div className="flex-shrink-0">
-                            <RoleSwitcher data={data} />
+                        <div className="hidden overflow-hidden xl:block">
+                             <StatusBar activities={data.activityLog} />
                         </div>
                     </div>
                 </header>
-                <div className="flex-grow overflow-y-auto p-4 md:p-6 lg:p-8 scroll-smooth">
-                    <div className="max-w-7xl mx-auto w-full">
-                        {renderRoleSpecificView()}
+                <div className="flex-grow overflow-y-auto scroll-smooth">
+                    <div className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 lg:px-8">
+                        <div className="mb-6 xl:hidden">
+                            <StatusBar activities={data.activityLog} />
+                        </div>
+                        <div className="glass-panel-dark rounded-[2rem] p-4 md:p-5 lg:p-6">
+                            <Suspense fallback={<ViewLoadingState />}>{renderRoleSpecificView()}</Suspense>
+                        </div>
                     </div>
                 </div>
             </main>

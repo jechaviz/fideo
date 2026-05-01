@@ -1,32 +1,58 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { Supplier, SuppliedProduct } from '../types';
-import { XMarkIcon, ArrowUturnLeftIcon, PlusIcon } from './icons/Icons';
+import { ArrowUturnLeftIcon, PlusIcon, XMarkIcon } from './icons/Icons';
+
+const currency = (value: number) => value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
 const Suppliers: React.FC<{ data: BusinessData }> = ({ data }) => {
     const { suppliers, productGroups, updateSupplier } = data;
     const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(suppliers[0]?.id || null);
-    
     const [showList, setShowList] = useState(false);
+
     useEffect(() => {
         setShowList(window.innerWidth < 1024 && !selectedSupplierId);
     }, [selectedSupplierId]);
 
+    const flatActiveVarieties = useMemo(
+        () =>
+            productGroups
+                .filter((pg) => !pg.archived)
+                .flatMap((pg) =>
+                    pg.varieties
+                        .filter((v) => !v.archived)
+                        .map((v) => ({ ...v, groupName: pg.name, groupIcon: pg.icon })),
+                ),
+        [productGroups],
+    );
 
-    const flatActiveVarieties = useMemo(() => productGroups
-        .filter(pg => !pg.archived)
-        .flatMap(pg => pg.varieties.filter(v => !v.archived).map(v => ({ ...v, groupName: pg.name }))), [productGroups]);
+    const selectedSupplier = useMemo(
+        () => suppliers.find((supplier) => supplier.id === selectedSupplierId),
+        [suppliers, selectedSupplierId],
+    );
 
-    const selectedSupplier = useMemo(() => {
-        return suppliers.find(s => s.id === selectedSupplierId);
-    }, [suppliers, selectedSupplierId]);
+    const supplierStats = useMemo(() => {
+        const totalSupplies = suppliers.reduce((sum, supplier) => sum + supplier.supplies.length, 0);
+        const avgFreight =
+            totalSupplies > 0
+                ? suppliers.reduce(
+                      (sum, supplier) => sum + supplier.supplies.reduce((inner, supply) => inner + supply.freightCost, 0),
+                      0,
+                  ) / totalSupplies
+                : 0;
+        return {
+            supplierCount: suppliers.length,
+            suppliedVarieties: new Set(suppliers.flatMap((supplier) => supplier.supplies.map((supply) => supply.varietyId).filter(Boolean))).size,
+            avgFreight,
+        };
+    }, [suppliers]);
 
     const handleUpdate = (updates: Partial<Supplier>) => {
         if (selectedSupplierId) {
             updateSupplier(selectedSupplierId, updates);
         }
     };
-    
+
     const handleAddProduct = () => {
         if (!selectedSupplier) return;
         const newProduct: SuppliedProduct = {
@@ -35,149 +61,391 @@ const Suppliers: React.FC<{ data: BusinessData }> = ({ data }) => {
             freightCost: 0,
             availableSizes: [],
             packagingOptions: [{ name: 'Caja', cost: 0 }],
-            notes: ''
+            notes: '',
         };
         handleUpdate({ supplies: [...selectedSupplier.supplies, newProduct] });
     };
 
     const handleUpdateProduct = (index: number, productUpdates: Partial<SuppliedProduct>) => {
         if (!selectedSupplier) return;
-        const newSupplies = [...selectedSupplier.supplies];
-        newSupplies[index] = { ...newSupplies[index], ...productUpdates };
-        handleUpdate({ supplies: newSupplies });
+        const nextSupplies = [...selectedSupplier.supplies];
+        nextSupplies[index] = { ...nextSupplies[index], ...productUpdates };
+        handleUpdate({ supplies: nextSupplies });
     };
-    
+
     const handleRemoveProduct = (index: number) => {
         if (!selectedSupplier) return;
-        const newSupplies = selectedSupplier.supplies.filter((_, i) => i !== index);
-        handleUpdate({ supplies: newSupplies });
+        handleUpdate({ supplies: selectedSupplier.supplies.filter((_, supplyIndex) => supplyIndex !== index) });
+    };
+
+    const handleAddPackaging = (index: number) => {
+        if (!selectedSupplier) return;
+        const nextSupplies = [...selectedSupplier.supplies];
+        nextSupplies[index] = {
+            ...nextSupplies[index],
+            packagingOptions: [...nextSupplies[index].packagingOptions, { name: 'Nueva opcion', cost: 0 }],
+        };
+        handleUpdate({ supplies: nextSupplies });
+    };
+
+    const handleRemovePackaging = (productIndex: number, packagingIndex: number) => {
+        if (!selectedSupplier) return;
+        const nextSupplies = [...selectedSupplier.supplies];
+        nextSupplies[productIndex] = {
+            ...nextSupplies[productIndex],
+            packagingOptions: nextSupplies[productIndex].packagingOptions.filter((_, index) => index !== packagingIndex),
+        };
+        handleUpdate({ supplies: nextSupplies });
     };
 
     const handleSelectSupplier = (id: string) => {
         setSelectedSupplierId(id);
-        if(window.innerWidth < 1024) {
+        if (window.innerWidth < 1024) {
             setShowList(false);
         }
-    }
+    };
+
+    const supplierCoverage = selectedSupplier?.supplies.length ?? 0;
+    const supplierAverageLanded =
+        selectedSupplier && selectedSupplier.supplies.length > 0
+            ? selectedSupplier.supplies.reduce((sum, supply) => sum + supply.baseCost + supply.freightCost, 0) / selectedSupplier.supplies.length
+            : 0;
 
     const SupplierList = () => (
-         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-3 px-2">Lista de Proveedores</h2>
-            <ul className="space-y-1">
-                {suppliers.map(supplier => (
-                    <li key={supplier.id}>
-                        <button
-                            onClick={() => handleSelectSupplier(supplier.id)}
-                            className={`w-full text-left p-3 rounded-lg transition-colors ${selectedSupplierId === supplier.id ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 font-semibold' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                        >
-                            {supplier.name}
-                        </button>
-                    </li>
-                ))}
+        <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5 shadow-panel">
+            <div className="mb-5">
+                <p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Red de abasto</p>
+                <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Proveedores activos</h2>
+                <p className="mt-2 text-sm text-slate-400">Selecciona un origen para revisar costo, empaque y capacidad de surtido.</p>
+            </div>
+
+            <div className="mb-5 grid grid-cols-3 gap-3">
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Red</p>
+                    <p className="mt-2 text-2xl font-black text-white">{supplierStats.supplierCount}</p>
+                </div>
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Variedades</p>
+                    <p className="mt-2 text-2xl font-black text-white">{supplierStats.suppliedVarieties}</p>
+                </div>
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Flete prom.</p>
+                    <p className="mt-2 text-lg font-black text-white">{currency(supplierStats.avgFreight)}</p>
+                </div>
+            </div>
+
+            <ul className="space-y-2">
+                {suppliers.map((supplier) => {
+                    const isActive = selectedSupplierId === supplier.id;
+                    return (
+                        <li key={supplier.id}>
+                            <button
+                                onClick={() => handleSelectSupplier(supplier.id)}
+                                className={`w-full rounded-[1.5rem] border px-4 py-4 text-left transition ${
+                                    isActive
+                                        ? 'border-brand-300/40 bg-brand-400/12 text-white shadow-glow'
+                                        : 'border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/20 hover:bg-white/[0.05]'
+                                }`}
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm font-black">{supplier.name}</p>
+                                        <p className="mt-1 text-xs text-slate-400">{supplier.contact || 'Sin contacto definido'}</p>
+                                    </div>
+                                    <span className="rounded-full border border-white/10 bg-slate-950/70 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-slate-300">
+                                        {supplier.supplies.length} SKUs
+                                    </span>
+                                </div>
+                            </button>
+                        </li>
+                    );
+                })}
             </ul>
         </div>
     );
 
     return (
-        <div>
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-6">Proveedores</h1>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="hidden lg:block lg:col-span-1">
+        <div className="space-y-6">
+            <section className="rounded-[2.4rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.14),transparent_38%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8">
+                <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+                    <div className="max-w-3xl">
+                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-300">Abasto coordinado</p>
+                        <h1 className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">Compra, costo y empaque en una sola lectura.</h1>
+                        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+                            Esta vista ya no solo lista proveedores: deja ver cobertura de catalogo, costo aterrizado y configuracion operativa para que comprar sea una decision rapida.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[460px]">
+                        <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Proveedores</p>
+                            <p className="mt-2 text-3xl font-black text-white">{supplierStats.supplierCount}</p>
+                        </div>
+                        <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Variedades</p>
+                            <p className="mt-2 text-3xl font-black text-white">{supplierStats.suppliedVarieties}</p>
+                        </div>
+                        <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Flete prom.</p>
+                            <p className="mt-2 text-2xl font-black text-white">{currency(supplierStats.avgFreight)}</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[340px,minmax(0,1fr)]">
+                <div className={`xl:block ${showList ? 'block' : 'hidden'}`}>
                     <div className="sticky top-6">
                         <SupplierList />
                     </div>
                 </div>
-                <div className="lg:col-span-2">
-                    <div className={`lg:hidden ${!showList ? 'hidden' : 'block'}`}>
-                        <SupplierList />
-                    </div>
-                    <div className={`lg:block ${showList ? 'hidden' : 'block'}`}>
-                        {selectedSupplier ? (
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6">
-                                <button onClick={() => setShowList(true)} className="lg:hidden text-gray-500 dark:text-gray-400 mb-2 text-sm flex items-center gap-2 hover:text-gray-800 dark:hover:text-gray-200">
-                                    <ArrowUturnLeftIcon /> Volver a la lista
+
+                <div className={`space-y-6 ${showList ? 'hidden xl:block' : 'block'}`}>
+                    {selectedSupplier ? (
+                        <>
+                            <section className="glass-panel-dark rounded-[2rem] border border-white/10 p-6 shadow-panel">
+                                <button
+                                    onClick={() => setShowList(true)}
+                                    className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-300 transition hover:bg-white/[0.08] lg:hidden"
+                                >
+                                    <ArrowUturnLeftIcon /> Lista
                                 </button>
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-500 dark:text-gray-400">Nombre del Proveedor</label>
-                                    <input type="text" value={selectedSupplier.name} onChange={e => handleUpdate({ name: e.target.value })} className="w-full p-2 text-xl font-bold border-b-2 border-transparent focus:border-green-500 bg-transparent dark:text-gray-100 transition-colors" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-500 dark:text-gray-400">Contacto</label>
-                                    <input type="text" value={selectedSupplier.contact} onChange={e => handleUpdate({ contact: e.target.value })} className="w-full p-2 border-b-2 border-transparent focus:border-green-500 bg-transparent dark:text-gray-300 transition-colors" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mt-4 mb-2">Productos Suministrados</h3>
-                                    <div className="space-y-4">
-                                        {selectedSupplier.supplies.map((product, index) => {
-                                            const variety = flatActiveVarieties.find(v => v.id === product.varietyId);
-                                            return (
-                                            <div key={index} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border dark:border-gray-600">
-                                                <div className="flex justify-between items-center">
-                                                    <select value={product.varietyId} onChange={e => handleUpdateProduct(index, { varietyId: e.target.value })} className="font-bold text-md p-1 bg-transparent dark:text-gray-200">
-                                                        <option value="">Seleccionar producto...</option>
-                                                        {flatActiveVarieties.map(v => <option key={v.id} value={v.id}>{v.groupName} {v.name}</option>)}
-                                                    </select>
-                                                    <button onClick={() => handleRemoveProduct(index)} className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50"><XMarkIcon /></button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-4 mt-2">
-                                                    <div>
-                                                        <label className="text-xs font-semibold dark:text-gray-400">Costo Base</label>
-                                                        <input type="number" value={product.baseCost} onChange={e => handleUpdateProduct(index, { baseCost: +e.target.value })} className="w-full p-1 rounded border dark:bg-gray-800 dark:border-gray-600"/>
-                                                    </div>
-                                                     <div>
-                                                        <label className="text-xs font-semibold dark:text-gray-400">Costo Flete</label>
-                                                        <input type="number" value={product.freightCost} onChange={e => handleUpdateProduct(index, { freightCost: +e.target.value })} className="w-full p-1 rounded border dark:bg-gray-800 dark:border-gray-600"/>
-                                                    </div>
-                                                </div>
-                                                 <div>
-                                                    <label className="text-xs font-semibold dark:text-gray-400 mt-2 block">Tamaños Disponibles</label>
-                                                    <div className="flex flex-wrap gap-2 mt-1">
-                                                    {variety && variety.sizes.map(size => (
-                                                        <label key={size} className="flex items-center gap-1 text-xs p-1 rounded-full cursor-pointer border dark:border-gray-600">
-                                                            <input type="checkbox" checked={product.availableSizes.includes(size)} onChange={() => {
-                                                                const newSizes = product.availableSizes.includes(size) ? product.availableSizes.filter(s => s !== size) : [...product.availableSizes, size];
-                                                                handleUpdateProduct(index, { availableSizes: newSizes });
-                                                            }} className="rounded"/>
-                                                            {size}
-                                                        </label>
-                                                    ))}
-                                                    </div>
-                                                </div>
-                                                 <div>
-                                                    <label className="text-xs font-semibold dark:text-gray-400 mt-2 block">Empaques</label>
-                                                    {product.packagingOptions.map((opt, optIndex) => (
-                                                        <div key={optIndex} className="flex gap-2 items-center mt-1">
-                                                            <input value={opt.name} onChange={e => {
-                                                                const newOpts = [...product.packagingOptions]; newOpts[optIndex].name = e.target.value;
-                                                                handleUpdateProduct(index, {packagingOptions: newOpts})
-                                                            }} placeholder="Nombre" className="w-1/2 p-1 rounded border dark:bg-gray-800 dark:border-gray-600"/>
-                                                             <input type="number" value={opt.cost} onChange={e => {
-                                                                const newOpts = [...product.packagingOptions]; newOpts[optIndex].cost = +e.target.value;
-                                                                handleUpdateProduct(index, {packagingOptions: newOpts})
-                                                            }} placeholder="Costo" className="w-1/2 p-1 rounded border dark:bg-gray-800 dark:border-gray-600"/>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-semibold dark:text-gray-400 mt-2 block">Notas</label>
-                                                    <input value={product.notes || ''} onChange={e => handleUpdateProduct(index, { notes: e.target.value })} placeholder="Ej. Fruta de invernadero" className="w-full p-1 rounded border dark:bg-gray-800 dark:border-gray-600"/>
-                                                </div>
-                                            </div>
-                                            );
-                                        })}
-                                        <button onClick={handleAddProduct} className="w-full text-center p-2 mt-4 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 font-semibold rounded-lg hover:bg-green-200 dark:hover:bg-green-900">
-                                            <PlusIcon /> Añadir Producto
-                                        </button>
+
+                                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Ficha del proveedor</p>
+                                        <input
+                                            type="text"
+                                            value={selectedSupplier.name}
+                                            onChange={(event) => handleUpdate({ name: event.target.value })}
+                                            className="mt-3 w-full border-b border-white/10 bg-transparent pb-3 text-3xl font-black tracking-tight text-white outline-none transition focus:border-brand-300"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={selectedSupplier.contact}
+                                            onChange={(event) => handleUpdate({ contact: event.target.value })}
+                                            className="mt-3 w-full rounded-[1.4rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-brand-300"
+                                            placeholder="Contacto principal"
+                                        />
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[420px]">
+                                        <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Cobertura</p>
+                                            <p className="mt-2 text-3xl font-black text-white">{supplierCoverage}</p>
+                                            <p className="mt-1 text-xs text-slate-400">lineas activas</p>
+                                        </div>
+                                        <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Costo base</p>
+                                            <p className="mt-2 text-xl font-black text-white">
+                                                {currency(selectedSupplier.supplies.reduce((sum, supply) => sum + supply.baseCost, 0))}
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-400">sumado del catalogo</p>
+                                        </div>
+                                        <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Landed avg</p>
+                                            <p className="mt-2 text-xl font-black text-white">{currency(supplierAverageLanded)}</p>
+                                            <p className="mt-1 text-xs text-slate-400">base + flete</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl shadow-md lg:hidden">
-                                <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">Selecciona un proveedor</h2>
-                                <p className="text-gray-500 dark:text-gray-400 mt-2">Elige un proveedor de la lista para ver o editar sus detalles.</p>
-                            </div>
-                        )}
-                    </div>
+                            </section>
+
+                            <section className="glass-panel-dark rounded-[2rem] border border-white/10 p-6 shadow-panel">
+                                <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Catalogo de compra</p>
+                                        <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Productos suministrados</h2>
+                                        <p className="mt-2 text-sm text-slate-400">Ajusta costos, tamanos, empaques y notas para que el costo real quede claro antes de comprar.</p>
+                                    </div>
+                                    <button
+                                        onClick={handleAddProduct}
+                                        className="inline-flex items-center justify-center gap-2 rounded-[1.4rem] bg-brand-400 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-brand-300"
+                                    >
+                                        <PlusIcon /> Agregar producto
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {selectedSupplier.supplies.map((product, index) => {
+                                        const variety = flatActiveVarieties.find((entry) => entry.id === product.varietyId);
+                                        const landedCost = product.baseCost + product.freightCost;
+                                        return (
+                                            <div key={`${selectedSupplier.id}-${index}`} className="rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-5">
+                                                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex flex-wrap items-center gap-3">
+                                                            <select
+                                                                value={product.varietyId}
+                                                                onChange={(event) => handleUpdateProduct(index, { varietyId: event.target.value })}
+                                                                className="min-w-[240px] rounded-[1.1rem] border border-white/10 bg-slate-950/70 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-brand-300"
+                                                            >
+                                                                <option value="">Seleccionar producto...</option>
+                                                                {flatActiveVarieties.map((entry) => (
+                                                                    <option key={entry.id} value={entry.id}>
+                                                                        {entry.groupName} {entry.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            {variety && (
+                                                                <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-brand-200">
+                                                                    {variety.groupIcon} {variety.groupName}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-4 grid gap-4 md:grid-cols-3">
+                                                            <div className="rounded-[1.2rem] border border-white/10 bg-slate-950/60 p-3">
+                                                                <label className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Costo base</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={product.baseCost}
+                                                                    onChange={(event) => handleUpdateProduct(index, { baseCost: +event.target.value })}
+                                                                    className="mt-2 w-full bg-transparent text-xl font-black text-white outline-none"
+                                                                />
+                                                            </div>
+                                                            <div className="rounded-[1.2rem] border border-white/10 bg-slate-950/60 p-3">
+                                                                <label className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Costo flete</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={product.freightCost}
+                                                                    onChange={(event) => handleUpdateProduct(index, { freightCost: +event.target.value })}
+                                                                    className="mt-2 w-full bg-transparent text-xl font-black text-white outline-none"
+                                                                />
+                                                            </div>
+                                                            <div className="rounded-[1.2rem] border border-white/10 bg-slate-950/60 p-3">
+                                                                <label className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Costo aterrizado</label>
+                                                                <p className="mt-2 text-xl font-black text-white">{currency(landedCost)}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => handleRemoveProduct(index)}
+                                                        className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-red-400/20 bg-red-500/10 text-red-300 transition hover:bg-red-500/20"
+                                                        title="Eliminar producto"
+                                                    >
+                                                        <XMarkIcon />
+                                                    </button>
+                                                </div>
+
+                                                <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr),minmax(0,1fr)]">
+                                                    <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/45 p-4">
+                                                        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Tamanos disponibles</p>
+                                                        <div className="mt-3 flex flex-wrap gap-2">
+                                                            {variety?.sizes.length ? (
+                                                                variety.sizes.map((size) => {
+                                                                    const enabled = product.availableSizes.includes(size);
+                                                                    return (
+                                                                        <label
+                                                                            key={size}
+                                                                            className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition ${
+                                                                                enabled
+                                                                                    ? 'border-brand-300/30 bg-brand-400/12 text-brand-100'
+                                                                                    : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]'
+                                                                            }`}
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={enabled}
+                                                                                onChange={() => {
+                                                                                    const nextSizes = enabled
+                                                                                        ? product.availableSizes.filter((currentSize) => currentSize !== size)
+                                                                                        : [...product.availableSizes, size];
+                                                                                    handleUpdateProduct(index, { availableSizes: nextSizes });
+                                                                                }}
+                                                                                className="rounded border-white/20 bg-transparent"
+                                                                            />
+                                                                            {size}
+                                                                        </label>
+                                                                    );
+                                                                })
+                                                            ) : (
+                                                                <p className="text-sm text-slate-500">Selecciona primero una variedad para configurar tamanos.</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/45 p-4">
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Empaques</p>
+                                                                <p className="mt-1 text-sm text-slate-400">Define la forma en que cotiza este proveedor.</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleAddPackaging(index)}
+                                                                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-200 transition hover:bg-white/[0.08]"
+                                                            >
+                                                                <PlusIcon /> Empaque
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="mt-3 space-y-2">
+                                                            {product.packagingOptions.map((option, optionIndex) => (
+                                                                <div key={`${selectedSupplier.id}-${index}-${optionIndex}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr),120px,44px]">
+                                                                    <input
+                                                                        value={option.name}
+                                                                        onChange={(event) => {
+                                                                            const nextOptions = [...product.packagingOptions];
+                                                                            nextOptions[optionIndex].name = event.target.value;
+                                                                            handleUpdateProduct(index, { packagingOptions: nextOptions });
+                                                                        }}
+                                                                        placeholder="Nombre"
+                                                                        className="rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-brand-300"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        value={option.cost}
+                                                                        onChange={(event) => {
+                                                                            const nextOptions = [...product.packagingOptions];
+                                                                            nextOptions[optionIndex].cost = +event.target.value;
+                                                                            handleUpdateProduct(index, { packagingOptions: nextOptions });
+                                                                        }}
+                                                                        placeholder="Costo"
+                                                                        className="rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-brand-300"
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => handleRemovePackaging(index, optionIndex)}
+                                                                        className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300"
+                                                                        title="Eliminar empaque"
+                                                                    >
+                                                                        <XMarkIcon />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-5">
+                                                    <label className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Notas operativas</label>
+                                                    <textarea
+                                                        value={product.notes || ''}
+                                                        onChange={(event) => handleUpdateProduct(index, { notes: event.target.value })}
+                                                        placeholder="Origen, frecuencia, comportamiento de calidad, observaciones..."
+                                                        rows={3}
+                                                        className="mt-2 w-full rounded-[1.2rem] border border-white/10 bg-slate-950/50 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-brand-300"
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {selectedSupplier.supplies.length === 0 && (
+                                        <div className="rounded-[1.8rem] border border-dashed border-white/10 bg-slate-950/40 p-10 text-center">
+                                            <p className="text-lg font-black text-white">Todavia no hay productos configurados.</p>
+                                            <p className="mt-2 text-sm text-slate-400">Agrega la primera linea para registrar costo, empaque y tamanos disponibles.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+                        </>
+                    ) : (
+                        <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-10 text-center shadow-panel">
+                            <p className="text-lg font-black text-white">Selecciona un proveedor para empezar.</p>
+                            <p className="mt-2 text-sm text-slate-400">Desde aqui se concentra el costo aterrizado y la cobertura real de compra.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

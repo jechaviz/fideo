@@ -30,17 +30,26 @@ const StatusBar: React.FC<{ activities: ActivityLog[] }> = ({ activities }) => {
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="flex items-center space-x-6 animate-marquee whitespace-nowrap">
-                 {[...recentActivities, ...recentActivities].map((activity, index) => (
-                    <div key={`${activity.id}-${index}`} className="inline-flex items-center space-x-2">
-                        <span className="text-lg">{IconMap[activity.type] || <SaleIcon />}</span>
-                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                           {activity.description} 
-                           <span className="text-gray-400 dark:text-gray-500 text-xs ml-2">({new Date(activity.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit' })})</span>
-                        </p>
+        <div className="glass-panel-dark overflow-hidden rounded-[1.6rem] px-4 py-3">
+            <div className="flex items-center gap-4">
+                <div className="flex flex-shrink-0 items-center border-r border-white/10 pr-4">
+                    <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.8)]"></span>
+                </div>
+                <div className="min-w-0 overflow-hidden">
+                    <div className="flex items-center gap-6 whitespace-nowrap animate-marquee">
+                        {[...recentActivities, ...recentActivities].map((activity, index) => (
+                            <div key={`${activity.id}-${index}`} className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+                                <span className="text-base">{IconMap[activity.type] || <SaleIcon />}</span>
+                                <p className="text-xs font-semibold text-slate-200">
+                                    {activity.description}
+                                    <span className="ml-2 font-mono text-[10px] text-slate-500">
+                                        {new Date(activity.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit' })}
+                                    </span>
+                                </p>
+                            </div>
+                        ))}
                     </div>
-                ))}
+                </div>
             </div>
         </div>
     );

@@ -1,10 +1,9 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, UserRole } from '../types';
-import { 
-    DashboardIcon, MessageIcon, InventoryIcon, TrainingIcon, SalesLogIcon, 
-    CustomersIcon, SettingsIcon, HistoryIcon, DeliveriesIcon, AssetsIcon, 
-    SunIcon, MoonIcon, FinanceIcon, RipeningIcon, ChevronDownIcon, 
+import {
+    DashboardIcon, MessageIcon, InventoryIcon, TrainingIcon, SalesLogIcon,
+    CustomersIcon, SettingsIcon, HistoryIcon, DeliveriesIcon, AssetsIcon,
+    SunIcon, MoonIcon, FinanceIcon, RipeningIcon, ChevronDownIcon,
     ChevronRightIcon, SuppliersIcon, ActionCenterIcon, XMarkIcon, ChevronLeftIcon, PlanogramIcon
 } from './icons/Icons';
 
@@ -34,7 +33,7 @@ const adminNavConfig: NavSection[] = [
         ]
     },
     {
-        title: 'Catálogos',
+        title: 'Catalogos',
         items: [
             { id: 'inventory', label: 'Inventario', icon: <InventoryIcon /> },
             { id: 'planogram', label: 'Planograma', icon: <PlanogramIcon /> },
@@ -43,7 +42,7 @@ const adminNavConfig: NavSection[] = [
         ]
     },
     {
-        title: 'Análisis',
+        title: 'Analisis',
         items: [
             { id: 'finances', label: 'Finanzas', icon: <FinanceIcon /> },
             { id: 'salesLog', label: 'Ventas', icon: <SalesLogIcon /> },
@@ -53,7 +52,7 @@ const adminNavConfig: NavSection[] = [
     {
         title: 'Sistema',
         items: [
-            { id: 'ripening', label: 'Maduración', icon: <RipeningIcon /> },
+            { id: 'ripening', label: 'Maduracion', icon: <RipeningIcon /> },
             { id: 'assets', label: 'Activos', icon: <AssetsIcon /> },
             { id: 'training', label: 'Entrenar IA', icon: <TrainingIcon /> },
             { id: 'settings', label: 'Ajustes', icon: <SettingsIcon /> },
@@ -79,15 +78,23 @@ const delivererNavConfig: NavSection[] = [
     }
 ];
 
-
-const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse'>> = ({ currentView, setCurrentView, theme, toggleTheme, onClose, currentRole, isCollapsed, toggleCollapse }) => {
+const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse'>> = ({
+    currentView,
+    setCurrentView,
+    theme,
+    toggleTheme,
+    onClose,
+    currentRole,
+    isCollapsed,
+    toggleCollapse,
+}) => {
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        'Operaciones': true,
-        'Catálogos': true,
-        'Empaque': true,
-        'Ruta': true,
-        'Análisis': true,
-        'Sistema': true
+        Operaciones: true,
+        Catalogos: true,
+        Empaque: true,
+        Ruta: true,
+        Analisis: true,
+        Sistema: true,
     });
 
     const navConfig = useMemo(() => {
@@ -102,100 +109,116 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
     }, [currentRole]);
 
     const toggleSection = (title: string) => {
-        if (isCollapsed) return; // Don't toggle when collapsed
-        setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
+        if (isCollapsed) return;
+        setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }));
     };
 
     const handleViewChange = (view: View) => {
         setCurrentView(view);
-        if (window.innerWidth < 768) { // Close on mobile selection
+        if (window.innerWidth < 768) {
             onClose();
         }
-    }
+    };
 
     return (
-        <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white dark:bg-gray-800 shadow-md flex flex-col h-full transition-all duration-300 ease-in-out`}>
-            {/* Header */}
-            <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} h-16 border-b border-gray-200 dark:border-gray-700 px-4 transition-all duration-300`}>
-                {isCollapsed ? (
-                     <span className="text-3xl" style={{color: '#f59e0b'}}>🥧</span>
-                ) : (
-                    <h1 className="text-3xl font-bold text-green-700 dark:text-green-500 flex items-center gap-2 overflow-hidden whitespace-nowrap">
-                        <span className="text-3xl" style={{color: '#f59e0b'}}>🥧</span>
-                        Fideo
-                    </h1>
-                )}
-                <button onClick={onClose} className="md:hidden p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <aside className={`${isCollapsed ? 'w-24' : 'w-80'} relative flex h-full flex-col overflow-hidden border-r border-white/10 bg-slate-950/88 text-slate-200 shadow-panel backdrop-blur-2xl transition-all duration-300 ease-in-out`}>
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,rgba(163,230,53,0.18),transparent_55%)]" />
+
+            <div className={`relative flex min-h-[96px] items-start border-b border-white/10 ${isCollapsed ? 'justify-center px-4 py-5' : 'justify-between px-6 py-6'} transition-all duration-300`}>
+                <div className={`flex min-w-0 ${isCollapsed ? 'flex-col items-center gap-3' : 'items-center gap-4'}`}>
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[1.25rem] bg-brand-400 text-slate-950 shadow-glow">
+                        <i className="fa-solid fa-apple-whole text-xl"></i>
+                    </div>
+                    {!isCollapsed && (
+                        <div className="min-w-0">
+                            <p className="truncate text-xl font-black tracking-tight text-white">Fideo</p>
+                        </div>
+                    )}
+                </div>
+                <button onClick={onClose} className="md:hidden flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
                     <XMarkIcon />
                 </button>
             </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 px-2 py-4 overflow-y-auto overflow-x-hidden">
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-5">
                 {navConfig.map((section) => (
-                    <div key={section.title} className="mb-4">
+                    <div key={section.title} className="mb-5">
                         {!isCollapsed ? (
                             <button
                                 onClick={() => toggleSection(section.title)}
-                                className="flex items-center justify-between w-full p-2 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-1"
+                                className="mb-2 flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.28em] text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
                             >
                                 <span>{section.title}</span>
                                 {openSections[section.title] ? <ChevronDownIcon /> : <ChevronRightIcon />}
                             </button>
                         ) : (
-                            <div className="border-b border-gray-200 dark:border-gray-700 my-2 mx-auto w-8" title={section.title}></div>
+                            <div className="mx-auto my-3 h-px w-10 bg-white/10" title={section.title}></div>
                         )}
-                        
-                        {/* Show items if section is open OR if sidebar is collapsed (always show items in collapsed mode) */}
+
                         {(openSections[section.title] || isCollapsed) && (
                             <ul className={`space-y-1 ${isCollapsed ? 'flex flex-col items-center' : 'mt-1'}`}>
-                            {section.items.map((item) => (
-                                <li key={item.id} className="w-full">
-                                <button
-                                    onClick={() => handleViewChange(item.id)}
-                                    title={isCollapsed ? item.label : ''}
-                                    className={`flex items-center w-full p-3 rounded-lg transition-colors duration-200 group relative ${
-                                    currentView === item.id
-                                        ? 'bg-green-600 text-white shadow-md'
-                                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-100'
-                                    } ${isCollapsed ? 'justify-center' : 'text-left'}`}
-                                >
-                                    <span className={`text-center text-xl ${isCollapsed ? '' : 'mr-3 w-6'}`}>{item.icon}</span>
-                                    {!isCollapsed && <span className="font-medium text-sm truncate">{item.label}</span>}
-                                    
-                                    {/* Tooltip for collapsed mode */}
-                                    {isCollapsed && (
-                                        <div className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity duration-200">
-                                            {item.label}
-                                        </div>
-                                    )}
-                                </button>
-                                </li>
-                            ))}
+                                {section.items.map((item) => (
+                                    <li key={item.id} className="w-full">
+                                        <button
+                                            onClick={() => handleViewChange(item.id)}
+                                            title={isCollapsed ? item.label : ''}
+                                            className={`group relative flex w-full items-center rounded-[1.35rem] px-4 py-3 transition-all duration-200 ${
+                                                currentView === item.id
+                                                    ? 'bg-brand-400 text-slate-950 shadow-glow'
+                                                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                                            } ${isCollapsed ? 'justify-center' : 'text-left'}`}
+                                        >
+                                            <span className={`text-center text-lg ${isCollapsed ? '' : 'mr-3 w-6'}`}>{item.icon}</span>
+                                            {!isCollapsed && (
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="block truncate text-sm font-bold">{item.label}</span>
+                                                </div>
+                                            )}
+
+                                            {isCollapsed && (
+                                                <div className="pointer-events-none absolute left-16 z-50 whitespace-nowrap rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100">
+                                                    {item.label}
+                                                </div>
+                                            )}
+                                        </button>
+                                    </li>
+                                ))}
                             </ul>
                         )}
                     </div>
                 ))}
             </nav>
 
-            {/* Footer & Toggle */}
-            <div className="border-t border-gray-200 dark:border-gray-700">
-                <div className={`p-4 flex items-center ${isCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
-                    <button onClick={toggleTheme} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" aria-label="Toggle theme" title="Cambiar tema">
+            <div className="relative mt-auto border-t border-white/10 p-4">
+                {!isCollapsed && (
+                    <div className="mb-4 rounded-[1.8rem] border border-white/10 bg-white/5 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Rol</p>
+                        <div className="mt-3 flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-sm font-black text-brand-300 shadow-inner shadow-black/40">
+                                {currentRole.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-black text-white">{currentRole}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className={`flex rounded-[1.6rem] border border-white/10 bg-slate-900/75 p-3 ${isCollapsed ? 'flex-col items-center gap-3' : 'items-center justify-between gap-3'}`}>
+                    <button onClick={toggleTheme} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle theme" title="Cambiar tema">
                         {theme === 'light' ? <MoonIcon /> : <SunIcon />}
                     </button>
-                    
-                    <button 
-                        onClick={toggleCollapse} 
-                        className="hidden md:flex p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        title={isCollapsed ? "Expandir menú" : "Colapsar menú"}
+
+                    <button
+                        onClick={toggleCollapse}
+                        className="hidden h-11 items-center justify-center rounded-2xl bg-white/5 px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white md:flex"
+                        title={isCollapsed ? 'Expandir menu' : 'Colapsar menu'}
                     >
                         {isCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+                        {!isCollapsed && <span className="ml-2">Colapsar</span>}
                     </button>
                 </div>
-                {!isCollapsed && (
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 text-center pb-2">v6.4</p>
-                )}
+
             </div>
         </aside>
     );
@@ -204,14 +227,12 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
 const Sidebar: React.FC<SidebarProps> = (props) => {
   return (
     <>
-      {/* Mobile Sidebar (Overlay) */}
-      <div className={`fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden transition-opacity ${props.isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={props.onClose}></div>
-      <div className={`fixed inset-y-0 left-0 transform ${props.isOpen ? 'translate-x-0' : '-translate-x-full'} md:hidden transition-transform duration-300 ease-in-out z-40`}>
+      <div className={`fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm transition-opacity md:hidden ${props.isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`} onClick={props.onClose}></div>
+      <div className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out md:hidden ${props.isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <SidebarContent {...props} isCollapsed={false} toggleCollapse={() => {}} />
       </div>
-      
-      {/* Desktop/Tablet Sidebar (Static/Collapsed) */}
-      <div className="hidden md:flex md:flex-shrink-0 h-full">
+
+      <div className="hidden h-full md:flex md:flex-shrink-0">
          <SidebarContent {...props} />
       </div>
     </>

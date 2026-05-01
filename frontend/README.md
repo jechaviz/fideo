@@ -1,20 +1,67 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Frontend de Fideo
 
-# Run and deploy your AI Studio app
+Este directorio contiene la app React/Vite de Fideo.
 
-This contains everything you need to run your app locally.
+Si quieres entender el producto, la vision, el estado actual y como evaluar si el goal se esta alcanzando, lee primero:
 
-View your app in AI Studio: https://ai.studio/apps/6f6cf99c-9aec-4506-b702-9898c90ad39c
+- [`../README.md`](../README.md)
 
-## Run Locally
+## Stack
 
-**Prerequisites:**  Node.js
+- React 19
+- Vite
+- TypeScript
+- Bun
+- Recharts
+- Gemini via backend PocketBase con fallback opcional en cliente
+- PocketBase SDK
+- OneSignal Web SDK via `react-onesignal`
 
+## Comandos
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+bun install
+bun run dev
+bun run lint
+bun run build
+bun run pb:install
+bun run pb:start
+bun run pb:check
+```
+
+Para bootstrap de un usuario local sobre PocketBase:
+
+```bash
+bun run pb:bootstrap -- -SuperuserEmail dev@fideo.local -SuperuserPassword "ChangeMe123!"
+```
+
+## Variables de entorno
+
+Crear `frontend/.env.local` con:
+
+```env
+VITE_POCKETBASE_URL=http://127.0.0.1:8090
+VITE_GEMINI_API_KEY=tu_api_key_opcional_para_fallback_cliente
+GEMINI_API_KEY=tu_api_key_para_backend_si_levantas_pb_desde_esta_maquina
+FIDEO_GEMINI_MODEL=gemini-2.5-flash
+VITE_ONESIGNAL_ENABLED=false
+VITE_ONESIGNAL_APP_ID=tu_app_id_web_de_onesignal
+VITE_ONESIGNAL_WORKER_PATH=onesignal/OneSignalSDKWorker.js
+VITE_ONESIGNAL_WORKER_SCOPE=onesignal/
+VITE_ONESIGNAL_ALLOW_LOCALHOST=true
+```
+
+## Notas
+
+- `bun` es el package manager principal.
+- `lint` corre typecheck y ESLint.
+- `build` ya pasa sin el warning anterior del chunk gigante.
+- Si `VITE_POCKETBASE_URL` existe, la app arranca con login real y sincroniza el workspace con PocketBase.
+- OneSignal solo se enciende cuando `VITE_ONESIGNAL_ENABLED=true` y existe `VITE_ONESIGNAL_APP_ID`.
+- Los workers web push viven en `public/onesignal/OneSignalSDKWorker.js` y `public/onesignal/OneSignalSDKUpdaterWorker.js`.
+- La identidad push se enlaza con el `external_id` del usuario autenticado de PocketBase y tags de `role`, `workspace_id`, `workspace_slug`, `channel`, `customer_id` o `supplier_id` cuando aplican.
+- Si `bun run pb:start` encuentra `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY` o `VITE_GEMINI_API_KEY` en `frontend/.env.local`, intenta promoverlas al proceso de PocketBase para habilitar interpretacion server-side.
+- La interpretacion de mensajes ya intenta ir primero al backend (`/api/fideo/messages/interpret`) y cae al Gemini del cliente solo si esa ruta no existe o no esta disponible.
+- PocketBase ya materializa un primer slice normalizado para `productGroups`, `warehouses`, `prices`, `inventory`, `customers`, `suppliers` y `purchaseOrders`.
+- La parte servidor vive en `../backend/pocketbase/`.
+- Los helpers `pb:*` delegan a los scripts PowerShell de `../backend/pocketbase/`.

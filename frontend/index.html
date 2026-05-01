@@ -3,21 +3,107 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fideo - Gestion Comercial</title>
-  <meta name="theme-color" content="#111827">
+  <title>Fideo | Centro Comercial</title>
+  <meta name="theme-color" content="#020617">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class'
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f7fee7',
+              100: '#ecfccb',
+              200: '#d9f99d',
+              300: '#bef264',
+              400: '#a3e635',
+              500: '#84cc16',
+              600: '#65a30d',
+              700: '#4d7c0f',
+              800: '#3f6212',
+              900: '#365314'
+            }
+          },
+          fontFamily: {
+            sans: ['Manrope', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace']
+          },
+          boxShadow: {
+            glow: '0 24px 60px rgba(132, 204, 22, 0.16)',
+            panel: '0 30px 80px rgba(2, 6, 23, 0.45)'
+          }
+        }
+      }
     }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
+    :root {
+      color-scheme: dark;
+    }
+    html {
+      background:
+        radial-gradient(circle at top right, rgba(163, 230, 53, 0.18), transparent 26%),
+        radial-gradient(circle at 15% 0%, rgba(56, 189, 248, 0.14), transparent 24%),
+        linear-gradient(180deg, #020617 0%, #0f172a 100%);
+    }
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Manrope', sans-serif;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top right, rgba(163, 230, 53, 0.18), transparent 26%),
+        radial-gradient(circle at 15% 0%, rgba(56, 189, 248, 0.14), transparent 24%),
+        linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: #e2e8f0;
+      letter-spacing: 0;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 85%);
+      opacity: 0.35;
+    }
+    ::selection {
+      background: rgba(163, 230, 53, 0.28);
+      color: #f8fafc;
+    }
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.45);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.65);
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 30px 80px rgba(2, 6, 23, 0.4);
+    }
+    .glass-panel-dark {
+      background: rgba(2, 6, 23, 0.62);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 30px 80px rgba(2, 6, 23, 0.46);
     }
     @keyframes marquee {
         0% { transform: translateX(0); }
@@ -25,6 +111,9 @@
     }
     .animate-marquee {
         animation: marquee 40s linear infinite;
+    }
+    .animate-marquee:hover {
+        animation-play-state: paused;
     }
   </style>
 <script type="importmap">
@@ -39,7 +128,7 @@
 }
 </script>
 </head>
-<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300">
+<body class="bg-slate-950 text-slate-100">
   <div id="root"></div>
 <script type="module" src="/index.tsx"></script>
 </body>
