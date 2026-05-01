@@ -8,6 +8,7 @@ import {
 } from '../services/pocketbase/auth';
 import { isPocketBaseEnabled } from '../services/pocketbase/client';
 import { Message } from '../types';
+import { TaskReportInput } from '../types';
 import {
     approveRemoteWorkspaceInterpretation,
     ApproveInterpretationResult,
@@ -25,6 +26,8 @@ import {
     revertRemoteWorkspaceInterpretation,
     RevertInterpretationResult,
     RemoteWorkspaceSnapshot,
+    submitRemoteWorkspaceTaskReport,
+    SubmitTaskReportResult,
 } from '../services/pocketbase/state';
 
 type SessionStatus = 'disabled' | 'loading' | 'unauthenticated' | 'bootstrapping' | 'authenticated' | 'error';
@@ -73,6 +76,7 @@ export const usePocketBaseSession = () => {
     const remoteCorrectionRouteAvailableRef = useRef(true);
     const remoteInterpretationRouteAvailableRef = useRef(true);
     const remoteRevertRouteAvailableRef = useRef(true);
+    const remoteTaskReportRouteAvailableRef = useRef(true);
 
     useEffect(() => {
         profileRef.current = sessionState.profile;
@@ -89,6 +93,7 @@ export const usePocketBaseSession = () => {
         remoteCorrectionRouteAvailableRef.current = true;
         remoteInterpretationRouteAvailableRef.current = true;
         remoteRevertRouteAvailableRef.current = true;
+        remoteTaskReportRouteAvailableRef.current = true;
         workspaceEpochRef.current += 1;
         setSessionState({
             status,
@@ -113,6 +118,7 @@ export const usePocketBaseSession = () => {
             remoteCorrectionRouteAvailableRef.current = true;
             remoteInterpretationRouteAvailableRef.current = true;
             remoteRevertRouteAvailableRef.current = true;
+            remoteTaskReportRouteAvailableRef.current = true;
             workspaceEpochRef.current += 1;
             setSessionState({
                 status: 'authenticated',
@@ -675,6 +681,116 @@ export const usePocketBaseSession = () => {
         [enabled, loadWorkspace, setAuthenticatedError],
     );
 
+    const submitTaskReportNow = useCallback(
+        async (
+            snapshot: PersistableBusinessState,
+            taskId: string,
+            report: TaskReportInput,
+            expectedVersion: number,
+            epoch: number,
+        ): Promise<SubmitTaskReportResult | null> => {
+            if (epoch !== workspaceEpochRef.current) {
+                throw new PocketBaseSyncError(
+                    'Se descarto un reporte pendiente porque el workspace ya se habia recargado desde PocketBase.',
+                    {
+                        code: 'conflict',
+                        status: 409,
+                        retryable: false,
+                    },
+                );
+            }
+
+            const workspace = workspaceRef.current;
+            const workspaceId = workspace?.workspaceId;
+            if (!enabled || !workspaceId || !remoteTaskReportRouteAvailableRef.current) {
+                return null;
+            }
+
+            const versionToUse = Math.max(expectedVersion, workspace.version);
+
+            try {
+                const result = await submitRemoteWorkspaceTaskReport(
+                    workspaceId,
+                    snapshot,
+                    taskId,
+                    report,
+                    versionToUse,
+                );
+
+                if (result.snapshot && typeof result.version === 'number') {
+                    setSessionState((previous) => {
+                        if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
+
+                        const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                            ...previous.workspace,
+                            snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
+                            version: result.version,
+                            snapshot: result.snapshot,
+                        };
+
+                        workspaceRef.current = updatedWorkspace;
+
+                        return {
+                            ...previous,
+                            error: null,
+                            workspace: updatedWorkspace,
+                        };
+                    });
+                } else {
+                    setAuthenticatedError(null);
+                }
+
+                return result;
+            } catch (error) {
+                if (isPocketBaseRouteUnavailable(error)) {
+                    remoteTaskReportRouteAvailableRef.current = false;
+                    return null;
+                }
+
+                const normalizedError = normalizePocketBaseError(error, 'No se pudo enviar el reporte de tarea a PocketBase.');
+
+                if (normalizedError.code === 'conflict') {
+                    const conflictMessage = 'El workspace remoto cambio antes de registrar el reporte. Recargamos la version mas reciente de PocketBase.';
+
+                    try {
+                        await loadWorkspace({ errorAfterLoad: conflictMessage });
+                    } catch (refreshError) {
+                        const normalizedRefreshError = normalizePocketBaseError(
+                            refreshError,
+                            'No se pudo recargar el workspace despues del conflicto de reporte.',
+                        );
+                        setAuthenticatedError(normalizedRefreshError.message);
+                        throw normalizedRefreshError;
+                    }
+
+                    throw new PocketBaseSyncError(conflictMessage, {
+                        code: normalizedError.code,
+                        status: normalizedError.status,
+                        retryable: false,
+                        conflictVersion: normalizedError.conflictVersion,
+                        snapshotRecordId: normalizedError.snapshotRecordId,
+                        cause: normalizedError,
+                    });
+                }
+
+                if (
+                    normalizedError.code === 'offline'
+                    || normalizedError.code === 'cancelled'
+                    || normalizedError.code === 'auth'
+                    || normalizedError.code === 'forbidden'
+                    || normalizedError.code === 'unknown'
+                ) {
+                    console.warn('El reporte remoto no estuvo disponible. Seguimos con el flujo local.', normalizedError);
+                    return null;
+                }
+
+                setAuthenticatedError(normalizedError.message);
+                throw normalizedError;
+            }
+        },
+        [enabled, loadWorkspace, setAuthenticatedError],
+    );
+
     const flushPendingPersist = useCallback((): Promise<PersistResult | null> => {
         const pendingSnapshot = pendingPersistRef.current;
         if (!pendingSnapshot) {
@@ -837,6 +953,21 @@ export const usePocketBaseSession = () => {
         [enqueuePersistTask, revertInterpretationNow],
     );
 
+    const submitTaskReport = useCallback(
+        (
+            snapshot: PersistableBusinessState,
+            taskId: string,
+            report: TaskReportInput,
+            expectedVersion: number,
+        ): Promise<SubmitTaskReportResult | null> => {
+            const epoch = workspaceEpochRef.current;
+            return enqueuePersistTask(() =>
+                submitTaskReportNow(snapshot, taskId, report, expectedVersion, epoch),
+            );
+        },
+        [enqueuePersistTask, submitTaskReportNow],
+    );
+
     return {
         enabled,
         ...sessionState,
@@ -848,5 +979,6 @@ export const usePocketBaseSession = () => {
         interpretMessage,
         correctInterpretation,
         revertInterpretation,
+        submitTaskReport,
     };
 };

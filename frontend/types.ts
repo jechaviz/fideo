@@ -91,6 +91,10 @@ export type TaskRole = 'Admin' | 'Repartidor' | 'Empacador' | 'Cajero';
 export type TaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
 export type TaskPriority = 'normal' | 'high';
 export type TaskAssignmentKind = 'PACK_ORDER' | 'ASSIGN_DELIVERY' | 'DELIVER_ORDER';
+export type TaskReportKind = 'note' | 'incident' | 'blocker' | 'completion';
+export type TaskReportSeverity = 'normal' | 'high';
+export type TaskReportStatus = 'open' | 'resolved';
+export type TaskReportEscalationStatus = 'none' | 'pending' | 'sent';
 
 export interface TaskAssignment {
     id: string;
@@ -112,6 +116,37 @@ export interface TaskAssignment {
     blockedAt?: Date;
     completedAt?: Date;
     blockReason?: string;
+}
+
+export interface TaskReportInput {
+    kind: TaskReportKind;
+    summary: string;
+    detail?: string;
+    severity?: TaskReportSeverity;
+    evidence?: string;
+    nextTaskStatus?: TaskStatus;
+}
+
+export interface TaskReport {
+    id: string;
+    taskId: string;
+    saleId?: string | null;
+    role: TaskRole;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    taskTitle: string;
+    kind: TaskReportKind;
+    status: TaskReportStatus;
+    severity: TaskReportSeverity;
+    summary: string;
+    detail?: string;
+    evidence?: string;
+    escalationStatus: TaskReportEscalationStatus;
+    createdAt: Date;
+    resolvedAt?: Date;
+    escalatedAt?: Date;
 }
 
 export interface ActionItem {
@@ -571,6 +606,7 @@ export interface BusinessState {
     ripeningRules: RipeningRule[];
     inventoryRecommendations: InventoryRecommendation[];
     taskAssignments: TaskAssignment[];
+    taskReports: TaskReport[];
     actionItems: ActionItem[];
     cashDrawers: CashDrawer[];
     cashDrawerActivities: CashDrawerActivity[];

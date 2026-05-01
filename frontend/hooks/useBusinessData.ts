@@ -14,6 +14,7 @@ import {
     SaleInterpretation,
     StateChangeInterpretation,
     TaskAssignment,
+    TaskReportInput,
     UserRole,
     View,
     WarehouseTransferInterpretation,
@@ -38,10 +39,12 @@ import {
     PocketBaseSyncError,
     readLocalBusinessState,
     RevertInterpretationResult,
+    SubmitTaskReportResult,
     writeLocalBusinessState,
 } from '../services/pocketbase/state';
 import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
 import { resolveCurrentEmployee, syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../utils/taskAssignments';
+import { normalizeTaskReportInput, submitTaskReportLocally, syncTaskReportsWithTasks } from '../utils/taskReports';
 import * as Logic from '../utils/businessLogic';
 import { useCatalogActions } from './useCatalogActions';
 import { useInventoryActions } from './useInventoryActions';
@@ -84,6 +87,12 @@ interface UseBusinessDataOptions {
         expectedVersion: number,
         actionId?: string,
     ) => Promise<RevertInterpretationResult | null>;
+    onSubmitRemoteTaskReport?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        taskId: string,
+        report: TaskReportInput,
+        expectedVersion: number,
+    ) => Promise<SubmitTaskReportResult | null>;
     onSignOut?: () => void;
 }
 
@@ -355,6 +364,15 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
     }, [state.employees, state.sales, state.taskAssignments]);
 
     useEffect(() => {
+        setState((currentState) => {
+            const nextTaskReports = syncTaskReportsWithTasks(currentState);
+            return nextTaskReports === currentState.taskReports
+                ? currentState
+                : { ...currentState, taskReports: nextTaskReports };
+        });
+    }, [state.taskAssignments, state.taskReports]);
+
+    useEffect(() => {
         writeLocalBusinessState(storageKey, state);
     }, [state, storageKey]);
 
@@ -581,6 +599,45 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
             ),
         );
     }, [currentEmployee]);
+
+    const submitTaskReport = useCallback(
+        async (taskId: string, report: TaskReportInput | Record<string, unknown>) => {
+            const currentState = stateRef.current;
+            const normalizedReport = normalizeTaskReportInput(report);
+            if (!normalizedReport) return null;
+            const actor = currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined;
+            const localResult = submitTaskReportLocally(currentState, taskId, normalizedReport, actor);
+            if (!localResult.report) return null;
+
+            setState(localResult.nextState);
+
+            if (options.onSubmitRemoteTaskReport) {
+                try {
+                    const result = await options.onSubmitRemoteTaskReport(
+                        buildPersistableSnapshot(localResult.nextState),
+                        taskId,
+                        normalizedReport,
+                        remoteVersionRef.current,
+                    );
+
+                    if (result?.snapshot && typeof result.version === 'number') {
+                        remoteVersionRef.current = result.version;
+                        setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                    }
+                } catch (error) {
+                    if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                        console.error('No se pudo enviar el reporte de tarea en PocketBase por un conflicto de version.', error);
+                        return localResult.report;
+                    }
+
+                    console.error('No se pudo enviar el reporte de tarea en PocketBase. Seguimos con el flujo local.', error);
+                }
+            }
+
+            return localResult.report;
+        },
+        [currentEmployee, options.authProfile, options.onSubmitRemoteTaskReport],
+    );
 
     const addMessage = useCallback((text: string, sender: string) => {
         setState((currentState) => ({
@@ -996,6 +1053,7 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         startTask,
         blockTask,
         completeTask,
+        submitTaskReport,
         currentEmployee,
         authEnabled: Boolean(options.authEnabled),
         authProfile: options.authProfile || null,

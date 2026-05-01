@@ -28,6 +28,8 @@ import {
     PaymentStatus,
     Supplier,
     TaskAssignment,
+    TaskReport,
+    TaskReportInput,
     UserRole,
     View,
     Warehouse,
@@ -50,9 +52,11 @@ export interface PersistResult {
     updatedAt: string;
 }
 
+type PocketBaseNotification = { text: string; isError: boolean };
+
 export interface ApproveInterpretationResult extends PersistResult {
     snapshot: Record<string, unknown>;
-    notification?: { text: string; isError: boolean } | null;
+    notification?: PocketBaseNotification | null;
     actionLogId?: string;
 }
 
@@ -67,6 +71,16 @@ export interface InterpretMessageResult {
 
 export type CorrectInterpretationResult = InterpretMessageResult;
 export type RevertInterpretationResult = InterpretMessageResult;
+export interface SubmitTaskReportResult {
+    report?: TaskReport;
+    taskAssignment?: TaskAssignment;
+    snapshot?: Record<string, unknown>;
+    version?: number;
+    snapshotRecordId?: string;
+    updatedAt?: string;
+    actionLogId?: string;
+    notification?: PocketBaseNotification | null;
+}
 
 type PocketBaseErrorLike = {
     status?: number;
@@ -201,6 +215,21 @@ const reviveDates = (_key: string, value: unknown) => {
     return value;
 };
 
+const cloneWithDates = <T,>(value: unknown): T => JSON.parse(JSON.stringify(value), reviveDates) as T;
+
+const normalizeNotification = (value: unknown): PocketBaseNotification | null | undefined => {
+    if (value === undefined) return undefined;
+    if (!isRecord(value)) return null;
+
+    const text = readString(value.text);
+    if (!text) return null;
+
+    return {
+        text,
+        isError: Boolean(value.isError),
+    };
+};
+
 export const getBusinessDataStorageKey = (scope = 'local') => `${CORE_STORAGE_KEY}:${scope}`;
 
 export const createDefaultBusinessState = (): BusinessState => ({
@@ -230,6 +259,7 @@ export const createDefaultBusinessState = (): BusinessState => ({
     ripeningRules: InitialData.INITIAL_RIPENING_RULES,
     inventoryRecommendations: [],
     taskAssignments: [],
+    taskReports: [],
     actionItems: [],
     cashDrawers: [{ id: 'cd1', name: 'Caja Principal', balance: 5000, status: 'Cerrada' }],
     cashDrawerActivities: [],
@@ -273,6 +303,7 @@ const mergeCollectionsWithDefaults = (state: Partial<BusinessState>): BusinessSt
         ripeningRules: (state.ripeningRules as RipeningRule[]) || base.ripeningRules,
         inventoryRecommendations: [],
         taskAssignments: (state.taskAssignments as TaskAssignment[]) || base.taskAssignments,
+        taskReports: (state.taskReports as TaskReport[]) || base.taskReports,
         actionItems: [],
         cashDrawers: (state.cashDrawers as CashDrawer[]) || base.cashDrawers,
         cashDrawerActivities: (state.cashDrawerActivities as CashDrawerActivity[]) || base.cashDrawerActivities,
@@ -569,6 +600,33 @@ const normalizeInterpretationResponse = (response: unknown): InterpretMessageRes
     };
 };
 
+const normalizeTaskReportResponse = (response: unknown): SubmitTaskReportResult => {
+    const payload = isRecord(response) ? response : {};
+    const taskAssignmentSource =
+        isRecord(payload.taskAssignment)
+            ? payload.taskAssignment
+            : isRecord(payload.task)
+              ? payload.task
+              : null;
+    const reportSource =
+        isRecord(payload.report)
+            ? payload.report
+            : isRecord(payload.taskReport)
+              ? payload.taskReport
+              : null;
+
+    return {
+        report: reportSource ? cloneWithDates<TaskReport>(reportSource) : undefined,
+        taskAssignment: taskAssignmentSource ? cloneWithDates<TaskAssignment>(taskAssignmentSource) : undefined,
+        snapshot: isRecord(payload.snapshot) ? (payload.snapshot as Record<string, unknown>) : undefined,
+        version: readNumber(payload.version),
+        snapshotRecordId: readString(payload.snapshotRecordId) || undefined,
+        updatedAt: readString(payload.updatedAt) || undefined,
+        actionLogId: readString(payload.actionLogId) || undefined,
+        notification: normalizeNotification(payload.notification),
+    };
+};
+
 export const interpretRemoteWorkspaceMessage = async (
     workspaceId: string,
     snapshot: PersistableBusinessState,
@@ -637,4 +695,26 @@ export const revertRemoteWorkspaceInterpretation = async (
     });
 
     return normalizeInterpretationResponse(response);
+};
+
+export const submitRemoteWorkspaceTaskReport = async (
+    workspaceId: string,
+    snapshot: PersistableBusinessState,
+    taskId: string,
+    report: TaskReportInput,
+    expectedVersion: number,
+): Promise<SubmitTaskReportResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/tasks/report', {
+        method: 'POST',
+        body: {
+            workspaceId,
+            expectedVersion,
+            snapshot,
+            taskId,
+            report: JSON.parse(JSON.stringify(report)),
+        },
+    });
+
+    return normalizeTaskReportResponse(response);
 };
