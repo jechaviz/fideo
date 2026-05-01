@@ -95,6 +95,10 @@ export type TaskReportKind = 'note' | 'incident' | 'blocker' | 'completion';
 export type TaskReportSeverity = 'normal' | 'high';
 export type TaskReportStatus = 'open' | 'resolved';
 export type TaskReportEscalationStatus = 'none' | 'pending' | 'sent';
+export type PresenceRosterStatus = 'active' | 'background' | 'idle' | 'offline';
+export type OperationalExceptionKind = 'task_report' | 'task_blocked' | 'cash_drawer' | 'sla' | 'system' | 'other';
+export type OperationalExceptionSeverity = 'normal' | 'high' | 'critical';
+export type OperationalExceptionStatus = 'open' | 'acknowledged' | 'resolved';
 
 export interface TaskAssignment {
     id: string;
@@ -147,6 +151,55 @@ export interface TaskReport {
     createdAt: Date;
     resolvedAt?: Date;
     escalatedAt?: Date;
+}
+
+export interface PresenceRosterEntry {
+    id: string;
+    actorId?: string | null;
+    workspaceId?: string | null;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    name: string;
+    role: UserRole;
+    status: PresenceRosterStatus;
+    lastSeenAt?: Date | null;
+    sessionKey?: string | null;
+    sessionId?: string | null;
+    deviceId?: string | null;
+    deviceName?: string | null;
+    installationId?: string | null;
+    platform?: string | null;
+    appVersion?: string | null;
+    pushExternalId?: string | null;
+    meta?: Record<string, unknown> | null;
+}
+
+export interface OperationalException {
+    id: string;
+    kind: OperationalExceptionKind;
+    severity: OperationalExceptionSeverity;
+    status: OperationalExceptionStatus;
+    title: string;
+    summary: string;
+    detail?: string;
+    createdAt: Date;
+    updatedAt?: Date;
+    resolvedAt?: Date;
+    lastSeenAt?: Date;
+    workspaceId?: string | null;
+    role?: TaskRole | UserRole | null;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    taskId?: string | null;
+    saleId?: string | null;
+    reportId?: string | null;
+    drawerId?: string | null;
+    drawerName?: string | null;
+    escalationStatus?: TaskReportEscalationStatus | null;
+    source?: string | null;
+    meta?: Record<string, unknown> | null;
 }
 
 export interface ActionItem {
@@ -607,6 +660,8 @@ export interface BusinessState {
     inventoryRecommendations: InventoryRecommendation[];
     taskAssignments: TaskAssignment[];
     taskReports: TaskReport[];
+    presenceRoster: PresenceRosterEntry[];
+    operationalExceptions: OperationalException[];
     actionItems: ActionItem[];
     cashDrawers: CashDrawer[];
     cashDrawerActivities: CashDrawerActivity[];

@@ -55,6 +55,12 @@ export interface ShellRealtimeSummary {
     signal: ShellStatusSignal;
 }
 
+export interface ShellRuntimeSummary {
+    staffSignal: ShellStatusSignal | null;
+    exceptionSignal: ShellStatusSignal | null;
+    signals: ShellStatusSignal[];
+}
+
 const normalizeText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const pluralize = (count: number, singular: string, plural = `${singular}s`) => (count === 1 ? singular : plural);
@@ -208,6 +214,82 @@ const buildSignal = (id: string, label: string, shortLabel: string, tone: ShellS
     tone,
     tooltip,
 });
+
+const isPresenceLive = (status: string | undefined, lastSeenAt?: Date) => {
+    if (!lastSeenAt) return status === 'active' || status === 'background';
+    const ageMs = Date.now() - lastSeenAt.getTime();
+    return ageMs <= PRESENCE_STALE_AFTER_MS && (status === 'active' || status === 'background');
+};
+
+const getShellStaffSignal = (data: BusinessData): ShellStatusSignal | null => {
+    const roster = Array.isArray(data.staffPresence) ? data.staffPresence : [];
+    if (!roster.length) return null;
+
+    const entries = roster
+        .map((item) => {
+            const record = asRecord(item);
+            const sources = [record, asRecord(record?.presence), asRecord(record?.meta)];
+            return {
+                status: readString(sources, ['status', 'presenceStatus']) || 'offline',
+                lastSeenAt: readDate(sources, ['lastSeenAt', 'timestamp', 'updatedAt', 'at']),
+            };
+        })
+        .filter((entry) => Boolean(entry.status || entry.lastSeenAt));
+
+    if (!entries.length) return null;
+
+    const liveCount = entries.filter((entry) => isPresenceLive(entry.status, entry.lastSeenAt)).length;
+    const staleCount = entries.length - liveCount;
+    const label = `Staff ${liveCount}/${entries.length}`;
+    const tone: ShellSignalTone =
+        liveCount <= 0 ? 'offline' : staleCount > 0 ? 'warning' : 'live';
+    const tooltipParts = [`${liveCount} activos`];
+    if (staleCount > 0) {
+        tooltipParts.push(`${staleCount} sin pulso reciente`);
+    }
+
+    return buildSignal('staff_presence', label, label, tone, tooltipParts.join(' / '));
+};
+
+const isOpenException = (value: Record<string, unknown>) => {
+    const sources = [value, asRecord(value.payload), asRecord(value.context), asRecord(value.metadata)];
+    const status = readString(sources, ['status', 'state', 'exceptionStatus']);
+    if (!status) return true;
+    return ['open', 'pending', 'active', 'new', 'sent'].includes(status.toLowerCase());
+};
+
+const isCriticalException = (value: Record<string, unknown>) => {
+    const sources = [value, asRecord(value.payload), asRecord(value.context), asRecord(value.metadata)];
+    const severity = readString(sources, ['severity', 'priority', 'tone']);
+    const category = readString(sources, ['category', 'kind', 'type']);
+    return (
+        severity === 'high'
+        || severity === 'critical'
+        || category === 'blocker'
+        || category === 'incident'
+        || category === 'cash_alert'
+        || Boolean(readBoolean(sources, ['blocked', 'isCritical', 'requiresAttention']))
+    );
+};
+
+const getShellExceptionSignal = (data: BusinessData): ShellStatusSignal | null => {
+    const inbox = Array.isArray(data.exceptionInbox) ? data.exceptionInbox : [];
+    if (!inbox.length) return null;
+
+    const exceptions = inbox.map((item) => asRecord(item)).filter((item): item is Record<string, unknown> => Boolean(item));
+    const openExceptions = exceptions.filter(isOpenException);
+    if (!openExceptions.length) return null;
+
+    const criticalCount = openExceptions.filter(isCriticalException).length;
+    const label = criticalCount > 0 ? `Exc ${criticalCount}/${openExceptions.length}` : `Exc ${openExceptions.length}`;
+    const tone: ShellSignalTone = criticalCount > 0 ? 'blocked' : 'alert';
+    const tooltipParts = [`${openExceptions.length} excepciones abiertas`];
+    if (criticalCount > 0) {
+        tooltipParts.push(`${criticalCount} criticas`);
+    }
+
+    return buildSignal('exception_inbox', label, label, tone, tooltipParts.join(' / '));
+};
 
 export const getShellIdentity = (data: BusinessData): ShellIdentity | null => {
     const { authProfile, workspaceLabel, currentRole } = data;
@@ -432,11 +514,18 @@ export const useShellStatusSummaries = (data: BusinessData, push: OneSignalPushC
     const identity = getShellIdentity(data);
     const taskSummary = getShellTaskSummary(data, identity);
     const realtimeSummary = getShellRealtimeSummary(data, push, isOnline);
+    const staffSignal = getShellStaffSignal(data);
+    const exceptionSignal = getShellExceptionSignal(data);
 
     return {
         identity,
         taskSummary,
         realtimeSummary,
+        runtimeSummary: {
+            staffSignal,
+            exceptionSignal,
+            signals: [exceptionSignal, staffSignal].filter((signal): signal is ShellStatusSignal => Boolean(signal)),
+        },
     };
 };
 
@@ -460,7 +549,8 @@ const RoleSwitcher: React.FC<{
     identity: ShellIdentity | null;
     taskSummary: ShellTaskSummary | null;
     realtimeSummary: ShellRealtimeSummary;
-}> = ({ data, push, identity, taskSummary, realtimeSummary }) => {
+    runtimeSummary: ShellRuntimeSummary;
+}> = ({ data, push, identity, taskSummary, realtimeSummary, runtimeSummary }) => {
     const {
         currentRole,
         setCurrentRole,
@@ -503,7 +593,8 @@ const RoleSwitcher: React.FC<{
                                 {shellIdentity.secondaryLabel || workspaceLabel || 'main'}
                             </p>
                             {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} compact />}
-                            {!realtimeSummary && taskSummary?.signals[0] && <ShellSignalBadge signal={taskSummary.signals[0]} compact />}
+                            {!realtimeSummary && runtimeSummary.signals[0] && <ShellSignalBadge signal={runtimeSummary.signals[0]} compact />}
+                            {!realtimeSummary && !runtimeSummary.signals[0] && taskSummary?.signals[0] && <ShellSignalBadge signal={taskSummary.signals[0]} compact />}
                         </div>
                     </div>
                 </div>

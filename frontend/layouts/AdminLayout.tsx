@@ -65,7 +65,7 @@ const ViewLoadingState: React.FC = () => (
 const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const { currentView, setCurrentView, theme, toggleTheme, currentRole } = data;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile toggle
-    const { identity: shellIdentity, taskSummary, realtimeSummary } = useShellStatusSummaries(data, push);
+    const { identity: shellIdentity, taskSummary, realtimeSummary, runtimeSummary } = useShellStatusSummaries(data, push);
     
     // Initial state logic for responsiveness
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -166,6 +166,9 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                             </span>
                                         )}
                                         {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} />}
+                                        {runtimeSummary.signals.map((signal) => (
+                                            <ShellSignalBadge key={signal.id} signal={signal} />
+                                        ))}
                                         {taskSummary?.signals.map((signal) => (
                                             <ShellSignalBadge key={signal.id} signal={signal} />
                                         ))}
@@ -179,6 +182,7 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                     identity={shellIdentity}
                                     taskSummary={taskSummary}
                                     realtimeSummary={realtimeSummary}
+                                    runtimeSummary={runtimeSummary}
                                 />
                             </div>
                         </div>

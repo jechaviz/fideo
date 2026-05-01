@@ -16,10 +16,12 @@ import {
     Message,
     MessageUndoState,
     MessageTemplate,
+    OperationalException,
     ParsedMessage,
     Payment,
     Price,
     ProductGroup,
+    PresenceRosterEntry,
     PurchaseOrder,
     Quality,
     RipeningRule,
@@ -37,6 +39,20 @@ import {
 import { AuthPresenceState, AuthSessionProfile } from './auth';
 import { requirePocketBaseClient } from './client';
 
+export interface WorkspaceRuntimeOverview {
+    generatedAt?: string;
+    workspaceId?: string;
+    workspaceSlug?: string;
+    staffPresence?: {
+        summary?: Record<string, unknown>;
+        roster?: PresenceRosterEntry[];
+    } | null;
+    operationalExceptions?: {
+        summary?: Record<string, unknown>;
+        items?: OperationalException[];
+    } | null;
+}
+
 export interface RemoteWorkspaceSnapshot {
     workspaceId: string;
     workspaceSlug: string;
@@ -44,6 +60,9 @@ export interface RemoteWorkspaceSnapshot {
     version: number;
     snapshot: Record<string, unknown>;
     profile: AuthSessionProfile;
+    runtimeOverview?: WorkspaceRuntimeOverview | null;
+    staffPresence?: PresenceRosterEntry[];
+    exceptionInbox?: OperationalException[];
 }
 
 export interface PersistResult {
@@ -71,6 +90,21 @@ export interface PresencePingResult {
     pushExternalId: string | null;
     lastSeenAt: string | null;
     presence: AuthPresenceState | null;
+}
+
+export interface RuntimeOverviewResult {
+    workspaceId: string;
+    workspaceSlug?: string;
+    snapshotRecordId?: string | null;
+    version?: number;
+    runtimeOverview?: WorkspaceRuntimeOverview | null;
+    staffPresence?: PresenceRosterEntry[];
+    exceptionInbox?: OperationalException[];
+}
+
+export interface RemoteOperationalRuntime {
+    presenceRoster: PresenceRosterEntry[];
+    operationalExceptions: OperationalException[];
 }
 
 type PocketBaseNotification = { text: string; isError: boolean };
@@ -229,6 +263,8 @@ export type PersistableBusinessState = Omit<
     | 'warehouseFilter'
     | 'saleStatusFilter'
     | 'paymentStatusFilter'
+    | 'presenceRoster'
+    | 'operationalExceptions'
 >;
 
 const reviveDates = (_key: string, value: unknown) => {
@@ -248,6 +284,431 @@ const normalizeNotification = (value: unknown): PocketBaseNotification | null | 
     return {
         text,
         isError: Boolean(value.isError),
+    };
+};
+
+const USER_ROLES: UserRole[] = ['Admin', 'Repartidor', 'Empacador', 'Cajero', 'Cliente', 'Proveedor'];
+const PRESENCE_KEYS = ['presenceRoster', 'globalPresence', 'staffPresence', 'staffRoster', 'roster'] as const;
+const OPERATIONAL_EXCEPTION_KEYS = ['operationalExceptions', 'exceptionInbox', 'exceptionQueue', 'runtimeExceptions', 'exceptions'] as const;
+
+const normalizeUserRole = (value: unknown): UserRole => (USER_ROLES.includes(value as UserRole) ? (value as UserRole) : 'Admin');
+
+const normalizePresenceRosterStatus = (value: unknown): PresenceRosterEntry['status'] => {
+    if (value === 'background' || value === 'idle' || value === 'offline') return value;
+    return 'active';
+};
+
+const normalizeOperationalExceptionKind = (value: unknown): OperationalException['kind'] => {
+    switch (value) {
+        case 'task_report':
+        case 'task_blocked':
+        case 'cash_drawer':
+        case 'sla':
+        case 'system':
+            return value;
+        default:
+            return 'other';
+    }
+};
+
+const normalizeOperationalExceptionSeverity = (value: unknown): OperationalException['severity'] => {
+    if (value === 'critical' || value === 'high') return value;
+    return 'normal';
+};
+
+const normalizeOperationalExceptionStatus = (value: unknown): OperationalException['status'] => {
+    if (value === 'acknowledged' || value === 'resolved') return value;
+    return 'open';
+};
+
+const readArrayCandidate = (source: unknown, keys: readonly string[]): unknown[] | null => {
+    if (!isRecord(source)) return null;
+
+    for (const key of keys) {
+        const direct = source[key];
+        if (Array.isArray(direct)) {
+            return direct;
+        }
+
+        if (isRecord(direct)) {
+            if (Array.isArray(direct.items)) return direct.items;
+            if (Array.isArray(direct.entries)) return direct.entries;
+            if (Array.isArray(direct.rows)) return direct.rows;
+        }
+    }
+
+    return null;
+};
+
+const collectRuntimeSources = (snapshot: Record<string, unknown> | null | undefined, sources: Array<unknown>): Array<Record<string, unknown>> => {
+    const candidates: Array<Record<string, unknown>> = [];
+    const append = (value: unknown) => {
+        if (!isRecord(value)) return;
+        candidates.push(value);
+        if (isRecord(value.runtime)) candidates.push(value.runtime);
+        if (isRecord(value.snapshot)) candidates.push(value.snapshot);
+        if (isRecord(value.data)) candidates.push(value.data);
+    };
+
+    sources.forEach(append);
+    append(snapshot);
+    return candidates;
+};
+
+const normalizePresenceRosterEntry = (value: unknown): PresenceRosterEntry | null => {
+    if (!isRecord(value)) return null;
+
+    const nestedPresence = isRecord(value.presence) ? value.presence : null;
+    const actorId = readString(value.actorId) || readString(value.userId) || readString(value.profileId) || null;
+    const employeeId = readString(value.employeeId) || readString(value.ownerEmployeeId) || null;
+    const sessionKey = readString(value.sessionKey) || readString(nestedPresence?.sessionKey) || null;
+    const name =
+        readString(value.name)
+        || readString(value.employeeName)
+        || readString(value.displayName)
+        || readString(value.userName)
+        || readString(value.email)
+        || null;
+    const id =
+        readString(value.id)
+        || actorId
+        || employeeId
+        || sessionKey
+        || readString(value.sessionId)
+        || null;
+
+    if (!id || !name) return null;
+
+    return cloneWithDates<PresenceRosterEntry>({
+        id,
+        actorId,
+        workspaceId: readString(value.workspaceId) || readString(value.workspace) || null,
+        employeeId,
+        employeeName: readString(value.employeeName) || name,
+        name,
+        role: normalizeUserRole(value.role),
+        status: normalizePresenceRosterStatus(value.status ?? nestedPresence?.status),
+        lastSeenAt:
+            readString(value.lastSeenAt)
+            || readString(value.timestamp)
+            || readString(nestedPresence?.lastSeenAt)
+            || null,
+        sessionKey,
+        sessionId: readString(value.sessionId) || readString(nestedPresence?.sessionId) || null,
+        deviceId: readString(value.deviceId) || readString(nestedPresence?.deviceId) || null,
+        deviceName: readString(value.deviceName) || readString(nestedPresence?.deviceName) || null,
+        installationId: readString(value.installationId) || readString(nestedPresence?.installationId) || null,
+        platform: readString(value.platform) || readString(nestedPresence?.platform) || null,
+        appVersion: readString(value.appVersion) || readString(nestedPresence?.appVersion) || null,
+        pushExternalId: readString(value.pushExternalId) || readString(nestedPresence?.pushExternalId) || null,
+        meta: isRecord(value.meta) ? value.meta : isRecord(nestedPresence?.meta) ? nestedPresence.meta : null,
+    });
+};
+
+const buildPresenceEntryFromProfile = (profile: AuthSessionProfile | null | undefined): PresenceRosterEntry | null => {
+    if (!profile) return null;
+
+    const name = readString(profile.name) || readString(profile.email) || null;
+    const id = readString(profile.employeeId) || readString(profile.id) || readString(profile.presence?.sessionKey) || null;
+    if (!name || !id) return null;
+
+    return cloneWithDates<PresenceRosterEntry>({
+        id,
+        actorId: readString(profile.id),
+        workspaceId: readString(profile.workspaceId),
+        employeeId: readString(profile.employeeId),
+        employeeName: name,
+        name,
+        role: normalizeUserRole(profile.role),
+        status: normalizePresenceRosterStatus(profile.presence?.status || (profile.lastSeenAt ? 'active' : 'offline')),
+        lastSeenAt: readString(profile.lastSeenAt) || null,
+        sessionKey: readString(profile.presence?.sessionKey),
+        sessionId: readString(profile.presence?.sessionId),
+        deviceId: readString(profile.presence?.deviceId),
+        deviceName: readString(profile.presence?.deviceName),
+        installationId: readString(profile.presence?.installationId),
+        platform: readString(profile.presence?.platform),
+        appVersion: readString(profile.presence?.appVersion),
+        pushExternalId: readString(profile.pushExternalId) || readString(profile.presence?.pushExternalId),
+        meta: profile.presence?.meta || null,
+    });
+};
+
+const dedupePresenceRoster = (
+    entries: PresenceRosterEntry[],
+    profile: AuthSessionProfile | null | undefined,
+): PresenceRosterEntry[] => {
+    const nextEntries = entries.slice();
+    const profileEntry = buildPresenceEntryFromProfile(profile);
+
+    if (profileEntry) {
+        const matchIndex = nextEntries.findIndex(
+            (entry) =>
+                entry.id === profileEntry.id
+                || (entry.actorId && profileEntry.actorId && entry.actorId === profileEntry.actorId)
+                || (entry.employeeId && profileEntry.employeeId && entry.employeeId === profileEntry.employeeId)
+                || (entry.sessionKey && profileEntry.sessionKey && entry.sessionKey === profileEntry.sessionKey),
+        );
+
+        if (matchIndex >= 0) {
+            nextEntries[matchIndex] = {
+                ...nextEntries[matchIndex],
+                ...profileEntry,
+                meta: profileEntry.meta ?? nextEntries[matchIndex].meta ?? null,
+            };
+        } else {
+            nextEntries.unshift(profileEntry);
+        }
+    }
+
+    const deduped = new Map<string, PresenceRosterEntry>();
+    nextEntries.forEach((entry) => {
+        const key = entry.sessionKey || entry.actorId || entry.employeeId || entry.id;
+        const current = deduped.get(key);
+        const currentTime = current?.lastSeenAt instanceof Date ? current.lastSeenAt.getTime() : 0;
+        const nextTime = entry.lastSeenAt instanceof Date ? entry.lastSeenAt.getTime() : 0;
+        if (!current || nextTime >= currentTime) {
+            deduped.set(key, entry);
+        }
+    });
+
+    return Array.from(deduped.values()).sort((left, right) => {
+        const rightTime = right.lastSeenAt instanceof Date ? right.lastSeenAt.getTime() : 0;
+        const leftTime = left.lastSeenAt instanceof Date ? left.lastSeenAt.getTime() : 0;
+        return rightTime - leftTime;
+    });
+};
+
+const normalizeOperationalException = (value: unknown): OperationalException | null => {
+    if (!isRecord(value)) return null;
+
+    const kind = normalizeOperationalExceptionKind(value.kind ?? value.type);
+    const summary = readString(value.summary) || readString(value.description) || readString(value.detail) || '';
+    const title = readString(value.title) || summary || 'Excepcion operativa';
+    const id =
+        readString(value.id)
+        || readString(value.externalId)
+        || readString(value.reportId)
+        || readString(value.taskId)
+        || `${kind}:${title}`;
+
+    return cloneWithDates<OperationalException>({
+        id,
+        kind,
+        severity: normalizeOperationalExceptionSeverity(value.severity),
+        status: normalizeOperationalExceptionStatus(value.status),
+        title,
+        summary,
+        detail: readString(value.detail) || readString(value.notes) || undefined,
+        createdAt:
+            readString(value.createdAt)
+            || readString(value.timestamp)
+            || readString(value.detectedAt)
+            || new Date(0).toISOString(),
+        updatedAt: readString(value.updatedAt) || readString(value.escalatedAt) || undefined,
+        resolvedAt: readString(value.resolvedAt) || undefined,
+        lastSeenAt: readString(value.lastSeenAt) || undefined,
+        workspaceId: readString(value.workspaceId) || readString(value.workspace) || null,
+        role: (readString(value.role) as OperationalException['role']) || null,
+        employeeId: readString(value.employeeId) || null,
+        employeeName: readString(value.employeeName) || null,
+        customerId: readString(value.customerId) || null,
+        customerName: readString(value.customerName) || null,
+        taskId: readString(value.taskId) || null,
+        saleId: readString(value.saleId) || null,
+        reportId: readString(value.reportId) || null,
+        drawerId: readString(value.drawerId) || null,
+        drawerName: readString(value.drawerName) || null,
+        escalationStatus:
+            readString(value.escalationStatus) as OperationalException['escalationStatus'],
+        source: readString(value.source) || readString(value.origin) || 'remote',
+        meta: isRecord(value.meta) ? value.meta : null,
+    });
+};
+
+const deriveOperationalExceptionsFromSnapshot = (snapshot: Record<string, unknown> | null | undefined): OperationalException[] => {
+    if (!isRecord(snapshot)) return [];
+
+    const reportExceptions = cloneWithDates<TaskReport[]>(Array.isArray(snapshot.taskReports) ? snapshot.taskReports : [])
+        .filter((report) => report.status === 'open' || report.escalationStatus === 'pending' || report.escalationStatus === 'sent')
+        .map((report) => ({
+            id: `task-report:${report.id}`,
+            kind: report.kind === 'blocker' ? 'task_blocked' : 'task_report',
+            severity: report.severity === 'high' || report.kind === 'blocker' ? 'high' : 'normal',
+            status: report.status === 'resolved' ? 'resolved' : 'open',
+            title: report.kind === 'blocker' ? 'Bloqueo operativo' : 'Reporte operativo',
+            summary: report.summary,
+            detail: report.detail,
+            createdAt: report.createdAt,
+            updatedAt: report.escalatedAt || report.createdAt,
+            resolvedAt: report.resolvedAt,
+            employeeId: report.employeeId || null,
+            employeeName: report.employeeName || null,
+            customerId: report.customerId || null,
+            customerName: report.customerName || null,
+            taskId: report.taskId,
+            saleId: report.saleId || null,
+            reportId: report.id,
+            role: report.role,
+            escalationStatus: report.escalationStatus,
+            source: 'snapshot',
+            meta: {
+                reportKind: report.kind,
+                evidence: report.evidence || null,
+            },
+        } as OperationalException));
+
+    const openTaskIds = new Set(reportExceptions.map((item) => item.taskId).filter(Boolean));
+
+    const blockedTaskExceptions = cloneWithDates<TaskAssignment[]>(Array.isArray(snapshot.taskAssignments) ? snapshot.taskAssignments : [])
+        .filter((task) => task.status === 'blocked' && !openTaskIds.has(task.id))
+        .map((task) => ({
+            id: `task-blocked:${task.id}`,
+            kind: 'task_blocked',
+            severity: 'high',
+            status: 'open',
+            title: 'Tarea bloqueada',
+            summary: task.blockReason || task.title,
+            detail: task.description,
+            createdAt: task.blockedAt || task.updatedAt || task.createdAt,
+            updatedAt: task.updatedAt,
+            employeeId: task.employeeId || null,
+            employeeName: task.employeeName || null,
+            customerId: task.customerId || null,
+            customerName: task.customerName || null,
+            taskId: task.id,
+            saleId: task.saleId || null,
+            role: task.role,
+            escalationStatus: 'pending',
+            source: 'snapshot',
+            meta: {
+                priority: task.priority,
+                status: task.status,
+            },
+        } as OperationalException));
+
+    return [...reportExceptions, ...blockedTaskExceptions].sort((left, right) => {
+        const rightTime = right.createdAt instanceof Date ? right.createdAt.getTime() : 0;
+        const leftTime = left.createdAt instanceof Date ? left.createdAt.getTime() : 0;
+        return rightTime - leftTime;
+    });
+};
+
+export const readRemoteOperationalRuntime = (
+    snapshot: Record<string, unknown> | null | undefined,
+    options: {
+        profile?: AuthSessionProfile | null;
+        sources?: unknown[];
+    } = {},
+): RemoteOperationalRuntime => {
+    const runtimeSources = collectRuntimeSources(snapshot, options.sources || []);
+
+    const explicitPresenceRoster = runtimeSources
+        .map((source) => readArrayCandidate(source, PRESENCE_KEYS))
+        .find((value) => value !== null);
+
+    const explicitOperationalExceptions = runtimeSources
+        .map((source) => readArrayCandidate(source, OPERATIONAL_EXCEPTION_KEYS))
+        .find((value) => value !== null);
+
+    const presenceRoster = dedupePresenceRoster(
+        explicitPresenceRoster
+            ? explicitPresenceRoster
+                  .map((entry) => normalizePresenceRosterEntry(entry))
+                  .filter((entry): entry is PresenceRosterEntry => Boolean(entry))
+            : [],
+        options.profile,
+    );
+
+    const operationalExceptions = explicitOperationalExceptions
+        ? explicitOperationalExceptions
+              .map((entry) => normalizeOperationalException(entry))
+              .filter((entry): entry is OperationalException => Boolean(entry))
+        : deriveOperationalExceptionsFromSnapshot(snapshot);
+
+    return {
+        presenceRoster,
+        operationalExceptions,
+    };
+};
+
+export const mergeRemoteOperationalRuntimeSnapshot = (
+    snapshot: Record<string, unknown> | null | undefined,
+    options: {
+        profile?: AuthSessionProfile | null;
+        sources?: unknown[];
+    } = {},
+): Record<string, unknown> => {
+    const baseSnapshot = isRecord(snapshot) ? snapshot : {};
+    const runtime = readRemoteOperationalRuntime(baseSnapshot, options);
+
+    return {
+        ...baseSnapshot,
+        presenceRoster: runtime.presenceRoster,
+        operationalExceptions: runtime.operationalExceptions,
+    };
+};
+
+const normalizeRuntimeOverview = (value: unknown): WorkspaceRuntimeOverview | null => {
+    if (!isRecord(value)) return null;
+
+    const staffPresenceRecord = isRecord(value.staffPresence) ? value.staffPresence : null;
+    const operationalExceptionsRecord = isRecord(value.operationalExceptions) ? value.operationalExceptions : null;
+
+    return {
+        generatedAt: readString(value.generatedAt) || undefined,
+        workspaceId: readString(value.workspaceId) || undefined,
+        workspaceSlug: readString(value.workspaceSlug) || undefined,
+        staffPresence: staffPresenceRecord
+            ? {
+                summary: isRecord(staffPresenceRecord.summary) ? staffPresenceRecord.summary : undefined,
+                roster: Array.isArray(staffPresenceRecord.roster)
+                    ? dedupePresenceRoster(
+                        staffPresenceRecord.roster
+                            .map((item) => normalizePresenceRosterEntry(item))
+                            .filter((item): item is PresenceRosterEntry => Boolean(item)),
+                        null,
+                    )
+                    : [],
+            }
+            : null,
+        operationalExceptions: operationalExceptionsRecord
+            ? {
+                summary: isRecord(operationalExceptionsRecord.summary) ? operationalExceptionsRecord.summary : undefined,
+                items: Array.isArray(operationalExceptionsRecord.items)
+                    ? operationalExceptionsRecord.items
+                          .map((item) => normalizeOperationalException(item))
+                          .filter((item): item is OperationalException => Boolean(item))
+                    : [],
+            }
+            : null,
+    };
+};
+
+const buildRuntimeOverviewResult = (payload: Record<string, unknown>): RuntimeOverviewResult => {
+    const runtimeOverview = normalizeRuntimeOverview(payload.runtimeOverview);
+    const runtime = readRemoteOperationalRuntime(
+        isRecord(payload.snapshot) ? payload.snapshot : {},
+        {
+            profile: isRecord(payload.profile) ? cloneWithDates<AuthSessionProfile>(payload.profile as unknown) : null,
+            sources: [
+                payload,
+                {
+                    staffPresence: runtimeOverview?.staffPresence?.roster || [],
+                    exceptionInbox: runtimeOverview?.operationalExceptions?.items || [],
+                },
+            ],
+        },
+    );
+
+    return {
+        workspaceId: readString(payload.workspaceId) || '',
+        workspaceSlug: readString(payload.workspaceSlug) || undefined,
+        snapshotRecordId: readString(payload.snapshotRecordId),
+        version: readNumber(payload.version),
+        runtimeOverview,
+        staffPresence: runtime.presenceRoster,
+        exceptionInbox: runtime.operationalExceptions,
     };
 };
 
@@ -281,6 +742,8 @@ export const createDefaultBusinessState = (): BusinessState => ({
     inventoryRecommendations: [],
     taskAssignments: [],
     taskReports: [],
+    presenceRoster: [],
+    operationalExceptions: [],
     actionItems: [],
     cashDrawers: [{ id: 'cd1', name: 'Caja Principal', balance: 5000, status: 'Cerrada' }],
     cashDrawerActivities: [],
@@ -325,6 +788,8 @@ const mergeCollectionsWithDefaults = (state: Partial<BusinessState>): BusinessSt
         inventoryRecommendations: [],
         taskAssignments: (state.taskAssignments as TaskAssignment[]) || base.taskAssignments,
         taskReports: (state.taskReports as TaskReport[]) || base.taskReports,
+        presenceRoster: (state.presenceRoster as PresenceRosterEntry[]) || base.presenceRoster,
+        operationalExceptions: (state.operationalExceptions as OperationalException[]) || base.operationalExceptions,
         actionItems: [],
         cashDrawers: (state.cashDrawers as CashDrawer[]) || base.cashDrawers,
         cashDrawerActivities: (state.cashDrawerActivities as CashDrawerActivity[]) || base.cashDrawerActivities,
@@ -382,6 +847,8 @@ export const buildPersistableSnapshot = (state: BusinessState): PersistableBusin
         warehouseFilter: _warehouseFilter,
         saleStatusFilter: _saleStatusFilter,
         paymentStatusFilter: _paymentStatusFilter,
+        presenceRoster: _presenceRoster,
+        operationalExceptions: _operationalExceptions,
         ...persistableState
     } = state;
 
@@ -535,7 +1002,9 @@ export const hydrateBusinessState = (
     previousState: BusinessState,
     profile: AuthSessionProfile | null,
 ): BusinessState => {
-    const hydrated = mergeCollectionsWithDefaults(JSON.parse(JSON.stringify(snapshot || {}), reviveDates) as Partial<BusinessState>);
+    const hydrated = mergeCollectionsWithDefaults(
+        JSON.parse(JSON.stringify(mergeRemoteOperationalRuntimeSnapshot(snapshot, { profile })), reviveDates) as Partial<BusinessState>,
+    );
     const scopedUiState = resolveUiStateFromProfile(previousState, profile);
 
     return {
@@ -556,14 +1025,75 @@ export const hydrateBusinessState = (
     };
 };
 
+const normalizeRemoteWorkspaceSnapshot = (response: unknown): RemoteWorkspaceSnapshot => {
+    const payload = isRecord(response) ? response : {};
+    const profile = cloneWithDates<AuthSessionProfile>((isRecord(payload.profile) ? payload.profile : {}) as unknown);
+    const runtime = buildRuntimeOverviewResult(payload);
+    const snapshot = mergeRemoteOperationalRuntimeSnapshot(isRecord(payload.snapshot) ? payload.snapshot : {}, {
+        profile,
+        sources: [
+            payload,
+            {
+                staffPresence: runtime.staffPresence || [],
+                exceptionInbox: runtime.exceptionInbox || [],
+            },
+        ],
+    });
+
+    return {
+        workspaceId: readString(payload.workspaceId) || '',
+        workspaceSlug: readString(payload.workspaceSlug) || 'main',
+        snapshotRecordId: readString(payload.snapshotRecordId) || '',
+        version: readNumber(payload.version) || 0,
+        snapshot,
+        profile,
+        runtimeOverview: runtime.runtimeOverview,
+        staffPresence: runtime.staffPresence,
+        exceptionInbox: runtime.exceptionInbox,
+    };
+};
+
+const normalizeApproveInterpretationResponse = (response: unknown): ApproveInterpretationResult => {
+    const payload = isRecord(response) ? response : {};
+    const runtime = buildRuntimeOverviewResult(payload);
+
+    return {
+        version: readNumber(payload.version) || 0,
+        snapshotRecordId: readString(payload.snapshotRecordId) || '',
+        updatedAt: readString(payload.updatedAt) || new Date().toISOString(),
+        snapshot: mergeRemoteOperationalRuntimeSnapshot(isRecord(payload.snapshot) ? payload.snapshot : {}, {
+            sources: [payload, { staffPresence: runtime.staffPresence || [], exceptionInbox: runtime.exceptionInbox || [] }],
+        }),
+        notification: normalizeNotification(payload.notification),
+        actionLogId: readString(payload.actionLogId) || undefined,
+    };
+};
+
 export const bootstrapRemoteWorkspace = async (): Promise<RemoteWorkspaceSnapshot> => {
     const pb = requirePocketBaseClient();
-    return pb.send('/api/fideo/bootstrap', {
+    const response = await pb.send('/api/fideo/bootstrap', {
         method: 'POST',
         body: {
             seedSnapshot: buildSeedSnapshot(),
         },
-    }) as Promise<RemoteWorkspaceSnapshot>;
+    });
+
+    return normalizeRemoteWorkspaceSnapshot(response);
+};
+
+export const fetchRemoteWorkspaceRuntimeOverview = async (
+    workspaceId: string,
+): Promise<RuntimeOverviewResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/runtime/overview', {
+        method: 'POST',
+        body: {
+            workspaceId,
+        },
+    });
+
+    const payload = isRecord(response) ? response : {};
+    return buildRuntimeOverviewResult(payload);
 };
 
 export const persistRemoteWorkspaceSnapshot = async (
@@ -590,7 +1120,7 @@ export const approveRemoteWorkspaceInterpretation = async (
     expectedVersion: number,
 ): Promise<ApproveInterpretationResult> => {
     const pb = requirePocketBaseClient();
-    return pb.send('/api/fideo/messages/approve', {
+    const response = await pb.send('/api/fideo/messages/approve', {
         method: 'POST',
         body: {
             workspaceId,
@@ -599,11 +1129,14 @@ export const approveRemoteWorkspaceInterpretation = async (
             messageId,
             message: JSON.parse(JSON.stringify(message)),
         },
-    }) as Promise<ApproveInterpretationResult>;
+    });
+
+    return normalizeApproveInterpretationResponse(response);
 };
 
 const normalizeInterpretationResponse = (response: unknown): InterpretMessageResult => {
     const payload = isRecord(response) ? response : {};
+    const runtime = buildRuntimeOverviewResult(payload);
     const interpretationSource =
         isRecord(payload.interpretation)
             ? payload.interpretation
@@ -613,7 +1146,11 @@ const normalizeInterpretationResponse = (response: unknown): InterpretMessageRes
 
     return {
         interpretation: interpretationSource ? (JSON.parse(JSON.stringify(interpretationSource)) as ParsedMessage) : undefined,
-        snapshot: isRecord(payload.snapshot) ? (payload.snapshot as Record<string, unknown>) : undefined,
+        snapshot: isRecord(payload.snapshot)
+            ? mergeRemoteOperationalRuntimeSnapshot(payload.snapshot as Record<string, unknown>, {
+                sources: [payload, { staffPresence: runtime.staffPresence || [], exceptionInbox: runtime.exceptionInbox || [] }],
+            })
+            : undefined,
         version: readNumber(payload.version),
         snapshotRecordId: readString(payload.snapshotRecordId) || undefined,
         updatedAt: readString(payload.updatedAt) || undefined,
@@ -623,6 +1160,7 @@ const normalizeInterpretationResponse = (response: unknown): InterpretMessageRes
 
 const normalizeTaskReportResponse = (response: unknown): SubmitTaskReportResult => {
     const payload = isRecord(response) ? response : {};
+    const runtime = buildRuntimeOverviewResult(payload);
     const taskAssignmentSource =
         isRecord(payload.taskAssignment)
             ? payload.taskAssignment
@@ -639,7 +1177,11 @@ const normalizeTaskReportResponse = (response: unknown): SubmitTaskReportResult 
     return {
         report: reportSource ? cloneWithDates<TaskReport>(reportSource) : undefined,
         taskAssignment: taskAssignmentSource ? cloneWithDates<TaskAssignment>(taskAssignmentSource) : undefined,
-        snapshot: isRecord(payload.snapshot) ? (payload.snapshot as Record<string, unknown>) : undefined,
+        snapshot: isRecord(payload.snapshot)
+            ? mergeRemoteOperationalRuntimeSnapshot(payload.snapshot as Record<string, unknown>, {
+                sources: [payload, { staffPresence: runtime.staffPresence || [], exceptionInbox: runtime.exceptionInbox || [] }],
+            })
+            : undefined,
         version: readNumber(payload.version),
         snapshotRecordId: readString(payload.snapshotRecordId) || undefined,
         updatedAt: readString(payload.updatedAt) || undefined,

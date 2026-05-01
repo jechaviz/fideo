@@ -15,9 +15,11 @@ import {
     bootstrapRemoteWorkspace,
     correctRemoteWorkspaceInterpretation,
     CorrectInterpretationResult,
+    fetchRemoteWorkspaceRuntimeOverview,
     interpretRemoteWorkspaceMessage,
     InterpretMessageResult,
     isPocketBaseRouteUnavailable,
+    mergeRemoteOperationalRuntimeSnapshot,
     normalizePocketBaseError,
     pingRemoteWorkspacePresence,
     PersistableBusinessState,
@@ -25,6 +27,7 @@ import {
     PresencePingResult,
     persistRemoteWorkspaceSnapshot,
     PocketBaseSyncError,
+    readRemoteOperationalRuntime,
     revertRemoteWorkspaceInterpretation,
     RevertInterpretationResult,
     RemoteWorkspaceSnapshot,
@@ -59,6 +62,15 @@ const areSnapshotsEqual = (left: Record<string, unknown> | null | undefined, rig
     } catch {
         return false;
     }
+};
+
+const stripOperationalRuntimeFromSnapshot = (snapshot: Record<string, unknown> | null | undefined): Record<string, unknown> => {
+    if (!snapshot || typeof snapshot !== 'object') return {};
+
+    const nextSnapshot = { ...snapshot };
+    delete nextSnapshot.presenceRoster;
+    delete nextSnapshot.operationalExceptions;
+    return nextSnapshot;
 };
 
 const POCKETBASE_SNAPSHOT_COLLECTION = 'fideo_state_snapshots';
@@ -163,6 +175,35 @@ const resolvePresenceContext = () => {
     }
 };
 
+const syncWorkspaceRuntime = (
+    workspace: RemoteWorkspaceSnapshot,
+    profile: AuthSessionProfile | null | undefined,
+): RemoteWorkspaceSnapshot => {
+    const runtimeSources = [
+        workspace.runtimeOverview || null,
+        {
+            staffPresence: workspace.staffPresence || [],
+            exceptionInbox: workspace.exceptionInbox || [],
+        },
+    ];
+    const resolvedProfile = profile || workspace.profile || null;
+    const snapshot = mergeRemoteOperationalRuntimeSnapshot(workspace.snapshot, {
+        profile: resolvedProfile,
+        sources: runtimeSources,
+    });
+    const runtime = readRemoteOperationalRuntime(snapshot, {
+        profile: resolvedProfile,
+        sources: runtimeSources,
+    });
+
+    return {
+        ...workspace,
+        snapshot,
+        staffPresence: runtime.presenceRoster,
+        exceptionInbox: runtime.operationalExceptions,
+    };
+};
+
 export const usePocketBaseSession = () => {
     const enabled = useMemo(() => isPocketBaseEnabled(), []);
     const [sessionState, setSessionState] = useState<SessionState>({
@@ -178,12 +219,14 @@ export const usePocketBaseSession = () => {
     const workspaceEpochRef = useRef(0);
     const persistSequenceRef = useRef<Promise<void>>(Promise.resolve());
     const realtimeRefreshPromiseRef = useRef<Promise<RemoteWorkspaceSnapshot | null> | null>(null);
+    const runtimeOverviewRefreshPromiseRef = useRef<Promise<void> | null>(null);
     const realtimeRefreshTargetVersionRef = useRef(0);
     const remoteCorrectionRouteAvailableRef = useRef(true);
     const remoteInterpretationRouteAvailableRef = useRef(true);
     const remoteRevertRouteAvailableRef = useRef(true);
     const remoteTaskReportRouteAvailableRef = useRef(true);
     const remotePresenceRouteAvailableRef = useRef(true);
+    const remoteRuntimeOverviewRouteAvailableRef = useRef(true);
 
     useEffect(() => {
         profileRef.current = sessionState.profile;
@@ -204,6 +247,7 @@ export const usePocketBaseSession = () => {
         remoteRevertRouteAvailableRef.current = true;
         remoteTaskReportRouteAvailableRef.current = true;
         remotePresenceRouteAvailableRef.current = true;
+        remoteRuntimeOverviewRouteAvailableRef.current = true;
         workspaceEpochRef.current += 1;
         setSessionState({
             status,
@@ -220,7 +264,10 @@ export const usePocketBaseSession = () => {
             fallbackProfile: AuthSessionProfile | null = profileRef.current,
         ) => {
             const resolvedProfile = mergeAuthSessionProfiles(workspace.profile, fallbackProfile);
-            const resolvedWorkspace = resolvedProfile ? { ...workspace, profile: resolvedProfile } : workspace;
+            const resolvedWorkspace = syncWorkspaceRuntime(
+                resolvedProfile ? { ...workspace, profile: resolvedProfile } : workspace,
+                resolvedProfile ?? workspace.profile,
+            );
 
             profileRef.current = resolvedWorkspace.profile;
             workspaceRef.current = resolvedWorkspace;
@@ -231,6 +278,7 @@ export const usePocketBaseSession = () => {
             remoteRevertRouteAvailableRef.current = true;
             remoteTaskReportRouteAvailableRef.current = true;
             remotePresenceRouteAvailableRef.current = true;
+            remoteRuntimeOverviewRouteAvailableRef.current = true;
             workspaceEpochRef.current += 1;
             setSessionState({
                 status: 'authenticated',
@@ -253,6 +301,91 @@ export const usePocketBaseSession = () => {
         });
     }, []);
 
+    const refreshRuntimeOverview = useCallback(
+        async (workspaceId?: string) => {
+            if (!enabled || !remoteRuntimeOverviewRouteAvailableRef.current) {
+                return;
+            }
+
+            const resolvedWorkspaceId = workspaceId || workspaceRef.current?.workspaceId;
+            if (!resolvedWorkspaceId) {
+                return;
+            }
+
+            if (runtimeOverviewRefreshPromiseRef.current) {
+                return runtimeOverviewRefreshPromiseRef.current;
+            }
+
+            let refreshPromise: Promise<void> | null = null;
+
+            refreshPromise = (async () => {
+                try {
+                    const runtime = await fetchRemoteWorkspaceRuntimeOverview(resolvedWorkspaceId);
+                    setSessionState((previous) => {
+                        if (previous.status !== 'authenticated' || !previous.workspace || previous.workspace.workspaceId !== resolvedWorkspaceId) {
+                            return previous;
+                        }
+
+                        const nextWorkspace = syncWorkspaceRuntime({
+                            ...previous.workspace,
+                            workspaceSlug: runtime.workspaceSlug || previous.workspace.workspaceSlug,
+                            runtimeOverview: runtime.runtimeOverview ?? previous.workspace.runtimeOverview ?? null,
+                            staffPresence: runtime.staffPresence || previous.workspace.staffPresence || [],
+                            exceptionInbox: runtime.exceptionInbox || previous.workspace.exceptionInbox || [],
+                        }, previous.profile);
+
+                        if (typeof runtime.version === 'number' && runtime.version > nextWorkspace.version) {
+                            nextWorkspace.version = runtime.version;
+                        }
+
+                        if (runtime.snapshotRecordId) {
+                            nextWorkspace.snapshotRecordId = runtime.snapshotRecordId;
+                        }
+
+                        workspaceRef.current = nextWorkspace;
+
+                        return {
+                            ...previous,
+                            workspace: nextWorkspace,
+                        };
+                    });
+                } catch (error) {
+                    if (isPocketBaseRouteUnavailable(error)) {
+                        remoteRuntimeOverviewRouteAvailableRef.current = false;
+                        return;
+                    }
+
+                    const normalizedError = normalizePocketBaseError(
+                        error,
+                        'No se pudo refrescar la operacion viva del workspace en PocketBase.',
+                    );
+
+                    if (normalizedError.code === 'forbidden' || normalizedError.code === 'auth') {
+                        remoteRuntimeOverviewRouteAvailableRef.current = false;
+                        return;
+                    }
+
+                    if (
+                        normalizedError.code !== 'offline'
+                        && normalizedError.code !== 'cancelled'
+                        && normalizedError.code !== 'unknown'
+                    ) {
+                        console.warn('No se pudo refrescar el runtime operativo de PocketBase.', normalizedError);
+                    }
+                }
+            })();
+
+            runtimeOverviewRefreshPromiseRef.current = refreshPromise.finally(() => {
+                if (runtimeOverviewRefreshPromiseRef.current === refreshPromise) {
+                    runtimeOverviewRefreshPromiseRef.current = null;
+                }
+            });
+
+            return runtimeOverviewRefreshPromiseRef.current;
+        },
+        [enabled],
+    );
+
     const applyPresenceToSession = useCallback((result: PresencePingResult) => {
         setSessionState((previous) => {
             if (previous.status !== 'authenticated' || !previous.profile || !previous.workspace) {
@@ -273,10 +406,10 @@ export const usePocketBaseSession = () => {
                 return previous;
             }
 
-            const nextWorkspace: RemoteWorkspaceSnapshot = {
+            const nextWorkspace = syncWorkspaceRuntime({
                 ...previous.workspace,
                 profile: nextProfile,
-            };
+            }, nextProfile);
 
             profileRef.current = nextProfile;
             workspaceRef.current = nextWorkspace;
@@ -397,7 +530,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
-            if (versionToUse === workspace.version && areSnapshotsEqual(snapshot, workspace.snapshot)) {
+            if (versionToUse === workspace.version && areSnapshotsEqual(snapshot, stripOperationalRuntimeFromSnapshot(workspace.snapshot))) {
                 pendingPersistRef.current = null;
                 return buildSyntheticPersistResult(workspace.version, workspace.snapshotRecordId);
             }
@@ -408,12 +541,12 @@ export const usePocketBaseSession = () => {
                 setSessionState((previous) => {
                     if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                    const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                    const updatedWorkspace = syncWorkspaceRuntime({
                         ...previous.workspace,
                         snapshotRecordId: result.snapshotRecordId,
                         version: result.version,
                         snapshot,
-                    };
+                    }, previous.profile);
 
                     workspaceRef.current = updatedWorkspace;
 
@@ -512,12 +645,12 @@ export const usePocketBaseSession = () => {
                 setSessionState((previous) => {
                     if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                    const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                    const updatedWorkspace = syncWorkspaceRuntime({
                         ...previous.workspace,
                         snapshotRecordId: result.snapshotRecordId,
                         version: result.version,
                         snapshot: result.snapshot,
-                    };
+                    }, previous.profile);
 
                     workspaceRef.current = updatedWorkspace;
 
@@ -603,12 +736,12 @@ export const usePocketBaseSession = () => {
                     setSessionState((previous) => {
                         if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                        const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                        const updatedWorkspace = syncWorkspaceRuntime({
                             ...previous.workspace,
                             snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
                             version: result.version,
                             snapshot: result.snapshot,
-                        };
+                        }, previous.profile);
 
                         workspaceRef.current = updatedWorkspace;
 
@@ -715,12 +848,12 @@ export const usePocketBaseSession = () => {
                     setSessionState((previous) => {
                         if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                        const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                        const updatedWorkspace = syncWorkspaceRuntime({
                             ...previous.workspace,
                             snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
                             version: result.version,
                             snapshot: result.snapshot,
-                        };
+                        }, previous.profile);
 
                         workspaceRef.current = updatedWorkspace;
 
@@ -827,12 +960,12 @@ export const usePocketBaseSession = () => {
                     setSessionState((previous) => {
                         if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                        const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                        const updatedWorkspace = syncWorkspaceRuntime({
                             ...previous.workspace,
                             snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
                             version: result.version,
                             snapshot: result.snapshot,
-                        };
+                        }, previous.profile);
 
                         workspaceRef.current = updatedWorkspace;
 
@@ -937,12 +1070,12 @@ export const usePocketBaseSession = () => {
                     setSessionState((previous) => {
                         if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
 
-                        const updatedWorkspace: RemoteWorkspaceSnapshot = {
+                        const updatedWorkspace = syncWorkspaceRuntime({
                             ...previous.workspace,
                             snapshotRecordId: result.snapshotRecordId || previous.workspace.snapshotRecordId,
                             version: result.version,
                             snapshot: result.snapshot,
-                        };
+                        }, previous.profile);
 
                         workspaceRef.current = updatedWorkspace;
 
@@ -1183,6 +1316,7 @@ export const usePocketBaseSession = () => {
 
                 if (isDisposed) return;
                 applyPresenceToSession(result);
+                void refreshRuntimeOverview(currentWorkspace.workspaceId);
             } catch (error) {
                 if (isPocketBaseRouteUnavailable(error)) {
                     remotePresenceRouteAvailableRef.current = false;
@@ -1250,6 +1384,7 @@ export const usePocketBaseSession = () => {
     }, [
         applyPresenceToSession,
         enabled,
+        refreshRuntimeOverview,
         resetWorkspaceSession,
         sessionState.status,
         sessionState.workspace?.workspaceId,
@@ -1392,9 +1527,25 @@ export const usePocketBaseSession = () => {
         [enqueuePersistTask, submitTaskReportNow],
     );
 
+    const remoteRuntime = useMemo(
+        () =>
+            readRemoteOperationalRuntime(sessionState.workspace?.snapshot, {
+                profile: sessionState.profile,
+                sources: [
+                    {
+                        staffPresence: sessionState.workspace?.staffPresence || [],
+                        exceptionInbox: sessionState.workspace?.exceptionInbox || [],
+                    },
+                ],
+            }),
+        [sessionState.profile, sessionState.workspace?.exceptionInbox, sessionState.workspace?.snapshot, sessionState.workspace?.staffPresence],
+    );
+
     return {
         enabled,
         ...sessionState,
+        presenceRoster: remoteRuntime.presenceRoster,
+        operationalExceptions: remoteRuntime.operationalExceptions,
         signIn,
         signOut,
         retry: restore,

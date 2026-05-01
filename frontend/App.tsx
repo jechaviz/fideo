@@ -10,6 +10,42 @@ import { UserRole } from './types';
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'));
 const PortalLayout = lazy(() => import('./layouts/PortalLayout'));
 
+const readWorkspaceArray = (workspace: unknown, key: string): Array<Record<string, unknown>> => {
+    if (!workspace || typeof workspace !== 'object') return [];
+    const record = workspace as Record<string, unknown>;
+    const directValue = record[key];
+    if (Array.isArray(directValue)) {
+        return directValue.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+    }
+
+    const runtimeOverview =
+        record.runtimeOverview && typeof record.runtimeOverview === 'object'
+            ? (record.runtimeOverview as Record<string, unknown>)
+            : null;
+
+    if (!runtimeOverview) return [];
+
+    if (key === 'staffPresence') {
+        const roster = runtimeOverview.staffPresence && typeof runtimeOverview.staffPresence === 'object'
+            ? (runtimeOverview.staffPresence as Record<string, unknown>).roster
+            : null;
+        return Array.isArray(roster)
+            ? roster.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+            : [];
+    }
+
+    if (key === 'exceptionInbox') {
+        const items = runtimeOverview.operationalExceptions && typeof runtimeOverview.operationalExceptions === 'object'
+            ? (runtimeOverview.operationalExceptions as Record<string, unknown>).items
+            : null;
+        return Array.isArray(items)
+            ? items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+            : [];
+    }
+
+    return [];
+};
+
 const App: React.FC = () => {
     const session = usePocketBaseSession();
     const push = useOneSignalPush({
@@ -39,6 +75,8 @@ const App: React.FC = () => {
         authError: session.status === 'authenticated' ? session.error : null,
         workspaceLabel: session.workspace?.workspaceSlug || null,
         remoteVersion: session.workspace?.version || 0,
+        staffPresence: readWorkspaceArray(session.workspace, 'staffPresence'),
+        exceptionInbox: readWorkspaceArray(session.workspace, 'exceptionInbox'),
         onPersistRemoteState:
             session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
                 ? session.persistSnapshot

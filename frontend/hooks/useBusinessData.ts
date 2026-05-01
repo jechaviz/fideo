@@ -60,6 +60,8 @@ interface UseBusinessDataOptions {
     authError?: string | null;
     workspaceLabel?: string | null;
     remoteVersion?: number;
+    staffPresence?: Array<Record<string, unknown>>;
+    exceptionInbox?: Array<Record<string, unknown>>;
     onPersistRemoteState?: (snapshot: ReturnType<typeof buildPersistableSnapshot>, expectedVersion: number) => Promise<PersistResult>;
     onApproveRemoteInterpretation?: (
         snapshot: ReturnType<typeof buildPersistableSnapshot>,
@@ -1059,6 +1061,8 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         authProfile: options.authProfile || null,
         authError: options.authError || null,
         workspaceLabel: options.workspaceLabel || null,
+        staffPresence: Array.isArray(options.staffPresence) ? options.staffPresence : [],
+        exceptionInbox: Array.isArray(options.exceptionInbox) ? options.exceptionInbox : [],
         signOut: options.onSignOut,
         canSwitchRoles: authCanSwitchRoles,
     };
