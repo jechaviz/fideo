@@ -135,6 +135,17 @@ El backend ya materializa tambien una segunda ola de normalizacion transaccional
 Estas colecciones siguen el mismo patron de `workspace` scoping y `externalId` para facilitar sync/import sin romper el contrato actual del snapshot.
 Los hooks de `/api/fideo/bootstrap` y `/api/fideo/state/persist` ya materializan y reconstruyen este slice tambien, asi que ventas, pagos, actividad, caja y prestamos ya sobreviven roundtrip real sobre PocketBase aunque el contrato publico del frontend siga siendo snapshot-first.
 
+## Slice operacional: task assignments
+
+El backend ya puede materializar un slice minimo `fideo_task_assignments` desde `snapshot.taskAssignments`.
+
+- conserva `taskId`, `employeeId`, `role`, `status` y timestamps de acuse/progreso/bloqueo/cierre
+- guarda tambien `payload` JSON para reconstruir el item snapshot-first sin inventar rutas nuevas
+- `/api/fideo/bootstrap` reconstruye `snapshot.taskAssignments` desde la coleccion si ya existe materializacion previa
+- perfiles `Cliente` y `Proveedor` no reciben este slice en su snapshot recortado
+
+Con esto, el frontend puede seguir operando snapshot-first mientras PocketBase ya deja un carril real para asignaciones con acuse por empleado.
+
 ## Rutas custom actuales
 
 - `POST /api/fideo/bootstrap`
@@ -188,7 +199,7 @@ Para que eso aterrice bien en el cliente movil, el contrato recomendado es:
 
 La migracion agrega estos campos opcionales:
 
-- `employeeId`: amarra al usuario con `snapshot.employees[].id`
+- `employeeId`: amarra al usuario con `snapshot.employees[].id` y ahora tambien viaja en `profile.employeeId` dentro de `/api/fideo/bootstrap`
 - `pushExternalId`: override del `external_id` que usara OneSignal
 
 Si no defines `pushExternalId`, el backend usa `fideo_users.id`.

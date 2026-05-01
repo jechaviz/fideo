@@ -495,6 +495,7 @@ routerAdd(
             name: record.get('name') || record.get('email') || 'Fideo User',
             role: record.get('role') || 'Admin',
             workspaceId: record.get('workspace') || null,
+            employeeId: record.get('employeeId') || null,
             customerId: record.get('customerId') || null,
             supplierId: record.get('supplierId') || null,
             canSwitchRoles: !!record.get('canSwitchRoles'),
@@ -649,6 +650,17 @@ routerAdd(
                 }
             });
         };
+        const normalizeTaskAssignmentsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
 
         const syncNormalizedFromSnapshot = (workspaceId, snapshot) => {
             replaceWorkspaceCollectionByExternalId('fideo_product_groups', workspaceId, snapshot.productGroups, (record, item) => {
@@ -784,6 +796,21 @@ routerAdd(
                 record.set('timestamp', toIsoString(item.timestamp));
                 record.set('notes', toText(item.notes, ''));
                 record.set('relatedId', toText(item.relatedId, ''));
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_assignments', workspaceId, normalizeTaskAssignmentsForSync(snapshot.taskAssignments), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('status', toText(item.status, 'assigned'));
+                record.set('assignedAt', toIsoString(item.assignedAt));
+                record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                record.set('startedAt', toIsoString(item.startedAt));
+                record.set('blockedAt', toIsoString(item.blockedAt));
+                record.set('doneAt', toIsoString(item.doneAt));
+                record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
         };
 
@@ -1021,6 +1048,50 @@ routerAdd(
                 return mapped;
             }), 'timestamp');
 
+            const taskAssignments = sortByIsoDesc(getWorkspaceRecords('fideo_task_assignments', workspaceId).map((record) => {
+                const payload = toObject(record.get('payload'));
+                const mapped = Object.assign({}, payload, {
+                    id: toText(record.get('externalId'), toText(payload.id, '')),
+                    taskId: toText(record.get('taskId'), toText(payload.taskId, '')),
+                    employeeId: toText(record.get('employeeId'), toText(payload.employeeId, '')),
+                    role: toText(record.get('role'), toText(payload.role, '')),
+                    status: toText(record.get('status'), toText(payload.status, 'assigned')),
+                });
+
+                const assignedAt = toText(record.get('assignedAt'), toText(payload.assignedAt, ''));
+                const acknowledgedAt = toText(record.get('acknowledgedAt'), toText(payload.acknowledgedAt, ''));
+                const startedAt = toText(record.get('startedAt'), toText(payload.startedAt, ''));
+                const blockedAt = toText(record.get('blockedAt'), toText(payload.blockedAt, ''));
+                const doneAt = toText(record.get('doneAt'), toText(payload.doneAt, ''));
+                const blockedReason = toText(record.get('blockedReason'), toText(payload.blockedReason, ''));
+
+                if (assignedAt) {
+                    mapped.assignedAt = assignedAt;
+                }
+
+                if (acknowledgedAt) {
+                    mapped.acknowledgedAt = acknowledgedAt;
+                }
+
+                if (startedAt) {
+                    mapped.startedAt = startedAt;
+                }
+
+                if (blockedAt) {
+                    mapped.blockedAt = blockedAt;
+                }
+
+                if (doneAt) {
+                    mapped.doneAt = doneAt;
+                }
+
+                if (blockedReason) {
+                    mapped.blockedReason = blockedReason;
+                }
+
+                return mapped;
+            }), 'assignedAt');
+
             return {
                 productGroups,
                 warehouses,
@@ -1036,6 +1107,7 @@ routerAdd(
                 activityLog,
                 cashDrawers,
                 cashDrawerActivities,
+                taskAssignments,
             };
         };
 
@@ -1053,7 +1125,8 @@ routerAdd(
             || slice.activities.length > 0
             || slice.activityLog.length > 0
             || slice.cashDrawers.length > 0
-            || slice.cashDrawerActivities.length > 0;
+            || slice.cashDrawerActivities.length > 0
+            || slice.taskAssignments.length > 0;
 
         const mergeNormalizedSlice = (baseSnapshot, slice) => {
             const merged = Object.assign({}, baseSnapshot);
@@ -1072,6 +1145,7 @@ routerAdd(
                 'activityLog',
                 'cashDrawers',
                 'cashDrawerActivities',
+                'taskAssignments',
             ];
 
             keys.forEach((key) => {
@@ -1179,6 +1253,7 @@ routerAdd(
                 baseSnapshot.actionItems = [];
                 baseSnapshot.cashDrawers = [];
                 baseSnapshot.cashDrawerActivities = [];
+                baseSnapshot.taskAssignments = [];
                 baseSnapshot.messageTemplates = [];
                 baseSnapshot.aiCustomerSummary = null;
                 baseSnapshot.isGeneratingSummary = false;
@@ -1222,6 +1297,7 @@ routerAdd(
                 baseSnapshot.actionItems = [];
                 baseSnapshot.cashDrawers = [];
                 baseSnapshot.cashDrawerActivities = [];
+                baseSnapshot.taskAssignments = [];
                 baseSnapshot.messageTemplates = [];
                 baseSnapshot.aiCustomerSummary = null;
                 baseSnapshot.isGeneratingSummary = false;
@@ -1504,6 +1580,17 @@ routerAdd(
                 }
             });
         };
+        const normalizeTaskAssignmentsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
 
         const syncNormalizedFromSnapshot = (targetWorkspaceId, sourceSnapshot) => {
             const normalizedSnapshot = toObject(sourceSnapshot);
@@ -1641,6 +1728,21 @@ routerAdd(
                 record.set('timestamp', toIsoString(item.timestamp));
                 record.set('notes', toText(item.notes, ''));
                 record.set('relatedId', toText(item.relatedId, ''));
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(normalizedSnapshot.taskAssignments), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('status', toText(item.status, 'assigned'));
+                record.set('assignedAt', toIsoString(item.assignedAt));
+                record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                record.set('startedAt', toIsoString(item.startedAt));
+                record.set('blockedAt', toIsoString(item.blockedAt));
+                record.set('doneAt', toIsoString(item.doneAt));
+                record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
         };
 
@@ -2437,6 +2539,17 @@ routerAdd(
                 }
             });
         };
+        const normalizeTaskAssignmentsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
         const syncTouchedCollections = (targetWorkspaceId, sourceSnapshot, touchedCollections) => {
             if (touchedCollections.sales) {
                 replaceWorkspaceCollectionByExternalId('fideo_sales', targetWorkspaceId, sourceSnapshot.sales, (record, item) => {
@@ -2555,6 +2668,23 @@ routerAdd(
                     record.set('timestamp', toIsoString(item.timestamp));
                     record.set('notes', toText(item.notes, ''));
                     record.set('relatedId', toText(item.relatedId, ''));
+                });
+            }
+
+            if (touchedCollections.taskAssignments) {
+                replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(sourceSnapshot.taskAssignments), (record, item) => {
+                    const payload = toObject(item);
+                    record.set('taskId', toText(item.taskId, ''));
+                    record.set('employeeId', toText(item.employeeId, ''));
+                    record.set('role', toText(item.role, ''));
+                    record.set('status', toText(item.status, 'assigned'));
+                    record.set('assignedAt', toIsoString(item.assignedAt));
+                    record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                    record.set('startedAt', toIsoString(item.startedAt));
+                    record.set('blockedAt', toIsoString(item.blockedAt));
+                    record.set('doneAt', toIsoString(item.doneAt));
+                    record.set('blockedReason', toText(item.blockedReason, ''));
+                    record.set('payload', Object.keys(payload).length > 0 ? payload : null);
                 });
             }
         };
@@ -3314,6 +3444,7 @@ routerAdd(
             activityLog: false,
             cashDrawers: false,
             cashDrawerActivities: false,
+            taskAssignments: false,
         };
 
         let result = createActionResult(workingSnapshot, null);
@@ -3379,6 +3510,10 @@ routerAdd(
                 result = createActionResult(createOfferAction(workingSnapshot, interpretation), null);
                 touchedCollections.activityLog = true;
                 break;
+        }
+
+        if (JSON.stringify(toArray(workingSnapshot.taskAssignments)) !== JSON.stringify(toArray(result.nextState.taskAssignments))) {
+            touchedCollections.taskAssignments = true;
         }
 
         const finalMessages = toArray(result.nextState.messages).map((item) =>
@@ -3952,6 +4087,17 @@ const revertMessageActionHandler = (e) => {
                 }
             });
         };
+        const normalizeTaskAssignmentsForSync = (items) =>
+            toArray(items)
+                .map((item) => {
+                    const normalizedItem = toObject(item);
+                    const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                        .filter((value) => !!value)
+                        .join('::');
+                    const externalId = toText(normalizedItem.id, fallbackId);
+                    return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+                })
+                .filter((item) => !!item);
         const syncNormalizedFromSnapshot = (targetWorkspaceId, snapshot) => {
             replaceWorkspaceCollectionByExternalId('fideo_product_groups', targetWorkspaceId, snapshot.productGroups, (record, item) => {
                 record.set('name', toText(item.name, ''));
@@ -4086,6 +4232,21 @@ const revertMessageActionHandler = (e) => {
                 record.set('timestamp', toIsoString(item.timestamp));
                 record.set('notes', toText(item.notes, ''));
                 record.set('relatedId', toText(item.relatedId, ''));
+            });
+
+            replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(snapshot.taskAssignments), (record, item) => {
+                const payload = toObject(item);
+                record.set('taskId', toText(item.taskId, ''));
+                record.set('employeeId', toText(item.employeeId, ''));
+                record.set('role', toText(item.role, ''));
+                record.set('status', toText(item.status, 'assigned'));
+                record.set('assignedAt', toIsoString(item.assignedAt));
+                record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                record.set('startedAt', toIsoString(item.startedAt));
+                record.set('blockedAt', toIsoString(item.blockedAt));
+                record.set('doneAt', toIsoString(item.doneAt));
+                record.set('blockedReason', toText(item.blockedReason, ''));
+                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
             });
         };
         const findMessageOnSnapshot = (sourceSnapshot, targetMessageId) =>
