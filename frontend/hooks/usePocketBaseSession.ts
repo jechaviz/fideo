@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AuthSessionProfile, clearAuthSession, restoreAuthProfile, signInWithPassword } from '../services/pocketbase/auth';
+import {
+    AuthSessionProfile,
+    clearAuthSession,
+    mergeAuthSessionProfiles,
+    restoreAuthProfile,
+    signInWithPassword,
+} from '../services/pocketbase/auth';
 import { isPocketBaseEnabled } from '../services/pocketbase/client';
 import { Message } from '../types';
 import {
@@ -59,6 +65,7 @@ export const usePocketBaseSession = () => {
         error: null,
     });
 
+    const profileRef = useRef<AuthSessionProfile | null>(null);
     const workspaceRef = useRef<RemoteWorkspaceSnapshot | null>(null);
     const pendingPersistRef = useRef<QueuedPersistSnapshot | null>(null);
     const workspaceEpochRef = useRef(0);
@@ -68,10 +75,15 @@ export const usePocketBaseSession = () => {
     const remoteRevertRouteAvailableRef = useRef(true);
 
     useEffect(() => {
+        profileRef.current = sessionState.profile;
+    }, [sessionState.profile]);
+
+    useEffect(() => {
         workspaceRef.current = sessionState.workspace;
     }, [sessionState.workspace]);
 
     const resetWorkspaceSession = useCallback((status: SessionStatus, error: string | null) => {
+        profileRef.current = null;
         workspaceRef.current = null;
         pendingPersistRef.current = null;
         remoteCorrectionRouteAvailableRef.current = true;
@@ -86,21 +98,32 @@ export const usePocketBaseSession = () => {
         });
     }, []);
 
-    const setAuthenticatedWorkspace = useCallback((workspace: RemoteWorkspaceSnapshot, error: string | null = null) => {
-        workspaceRef.current = workspace;
-        pendingPersistRef.current = null;
-        remoteCorrectionRouteAvailableRef.current = true;
-        remoteInterpretationRouteAvailableRef.current = true;
-        remoteRevertRouteAvailableRef.current = true;
-        workspaceEpochRef.current += 1;
-        setSessionState({
-            status: 'authenticated',
-            profile: workspace.profile,
-            workspace,
-            error,
-        });
-        return workspace;
-    }, []);
+    const setAuthenticatedWorkspace = useCallback(
+        (
+            workspace: RemoteWorkspaceSnapshot,
+            error: string | null = null,
+            fallbackProfile: AuthSessionProfile | null = profileRef.current,
+        ) => {
+            const resolvedProfile = mergeAuthSessionProfiles(workspace.profile, fallbackProfile);
+            const resolvedWorkspace = resolvedProfile ? { ...workspace, profile: resolvedProfile } : workspace;
+
+            profileRef.current = resolvedWorkspace.profile;
+            workspaceRef.current = resolvedWorkspace;
+            pendingPersistRef.current = null;
+            remoteCorrectionRouteAvailableRef.current = true;
+            remoteInterpretationRouteAvailableRef.current = true;
+            remoteRevertRouteAvailableRef.current = true;
+            workspaceEpochRef.current += 1;
+            setSessionState({
+                status: 'authenticated',
+                profile: resolvedWorkspace.profile,
+                workspace: resolvedWorkspace,
+                error,
+            });
+            return resolvedWorkspace;
+        },
+        [],
+    );
 
     const setAuthenticatedError = useCallback((error: string | null) => {
         setSessionState((previous) => {
@@ -112,13 +135,16 @@ export const usePocketBaseSession = () => {
         });
     }, []);
 
-    const loadWorkspace = useCallback(async (options: { showBootstrapping?: boolean; errorAfterLoad?: string | null } = {}) => {
-        if (options.showBootstrapping) {
-            setSessionState((previous) => ({ ...previous, status: 'bootstrapping', error: null }));
-        }
-        const workspace = await bootstrapRemoteWorkspace();
-        return setAuthenticatedWorkspace(workspace, options.errorAfterLoad ?? null);
-    }, [setAuthenticatedWorkspace]);
+    const loadWorkspace = useCallback(
+        async (options: { showBootstrapping?: boolean; errorAfterLoad?: string | null; fallbackProfile?: AuthSessionProfile | null } = {}) => {
+            if (options.showBootstrapping) {
+                setSessionState((previous) => ({ ...previous, status: 'bootstrapping', error: null }));
+            }
+            const workspace = await bootstrapRemoteWorkspace();
+            return setAuthenticatedWorkspace(workspace, options.errorAfterLoad ?? null, options.fallbackProfile ?? profileRef.current);
+        },
+        [setAuthenticatedWorkspace],
+    );
 
     const enqueuePersistTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
         const nextTask = persistSequenceRef.current.then(task, task);
@@ -670,7 +696,7 @@ export const usePocketBaseSession = () => {
                 return;
             }
 
-            await loadWorkspace({ showBootstrapping: true });
+            await loadWorkspace({ showBootstrapping: true, fallbackProfile: profile });
         } catch (error) {
             const normalizedError = normalizePocketBaseError(error, 'No se pudo restaurar la sesion con PocketBase.');
             console.error(normalizedError);
@@ -720,8 +746,8 @@ export const usePocketBaseSession = () => {
 
             setSessionState((previous) => ({ ...previous, status: 'loading', error: null }));
             try {
-                await signInWithPassword(email, password);
-                await loadWorkspace({ showBootstrapping: true });
+                const profile = await signInWithPassword(email, password);
+                await loadWorkspace({ showBootstrapping: true, fallbackProfile: profile });
             } catch (error) {
                 const normalizedError = normalizePocketBaseError(error, 'No se pudo iniciar sesion.');
                 console.error(normalizedError);

@@ -13,6 +13,7 @@ import {
     PurchaseOrderInterpretation,
     SaleInterpretation,
     StateChangeInterpretation,
+    TaskAssignment,
     UserRole,
     View,
     WarehouseTransferInterpretation,
@@ -40,6 +41,7 @@ import {
     writeLocalBusinessState,
 } from '../services/pocketbase/state';
 import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
+import { resolveCurrentEmployee, syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../utils/taskAssignments';
 import * as Logic from '../utils/businessLogic';
 import { useCatalogActions } from './useCatalogActions';
 import { useInventoryActions } from './useInventoryActions';
@@ -197,6 +199,29 @@ const applyInterpretationLocally = (
 const canUserSwitchRoles = (profile: AuthSessionProfile | null | undefined) =>
     !profile || profile.role === 'Admin' || profile.canSwitchRoles;
 
+const getTaskTargetView = (task: TaskAssignment): View => {
+    switch (task.kind) {
+        case 'PACK_ORDER':
+        case 'ASSIGN_DELIVERY':
+        case 'DELIVER_ORDER':
+            return 'deliveries';
+        default:
+            return 'actions';
+    }
+};
+
+const getTaskActionType = (task: TaskAssignment): ActionItem['type'] => {
+    switch (task.kind) {
+        case 'PACK_ORDER':
+            return 'PACK_ORDER';
+        case 'ASSIGN_DELIVERY':
+        case 'DELIVER_ORDER':
+            return 'ASSIGN_DELIVERY';
+        default:
+            return 'SMART_MOVE';
+    }
+};
+
 const buildHydratedState = (
     storageKey: string,
     snapshot: Record<string, unknown> | null | undefined,
@@ -290,6 +315,10 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
     const lastStorageKeyRef = useRef(storageKey);
     const lastHydrationKeyRef = useRef<string | null>(options.hydrationKey || null);
     const remoteVersionRef = useRef<number>(options.remoteVersion || 0);
+    const currentEmployee = useMemo(
+        () => resolveCurrentEmployee(state, options.authProfile || null),
+        [options.authProfile, state],
+    );
 
     const inventoryActions = useInventoryActions(setState);
     const salesActions = useSalesActions(setState);
@@ -315,6 +344,15 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
             remoteVersionRef.current = options.remoteVersion;
         }
     }, [options.remoteVersion]);
+
+    useEffect(() => {
+        setState((currentState) => {
+            const nextTaskAssignments = syncOperationalTaskAssignments(currentState);
+            return nextTaskAssignments === currentState.taskAssignments
+                ? currentState
+                : { ...currentState, taskAssignments: nextTaskAssignments };
+        });
+    }, [state.employees, state.sales, state.taskAssignments]);
 
     useEffect(() => {
         writeLocalBusinessState(storageKey, state);
@@ -359,32 +397,40 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
     const generateActionItems = useCallback(() => {
         const items: ActionItem[] = [];
         const now = new Date();
+        const visibleTasks = state.taskAssignments.filter((task) => {
+            if (task.status === 'done') return false;
 
-        state.sales
-            .filter((sale) => sale.status === 'Pendiente de Empaque')
-            .forEach((sale) => {
-                items.push({
-                    id: `action_pack_${sale.id}`,
-                    type: 'PACK_ORDER',
-                    title: `Empacar pedido para ${sale.customer}`,
-                    description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`,
-                    relatedId: sale.id,
-                    cta: { text: 'Ver Entregas', targetView: 'deliveries' },
-                });
-            });
+            if (state.currentRole === 'Admin' || state.currentRole === 'Cajero') {
+                return true;
+            }
 
-        state.sales
-            .filter((sale) => sale.status === 'Listo para Entrega')
-            .forEach((sale) => {
-                items.push({
-                    id: `action_assign_${sale.id}`,
-                    type: 'ASSIGN_DELIVERY',
-                    title: `Asignar repartidor para ${sale.customer}`,
-                    description: `${sale.quantity} ${sale.unit} de ${sale.varietyName} ${sale.size}`,
-                    relatedId: sale.id,
-                    cta: { text: 'Asignar', targetView: 'deliveries' },
-                });
+            if (task.role !== state.currentRole) return false;
+            if (!task.employeeId) return true;
+            return currentEmployee ? task.employeeId === currentEmployee.id : true;
+        });
+
+        visibleTasks.forEach((task) => {
+            const ctaText =
+                task.status === 'blocked'
+                    ? 'Resolver'
+                    : task.status === 'assigned'
+                      ? 'Abrir'
+                      : task.status === 'acknowledged'
+                        ? 'Seguir'
+                        : 'Atender';
+
+            items.push({
+                id: `action_task_${task.id}`,
+                type: getTaskActionType(task),
+                title: task.title,
+                description:
+                    task.status === 'blocked' && task.blockReason
+                        ? `${task.description}. Bloqueo: ${task.blockReason}`
+                        : task.description,
+                relatedId: task.saleId || task.id,
+                cta: { text: ctaText, targetView: getTaskTargetView(task) },
             });
+        });
 
         state.crateLoans
             .filter((loan) => loan.status === 'Prestado' && new Date(loan.dueDate) < now)
@@ -430,7 +476,17 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         });
 
         setState((currentState) => ({ ...currentState, actionItems: items }));
-    }, [state.crateLoans, state.crateTypes, state.inventory, state.productGroups, state.purchaseOrders, state.sales, state.suppliers]);
+    }, [
+        currentEmployee,
+        state.crateLoans,
+        state.crateTypes,
+        state.currentRole,
+        state.inventory,
+        state.productGroups,
+        state.purchaseOrders,
+        state.suppliers,
+        state.taskAssignments,
+    ]);
 
     const generateProactiveRecommendations = useCallback(() => {
         const recommendations: InventoryRecommendation[] = [];
@@ -480,6 +536,51 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
             window.clearTimeout(actionTimer);
         };
     }, [generateActionItems, generateProactiveRecommendations]);
+
+    const acknowledgeTask = useCallback((taskId: string) => {
+        setState((currentState) =>
+            updateTaskAssignmentStatus(
+                currentState,
+                taskId,
+                'acknowledged',
+                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            ),
+        );
+    }, [currentEmployee]);
+
+    const startTask = useCallback((taskId: string) => {
+        setState((currentState) =>
+            updateTaskAssignmentStatus(
+                currentState,
+                taskId,
+                'in_progress',
+                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            ),
+        );
+    }, [currentEmployee]);
+
+    const blockTask = useCallback((taskId: string, reason: string) => {
+        setState((currentState) =>
+            updateTaskAssignmentStatus(
+                currentState,
+                taskId,
+                'blocked',
+                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+                reason,
+            ),
+        );
+    }, [currentEmployee]);
+
+    const completeTask = useCallback((taskId: string) => {
+        setState((currentState) =>
+            updateTaskAssignmentStatus(
+                currentState,
+                taskId,
+                'done',
+                currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined,
+            ),
+        );
+    }, [currentEmployee]);
 
     const addMessage = useCallback((text: string, sender: string) => {
         setState((currentState) => ({
@@ -891,6 +992,11 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         approveInterpretation,
         addInterpretedMessage,
         generateCustomerSummary,
+        acknowledgeTask,
+        startTask,
+        blockTask,
+        completeTask,
+        currentEmployee,
         authEnabled: Boolean(options.authEnabled),
         authProfile: options.authProfile || null,
         authError: options.authError || null,

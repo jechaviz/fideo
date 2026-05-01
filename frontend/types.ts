@@ -87,6 +87,33 @@ export interface ProactiveMessageRecommendation extends InventoryRecommendation 
 
 export type ActionItemType = 'PACK_ORDER' | 'ASSIGN_DELIVERY' | 'CONFIRM_PURCHASE_ORDER' | 'FOLLOW_UP_CRATE' | 'SMART_MOVE';
 
+export type TaskRole = 'Admin' | 'Repartidor' | 'Empacador' | 'Cajero';
+export type TaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
+export type TaskPriority = 'normal' | 'high';
+export type TaskAssignmentKind = 'PACK_ORDER' | 'ASSIGN_DELIVERY' | 'DELIVER_ORDER';
+
+export interface TaskAssignment {
+    id: string;
+    kind: TaskAssignmentKind;
+    role: TaskRole;
+    status: TaskStatus;
+    title: string;
+    description: string;
+    saleId?: string;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    priority: TaskPriority;
+    createdAt: Date;
+    updatedAt: Date;
+    acknowledgedAt?: Date;
+    startedAt?: Date;
+    blockedAt?: Date;
+    completedAt?: Date;
+    blockReason?: string;
+}
+
 export interface ActionItem {
     id: string;
     type: ActionItemType;
@@ -543,6 +570,7 @@ export interface BusinessState {
     stateIcons: Record<string, string>;
     ripeningRules: RipeningRule[];
     inventoryRecommendations: InventoryRecommendation[];
+    taskAssignments: TaskAssignment[];
     actionItems: ActionItem[];
     cashDrawers: CashDrawer[];
     cashDrawerActivities: CashDrawerActivity[];
