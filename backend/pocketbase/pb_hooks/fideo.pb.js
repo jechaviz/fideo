@@ -724,6 +724,106 @@ function fideoPushDispatchOperational(app, options) {
     });
 }
 
+function fideoPresenceHash(value) {
+    const raw = fideoPushText(value, '');
+    let hash = 0;
+
+    for (let index = 0; index < raw.length; index += 1) {
+        hash = Math.imul(31, hash) + raw.charCodeAt(index) | 0;
+    }
+
+    return (hash >>> 0).toString(36);
+}
+
+function fideoPresenceNormalizeStatus(value) {
+    const normalized = fideoPushNormalizeText(value);
+    if (normalized === 'background' || normalized === 'idle' || normalized === 'offline') {
+        return normalized;
+    }
+
+    return 'active';
+}
+
+function fideoPresenceBuildSessionKey(userId, payload, headers) {
+    const normalizedPayload = fideoPushObject(payload);
+    const normalizedHeaders = headers || {};
+    const rawKey = [
+        fideoPushText(normalizedPayload.sessionId, '').trim(),
+        fideoPushText(normalizedPayload.deviceId, '').trim(),
+        fideoPushText(normalizedPayload.installationId, '').trim(),
+        fideoPushText(normalizedPayload.pushExternalId, '').trim(),
+        fideoPushText(normalizedHeaders['user-agent'], '').trim(),
+    ].filter((value) => !!value).join('|');
+
+    return fideoPresenceHash((fideoPushText(userId, '') || 'anon') + '|' + (rawKey || 'default'));
+}
+
+function fideoPresenceListUserLogs(app, workspaceId, actorId, limit) {
+    const normalizedWorkspaceId = fideoPushText(workspaceId, '');
+    const normalizedActorId = fideoPushText(actorId, '');
+    if (!normalizedWorkspaceId || !normalizedActorId) {
+        return [];
+    }
+
+    try {
+        return app.findRecordsByFilter(
+            'fideo_action_logs',
+            "workspace = '" + fideoPushEscapeFilterLiteral(normalizedWorkspaceId)
+                + "' && actor = '" + fideoPushEscapeFilterLiteral(normalizedActorId) + "'",
+            '-updated',
+            Number(limit || 50),
+            0,
+        );
+    } catch (_) {
+        return [];
+    }
+}
+
+function fideoPresenceExtractState(record) {
+    if (!record) {
+        return null;
+    }
+
+    const payload = fideoPushObject(record.get('payload'));
+    const state = {
+        lastSeenAt: fideoPushText(
+            payload.lastSeenAt,
+            fideoPushText(record.get('updated'), fideoPushText(record.updated, '')),
+        ),
+        status: fideoPresenceNormalizeStatus(payload.status),
+    };
+
+    [
+        'sessionKey',
+        'sessionId',
+        'deviceId',
+        'deviceName',
+        'installationId',
+        'platform',
+        'appVersion',
+        'pushExternalId',
+    ].forEach((key) => {
+        const value = fideoPushText(payload[key], '').trim();
+        if (value) {
+            state[key] = value;
+        }
+    });
+
+    return state;
+}
+
+function fideoPresenceFindLatest(app, workspaceId, actorId) {
+    const records = fideoPresenceListUserLogs(app, workspaceId, actorId, 1000);
+    for (let index = 0; index < records.length; index += 1) {
+        const action = fideoPushText(records[index].get('action'), '');
+        if (action.indexOf('presence_ping:') === 0 || action === 'presence_ping') {
+            return fideoPresenceExtractState(records[index]);
+        }
+    }
+
+    return null;
+}
+
 routerAdd(
     'POST',
     '/api/fideo/bootstrap',
@@ -739,18 +839,27 @@ routerAdd(
             const workspaceSlug = body.workspaceSlug || 'main';
             const workspaceName = body.workspaceName || 'Fideo Main';
 
+            const buildProfile = (record) => {
+                const workspaceId = record.get('workspace') || '';
+                const latestPresence = fideoPresenceFindLatest(e.app, workspaceId, record.id);
+                const explicitPushExternalId = fideoPushText(record.get('pushExternalId'), '').trim();
+                const resolvedPushExternalId = explicitPushExternalId || fideoPushText(latestPresence && latestPresence.pushExternalId, '').trim();
 
-        const buildProfile = (record) => ({
-            id: record.id,
-            email: record.get('email') || '',
-            name: record.get('name') || record.get('email') || 'Fideo User',
-            role: record.get('role') || 'Admin',
-            workspaceId: record.get('workspace') || null,
-            employeeId: record.get('employeeId') || null,
-            customerId: record.get('customerId') || null,
-            supplierId: record.get('supplierId') || null,
-            canSwitchRoles: !!record.get('canSwitchRoles'),
-        });
+                return {
+                    id: record.id,
+                    email: record.get('email') || '',
+                    name: record.get('name') || record.get('email') || 'Fideo User',
+                    role: record.get('role') || 'Admin',
+                    workspaceId: workspaceId || null,
+                    employeeId: record.get('employeeId') || null,
+                    customerId: record.get('customerId') || null,
+                    supplierId: record.get('supplierId') || null,
+                    canSwitchRoles: !!record.get('canSwitchRoles'),
+                    pushExternalId: resolvedPushExternalId || null,
+                    lastSeenAt: latestPresence && latestPresence.lastSeenAt ? latestPresence.lastSeenAt : null,
+                    presence: latestPresence,
+                };
+            };
 
         const findWorkspaceBySlug = (slug) => {
             try {
@@ -1753,6 +1862,93 @@ routerAdd(
             if (err.stack) console.log(err.stack);
             throw err;
         }
+    },
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/presence/ping',
+    (e) => {
+        const authRecord = e.auth || e.requestInfo().auth;
+        if (!authRecord) {
+            throw new UnauthorizedError('Necesitas autenticarte para reportar presencia en Fideo.');
+        }
+
+        const requestInfo = e.requestInfo();
+        const body = requestInfo.body || {};
+        const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '');
+        const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
+
+        if (!workspaceId) {
+            throw new BadRequestError('Tu usuario no tiene workspace asignado para registrar presencia.');
+        }
+
+        if (authWorkspaceId && workspaceId !== authWorkspaceId) {
+            throw new ForbiddenError('No tienes acceso a este workspace para registrar presencia.');
+        }
+
+        try {
+            e.app.findRecordById('fideo_workspaces', workspaceId);
+        } catch (_) {
+            throw new ForbiddenError('No encontramos el workspace indicado para este ping de presencia.');
+        }
+
+        const headers = requestInfo.headers || {};
+        const nowIso = new Date().toISOString();
+        const incomingPushExternalId = fideoPushText(body.pushExternalId, '').trim();
+        const currentPushExternalId = fideoPushText(authRecord.get('pushExternalId'), '').trim();
+
+        if (incomingPushExternalId && incomingPushExternalId !== currentPushExternalId) {
+            authRecord.set('pushExternalId', incomingPushExternalId);
+            e.app.save(authRecord);
+        }
+
+        const effectivePushExternalId = incomingPushExternalId || currentPushExternalId;
+        const sessionKey = fideoPresenceBuildSessionKey(authRecord.id, body, headers);
+        const actionName = 'presence_ping:' + sessionKey;
+        const meta = fideoPushObject(body.meta);
+        const presencePayload = {
+            lastSeenAt: nowIso,
+            sessionKey,
+            status: fideoPresenceNormalizeStatus(body.status),
+            sessionId: fideoPushText(body.sessionId, '').trim(),
+            deviceId: fideoPushText(body.deviceId, '').trim(),
+            deviceName: fideoPushText(body.deviceName, '').trim(),
+            installationId: fideoPushText(body.installationId, '').trim(),
+            platform: fideoPushText(body.platform, fideoPushText(headers['x-platform'], '')).trim(),
+            appVersion: fideoPushText(body.appVersion, fideoPushText(headers['x-app-version'], '')).trim(),
+            pushExternalId: effectivePushExternalId,
+        };
+
+        if (Object.keys(meta).length > 0) {
+            presencePayload.meta = meta;
+        }
+
+        const existingRecord = fideoPresenceListUserLogs(e.app, workspaceId, authRecord.id, 1000).find(
+            (record) => fideoPushText(record.get('action'), '') === actionName,
+        );
+        const collection = e.app.findCollectionByNameOrId('fideo_action_logs');
+        const presenceRecord = existingRecord || new Record(collection);
+
+        if (!existingRecord) {
+            presenceRecord.set('workspace', workspaceId);
+            presenceRecord.set('actor', authRecord.id);
+            presenceRecord.set('action', actionName);
+        }
+
+        presenceRecord.set('payload', presencePayload);
+        e.app.save(presenceRecord);
+
+        const latestPresence = fideoPresenceExtractState(presenceRecord);
+
+        return e.json(200, {
+            ok: true,
+            workspaceId,
+            pushExternalId: effectivePushExternalId || null,
+            lastSeenAt: latestPresence && latestPresence.lastSeenAt ? latestPresence.lastSeenAt : nowIso,
+            presence: latestPresence,
+        });
     },
     $apis.requireAuth('fideo_users'),
 );

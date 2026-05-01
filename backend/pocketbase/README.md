@@ -156,6 +156,7 @@ Con esto, el frontend puede seguir operando snapshot-first mientras PocketBase y
 ## Rutas custom actuales
 
 - `POST /api/fideo/bootstrap`
+- `POST /api/fideo/presence/ping`
 - `POST /api/fideo/state/persist`
 - `POST /api/fideo/messages/interpret`
 - `POST /api/fideo/messages/approve`
@@ -170,6 +171,13 @@ Estas rutas cierran el loop de mensajeria operacional:
 - `messages/revert` revierte la ultima correccion o aprobacion relevante de un mensaje cuando el version lock confirma que el workspace no se movio despues de esa accion
 
 Ambas rutas exigen auth real en `fideo_users`, validan ownership del workspace y respetan el lock optimista por version.
+
+Para presencia/identidad de dispositivo ahora hay un carril liviano:
+
+- `bootstrap` expone `profile.pushExternalId` cuando existe y tambien `profile.lastSeenAt` / `profile.presence` con la ultima sesion conocida del usuario
+- `POST /api/fideo/presence/ping` acepta payload autenticado tipo `workspaceId`, `sessionId`, `deviceId`, `deviceName`, `installationId`, `platform`, `appVersion`, `status`, `pushExternalId` y `meta`
+- si `pushExternalId` llega informado, el hook lo guarda en `fideo_users.pushExternalId`
+- la presencia se persiste con upsert pragmatica por sesion en `fideo_action_logs` usando acciones `presence_ping:<sessionKey>`, para no meter ruido en `snapshot.activityLog`
 
 ## OneSignal server-side
 
@@ -208,7 +216,7 @@ Para que eso aterrice bien en el cliente movil, el contrato recomendado es:
 La migracion agrega estos campos opcionales:
 
 - `employeeId`: amarra al usuario con `snapshot.employees[].id` y ahora tambien viaja en `profile.employeeId` dentro de `/api/fideo/bootstrap`
-- `pushExternalId`: override del `external_id` que usara OneSignal
+- `pushExternalId`: override del `external_id` que usara OneSignal, y tambien puede refrescarse desde `POST /api/fideo/presence/ping`
 
 Si no defines `pushExternalId`, el backend usa `fideo_users.id`.
 Si no defines `employeeId`, el backend intenta resolver por nombre y luego por rol.
@@ -312,6 +320,7 @@ Con eso, Fideo usa:
 
 - auth real con login
 - bootstrap remoto del workspace
+- ping remoto de presencia/identidad de dispositivo
 - persistencia remota del snapshot de negocio
 - interpretacion remota de mensajes con fallback local si la ruta aun no existe o no esta disponible
 - aprobacion server-side de acciones sobre el workspace compartido
