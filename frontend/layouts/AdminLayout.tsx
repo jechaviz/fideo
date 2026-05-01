@@ -3,7 +3,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
 import VoiceControl from '../components/VoiceControl';
-import RoleSwitcher, { getShellIdentity, getShellTaskSummary } from '../components/RoleSwitcher';
+import RoleSwitcher, { ShellSignalBadge, useShellStatusSummaries } from '../components/RoleSwitcher';
 import { BusinessData } from '../hooks/useBusinessData';
 import { OneSignalPushController } from '../hooks/useOneSignalPush';
 import { Bars3Icon } from '../components/icons/Icons';
@@ -65,8 +65,7 @@ const ViewLoadingState: React.FC = () => (
 const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const { currentView, setCurrentView, theme, toggleTheme, currentRole } = data;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile toggle
-    const shellIdentity = data.authProfile ? getShellIdentity(data) : null;
-    const taskSummary = getShellTaskSummary(data, shellIdentity);
+    const { identity: shellIdentity, taskSummary, realtimeSummary } = useShellStatusSummaries(data, push);
     
     // Initial state logic for responsiveness
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -137,6 +136,7 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                 toggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                 identity={shellIdentity}
                 taskSummary={taskSummary}
+                realtimeSummary={realtimeSummary}
             />
             <main className="relative flex-1 flex min-w-0 flex-col h-full overflow-hidden">
                 <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/72 backdrop-blur-2xl">
@@ -165,39 +165,32 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                                 {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
                                             </span>
                                         )}
-                                        {taskSummary && (
-                                            <span
-                                                title={taskSummary.tooltip}
-                                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                                                    taskSummary.tone === 'blocked'
-                                                        ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
-                                                        : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
-                                                }`}
-                                            >
-                                                <span
-                                                    className={`h-2 w-2 rounded-full ${
-                                                        taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
-                                                    }`}
-                                                />
-                                                {taskSummary.label}
-                                            </span>
-                                        )}
+                                        {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} />}
+                                        {taskSummary?.signals.map((signal) => (
+                                            <ShellSignalBadge key={signal.id} signal={signal} />
+                                        ))}
                                     </div>
                                 </div>
                             </div>
                             <div className="flex-shrink-0">
-                                <RoleSwitcher data={data} push={push} />
+                                <RoleSwitcher
+                                    data={data}
+                                    push={push}
+                                    identity={shellIdentity}
+                                    taskSummary={taskSummary}
+                                    realtimeSummary={realtimeSummary}
+                                />
                             </div>
                         </div>
                         <div className="hidden overflow-hidden xl:block">
-                             <StatusBar activities={data.activityLog} taskSummary={taskSummary} />
+                             <StatusBar activities={data.activityLog} taskSummary={taskSummary} realtimeSummary={realtimeSummary} />
                         </div>
                     </div>
                 </header>
                 <div className="flex-grow overflow-y-auto scroll-smooth">
                     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 lg:px-8">
                         <div className="mb-6 xl:hidden">
-                            <StatusBar activities={data.activityLog} taskSummary={taskSummary} />
+                            <StatusBar activities={data.activityLog} taskSummary={taskSummary} realtimeSummary={realtimeSummary} />
                         </div>
                         <div className="glass-panel-dark rounded-[2rem] p-4 md:p-5 lg:p-6">
                             <Suspense fallback={<ViewLoadingState />}>{renderRoleSpecificView()}</Suspense>

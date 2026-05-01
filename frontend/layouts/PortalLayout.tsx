@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { OneSignalPushController } from '../hooks/useOneSignalPush';
-import RoleSwitcher, { getShellIdentity, getShellTaskSummary } from '../components/RoleSwitcher';
+import RoleSwitcher, { ShellSignalBadge, useShellStatusSummaries } from '../components/RoleSwitcher';
 
 const CustomerView = lazy(() => import('../views/CustomerView'));
 const SupplierView = lazy(() => import('../views/SupplierView'));
@@ -17,8 +17,7 @@ const PortalLoadingState: React.FC = () => (
 
 const PortalLayout: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const { currentRole } = data;
-    const shellIdentity = data.authProfile ? getShellIdentity(data) : null;
-    const taskSummary = getShellTaskSummary(data, shellIdentity);
+    const { identity: shellIdentity, taskSummary, realtimeSummary } = useShellStatusSummaries(data, push);
 
     const renderPortalView = () => {
         switch (currentRole) {
@@ -47,22 +46,19 @@ const PortalLayout: React.FC<{ data: BusinessData; push: OneSignalPushController
                                     {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
                                 </span>
                             )}
-                            {taskSummary && (
-                                <span
-                                    title={taskSummary.tooltip}
-                                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                                        taskSummary.tone === 'blocked'
-                                            ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
-                                            : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
-                                    }`}
-                                >
-                                    <span className={`h-2 w-2 rounded-full ${taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'}`} />
-                                    {taskSummary.label}
-                                </span>
-                            )}
+                            {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} />}
+                            {taskSummary?.signals.map((signal) => (
+                                <ShellSignalBadge key={signal.id} signal={signal} />
+                            ))}
                         </div>
                     </div>
-                    <RoleSwitcher data={data} push={push} />
+                    <RoleSwitcher
+                        data={data}
+                        push={push}
+                        identity={shellIdentity}
+                        taskSummary={taskSummary}
+                        realtimeSummary={realtimeSummary}
+                    />
                 </div>
             </header>
             <main className="relative">

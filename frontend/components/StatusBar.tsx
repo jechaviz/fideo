@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { ActivityLog } from '../types';
+import { ShellSignalBadge, type ShellRealtimeSummary, type ShellTaskSummary } from './RoleSwitcher';
 import { SaleIcon, PriceIcon, StateChangeIcon, CrateLoanIcon, EmployeeIcon, WarehouseTransferIcon, AssignmentIcon, CheckCircleIcon, AdjustmentIcon, ProductCrudIcon, ExpenseIcon, NavigateIcon, FilterIcon, MermaIcon, WarehouseIcon } from './icons/Icons';
 
 const IconMap: Record<string, React.ReactNode> = {
@@ -24,11 +25,12 @@ const IconMap: Record<string, React.ReactNode> = {
 
 const StatusBar: React.FC<{
     activities: ActivityLog[];
-    taskSummary?: { label: string; tone: 'pending' | 'blocked'; tooltip: string } | null;
-}> = ({ activities, taskSummary }) => {
+    taskSummary?: ShellTaskSummary | null;
+    realtimeSummary?: ShellRealtimeSummary | null;
+}> = ({ activities, taskSummary, realtimeSummary }) => {
     const recentActivities = activities.slice(0, 5);
 
-    if (recentActivities.length === 0 && !taskSummary) {
+    if (recentActivities.length === 0 && !taskSummary && !realtimeSummary) {
         return null;
     }
 
@@ -37,23 +39,12 @@ const StatusBar: React.FC<{
             <div className="flex items-center gap-4">
                 <div className={`flex flex-shrink-0 items-center gap-3 ${recentActivities.length ? 'border-r border-white/10 pr-4' : ''}`}>
                     <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.8)]"></span>
-                    {taskSummary && (
-                        <div
-                            title={taskSummary.tooltip}
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
-                                taskSummary.tone === 'blocked'
-                                    ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
-                                    : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
-                            }`}
-                        >
-                            <span
-                                className={`h-2 w-2 rounded-full ${
-                                    taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
-                                }`}
-                            />
-                            <span>{taskSummary.label}</span>
-                        </div>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} compact />}
+                        {taskSummary?.signals.map((signal) => (
+                            <ShellSignalBadge key={signal.id} signal={signal} compact />
+                        ))}
+                    </div>
                 </div>
                 {recentActivities.length > 0 && (
                     <div className="min-w-0 overflow-hidden">

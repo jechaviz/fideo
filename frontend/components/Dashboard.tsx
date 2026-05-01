@@ -25,7 +25,45 @@ type TaskSignal = {
     tone: string;
 };
 
+type PresenceSignal = {
+    label: string;
+    tone: string;
+    lastSeenAt: Date;
+};
+
+type PresenceEntry = {
+    lastSeenAt: Date;
+    source: 'checkin' | 'activity' | 'report';
+};
+
+type LiveActivityItem = {
+    id: string;
+    summary: string;
+    meta?: string;
+    createdAt: Date;
+    tone: string;
+    icon: string;
+    pill: string;
+};
+
+type AttentionItem = {
+    id: string;
+    title: string;
+    customerName: string;
+    label: string;
+    meta: string;
+    tone: string;
+    priority: number;
+    timestamp: Date;
+};
+
+type ExternalTaskReportIndex = {
+    byTaskId: Map<string, TaskReport[]>;
+    bySaleId: Map<string, TaskReport[]>;
+};
+
 type DashboardTask = {
+    id: string;
     saleId?: string;
     source: TaskSource;
     stage: OperationalTaskStage;
@@ -34,6 +72,8 @@ type DashboardTask = {
     customerName?: string;
     assigneeName?: string;
     ownerName?: string;
+    blockedReason?: string;
+    timestamp: Date;
     createdAt?: Date;
     updatedAt?: Date;
     acknowledgedAt?: Date;
@@ -271,6 +311,273 @@ const buildTaskSignals = ({
     return signals;
 };
 
+const getAgeMinutes = (timestamp?: Date) => {
+    if (!timestamp) return undefined;
+    return Math.max(1, Math.floor((Date.now() - timestamp.getTime()) / 60000));
+};
+
+const normalizeNameKey = (value?: string | null) => (value ? value.trim().toLowerCase().replace(/\s+/g, ' ') : '');
+
+const mergeTaskReports = (primary: TaskReport[], secondary: TaskReport[]) => {
+    const merged = [...primary, ...secondary].sort((left, right) => (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0));
+    const seen = new Set<string>();
+    return merged.filter((report) => {
+        const key = `${report.id}|${report.kind}|${report.createdAt?.getTime() || 0}|${report.summary.toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
+const mergeTaskSignals = (primary: TaskSignal[], secondary: TaskSignal[]) => {
+    const merged = [...primary];
+    secondary.forEach((signal) => {
+        const existingIndex = merged.findIndex((item) => item.id === signal.id);
+        if (existingIndex >= 0) {
+            merged[existingIndex] = signal;
+            return;
+        }
+        merged.push(signal);
+    });
+    return merged;
+};
+
+const buildExternalTaskReportIndex = (taskReports: BusinessData['taskReports']): ExternalTaskReportIndex => {
+    const byTaskId = new Map<string, TaskReport[]>();
+    const bySaleId = new Map<string, TaskReport[]>();
+
+    const push = (collection: Map<string, TaskReport[]>, key: string | null | undefined, report: TaskReport) => {
+        if (!key) return;
+        const current = collection.get(key);
+        if (current) {
+            current.push(report);
+            return;
+        }
+        collection.set(key, [report]);
+    };
+
+    taskReports.forEach((report) => {
+        const normalizedReport: TaskReport = {
+            id: report.id,
+            kind:
+                report.escalationStatus === 'pending' || report.escalationStatus === 'sent'
+                    ? 'escalation'
+                    : report.kind === 'blocker'
+                      ? 'blocker'
+                      : 'report',
+            summary: report.summary,
+            detail: report.detail || report.evidence || undefined,
+            authorName: report.employeeName || undefined,
+            createdAt: toDate(report.createdAt),
+        };
+
+        push(byTaskId, report.taskId, normalizedReport);
+        push(bySaleId, report.saleId, normalizedReport);
+    });
+
+    return { byTaskId, bySaleId };
+};
+
+const buildPresenceIndex = (
+    activities: BusinessData['activities'],
+    activityLog: BusinessData['activityLog'],
+    taskReports: BusinessData['taskReports'],
+) => {
+    const presenceIndex = new Map<string, PresenceEntry>();
+
+    const updatePresence = (name: string | null | undefined, timestamp: Date | undefined, source: PresenceEntry['source']) => {
+        const key = normalizeNameKey(name);
+        if (!key || !timestamp) return;
+
+        const current = presenceIndex.get(key);
+        if (!current || timestamp.getTime() > current.lastSeenAt.getTime()) {
+            presenceIndex.set(key, { lastSeenAt: timestamp, source });
+        }
+    };
+
+    activities.forEach((activity) => {
+        updatePresence(activity.employee, toDate(activity.timestamp), 'checkin');
+    });
+
+    activityLog.forEach((entry) => {
+        const timestamp = toDate(entry.timestamp);
+        const details = asRecord(entry.details);
+        ['Empleado', 'Repartidor', 'Empacador', 'Responsable'].forEach((key) => {
+            const candidate = details?.[key];
+            if (typeof candidate === 'string') {
+                updatePresence(candidate, timestamp, entry.type === 'LLEGADA_EMPLEADO' ? 'checkin' : 'activity');
+            }
+        });
+    });
+
+    taskReports.forEach((report) => {
+        updatePresence(report.employeeName, toDate(report.createdAt), 'report');
+    });
+
+    return presenceIndex;
+};
+
+const getPresenceSignal = (presenceIndex: Map<string, PresenceEntry>, ...candidates: Array<string | null | undefined>) => {
+    for (const candidate of candidates) {
+        const key = normalizeNameKey(candidate);
+        if (!key) continue;
+        const presence = presenceIndex.get(key);
+        if (!presence) continue;
+
+        const ageMinutes = getAgeMinutes(presence.lastSeenAt) || Number.MAX_SAFE_INTEGER;
+        return {
+            label: `Ult. senal ${formatAgeCompact(presence.lastSeenAt) || 'ahora'}`,
+            tone:
+                ageMinutes <= 20
+                    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
+                    : ageMinutes <= 120
+                      ? 'border-sky-400/20 bg-sky-400/10 text-sky-100'
+                      : 'border-white/10 bg-white/5 text-slate-300',
+            lastSeenAt: presence.lastSeenAt,
+        } satisfies PresenceSignal;
+    }
+
+    return undefined;
+};
+
+const attachExternalReportsToTask = (task: DashboardTask, externalReports: ExternalTaskReportIndex): DashboardTask => {
+    const linkedReports = [
+        ...(externalReports.byTaskId.get(task.id) || []),
+        ...(task.saleId ? externalReports.bySaleId.get(task.saleId) || [] : []),
+    ];
+    if (!linkedReports.length) return task;
+
+    const reports = mergeTaskReports(task.reports, linkedReports);
+    const signals = mergeTaskSignals(
+        task.signals,
+        buildTaskSignals({
+            sources: [],
+            status: task.status,
+            createdAt: task.createdAt,
+            acknowledgedAt: task.acknowledgedAt,
+            reports,
+            allowAckSignal: true,
+        }),
+    );
+
+    return {
+        ...task,
+        reports,
+        signals,
+    };
+};
+
+const buildAttentionItems = (tasks: DashboardTask[]) =>
+    tasks
+        .map((task) => {
+            const noAckSignal = task.signals.find((signal) => signal.id === 'no_ack');
+            const escalated = task.signals.some((signal) => signal.id === 'escalation');
+            const blocked = task.status === 'blocked';
+            if (!noAckSignal && !escalated && !blocked && task.reports.length === 0) return null;
+
+            const priority = escalated ? 0 : blocked ? 1 : noAckSignal ? ((getAgeMinutes(task.createdAt) || 0) >= 45 ? 1 : 2) : 3;
+            const meta = [
+                stageLabelMap[task.stage],
+                task.assigneeName || task.ownerName,
+                task.timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+            ]
+                .filter(Boolean)
+                .join(' / ');
+
+            const nextItem: AttentionItem = {
+                id: task.id,
+                title: task.title,
+                customerName: task.customerName || 'Operacion',
+                label: escalated ? 'Escalada activa' : blocked ? 'Bloqueo activo' : noAckSignal?.label || `${task.reports.length} reporte(s)`,
+                meta,
+                tone:
+                    escalated || blocked
+                        ? 'border-rose-400/20 bg-rose-400/10 text-rose-50'
+                        : noAckSignal
+                          ? 'border-amber-400/20 bg-amber-400/10 text-amber-50'
+                          : 'border-white/10 bg-white/[0.03] text-slate-200',
+                priority,
+                timestamp: task.timestamp,
+            };
+
+            return nextItem;
+        })
+        .filter((item): item is AttentionItem => item !== null)
+        .sort((left, right) => left.priority - right.priority || left.timestamp.getTime() - right.timestamp.getTime())
+        .slice(0, 5);
+
+const buildLiveActivity = (tasks: DashboardTask[], activityLog: BusinessData['activityLog']) => {
+    const reportEvents = tasks.flatMap((task) =>
+        task.reports.map((report) => ({
+            id: `task_report_${task.id}_${report.id}`,
+            summary: report.summary,
+            meta: [task.customerName, report.authorName || task.ownerName || task.assigneeName, formatAgeCompact(report.createdAt)].filter(Boolean).join(' / '),
+            createdAt: report.createdAt || task.updatedAt || task.createdAt || task.timestamp,
+            tone: reportToneMap[report.kind],
+            icon: reportIconMap[report.kind],
+            pill: stageLabelMap[task.stage],
+        })),
+    );
+
+    const logEvents = activityLog
+        .filter((entry) => entry.type === 'LLEGADA_EMPLEADO' || entry.type === 'ASIGNACION_ENTREGA' || entry.type === 'PEDIDO_EMPACADO' || entry.type === 'COMPLETA_VENTA')
+        .map((entry) => {
+            const timestamp = toDate(entry.timestamp) || new Date();
+            const details = asRecord(entry.details);
+            const actorName = ['Empleado', 'Repartidor'].map((key) => (typeof details?.[key] === 'string' ? (details[key] as string) : undefined)).find(Boolean);
+
+            if (entry.type === 'LLEGADA_EMPLEADO') {
+                return {
+                    id: `activity_${entry.id}`,
+                    summary: entry.description,
+                    meta: [actorName, formatAgeCompact(timestamp)].filter(Boolean).join(' / '),
+                    createdAt: timestamp,
+                    tone: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100',
+                    icon: 'fa-user-check',
+                    pill: 'Presencia',
+                } satisfies LiveActivityItem;
+            }
+
+            if (entry.type === 'ASIGNACION_ENTREGA') {
+                return {
+                    id: `activity_${entry.id}`,
+                    summary: entry.description,
+                    meta: [actorName, formatAgeCompact(timestamp)].filter(Boolean).join(' / '),
+                    createdAt: timestamp,
+                    tone: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+                    icon: 'fa-user-plus',
+                    pill: 'Asignacion',
+                } satisfies LiveActivityItem;
+            }
+
+            if (entry.type === 'PEDIDO_EMPACADO') {
+                return {
+                    id: `activity_${entry.id}`,
+                    summary: entry.description,
+                    meta: formatAgeCompact(timestamp),
+                    createdAt: timestamp,
+                    tone: 'border-violet-400/20 bg-violet-400/10 text-violet-100',
+                    icon: 'fa-box-open',
+                    pill: 'Empaque',
+                } satisfies LiveActivityItem;
+            }
+
+            return {
+                id: `activity_${entry.id}`,
+                summary: entry.description,
+                meta: formatAgeCompact(timestamp),
+                createdAt: timestamp,
+                tone: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
+                icon: 'fa-truck-fast',
+                pill: 'Entrega',
+            } satisfies LiveActivityItem;
+        });
+
+    return [...reportEvents, ...logEvents]
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .slice(0, 6);
+};
+
 const normalizeTaskStatus = (value: unknown): OperationalTaskStatus | undefined => {
     if (typeof value !== 'string') return undefined;
     const normalized = value.toLowerCase().trim().replace(/[\s-]+/g, '_');
@@ -339,6 +646,7 @@ const buildDashboardTask = (input: unknown, sales: Sale[]): DashboardTask | null
     });
 
     return {
+        id: readString(sources, ['id']) || `task_dashboard_${saleId || timestamp.getTime()}`,
         saleId,
         source: 'assignment',
         stage: inferTaskStage(stageSignals, sale),
@@ -347,6 +655,8 @@ const buildDashboardTask = (input: unknown, sales: Sale[]): DashboardTask | null
         customerName,
         assigneeName,
         ownerName,
+        blockedReason,
+        timestamp,
         createdAt,
         updatedAt,
         acknowledgedAt,
@@ -361,6 +671,7 @@ const buildDashboardTaskFromSale = (sale: Sale): DashboardTask | null => {
     const status = saleStatusToTaskStatusMap[sale.status];
     if (!stage || !status || status === 'done') return null;
     return {
+        id: `sale_fallback_${sale.id}_${stage}`,
         saleId: sale.id,
         source: 'fallback',
         stage,
@@ -369,6 +680,8 @@ const buildDashboardTaskFromSale = (sale: Sale): DashboardTask | null => {
         customerName: sale.customer,
         assigneeName: undefined,
         ownerName: undefined,
+        blockedReason: undefined,
+        timestamp: sale.timestamp,
         createdAt: sale.timestamp,
         updatedAt: sale.timestamp,
         acknowledgedAt: stage === 'route' ? sale.timestamp : undefined,
@@ -450,11 +763,13 @@ const InteligenciaFideo: React.FC<{ insights: string; isLoading: boolean }> = ({
 };
 
 const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { sales, inventory, productGroups, theme } = data;
+    const { sales, inventory, productGroups, theme, taskReports, activities, activityLog } = data;
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
     const isDark = theme === 'dark';
     const [insights, setInsights] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
+    const externalTaskReports = useMemo(() => buildExternalTaskReportIndex(taskReports), [taskReports]);
+    const presenceIndex = useMemo(() => buildPresenceIndex(activities, activityLog, taskReports), [activities, activityLog, taskReports]);
 
     const generateInsights = async () => {
         setIsLoading(true);
@@ -523,7 +838,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             .map((sale) => buildDashboardTaskFromSale(sale))
             .filter((task): task is DashboardTask => Boolean(task))
             .filter((task) => !task.saleId || !coveredStages.has(`${task.saleId}:${task.stage}`));
-        const operationalTasks = [...normalizedTasks, ...fallbackTasks];
+        const operationalTasks = [...normalizedTasks, ...fallbackTasks].map((task) => attachExternalReportsToTask(task, externalTaskReports));
 
         const ventasHoy = todaySales.reduce((sum, s) => sum + s.price, 0);
         const profitHoy = todaySales.reduce((sum, s) => sum + (s.price - s.cogs), 0);
@@ -581,6 +896,18 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             )
             .sort((left, right) => (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
             .slice(0, 6);
+        const attentionItems = buildAttentionItems(operationalTasks);
+        const liveActivity = buildLiveActivity(operationalTasks, activityLog);
+        const responsibleNames = operationalTasks.reduce<string[]>((accumulator, task) => {
+            const candidate = task.assigneeName || task.ownerName;
+            if (typeof candidate !== 'string' || !candidate.length || accumulator.includes(candidate)) return accumulator;
+            accumulator.push(candidate);
+            return accumulator;
+        }, []);
+        const presenceSummary = {
+            total: responsibleNames.length,
+            withSignal: responsibleNames.filter((name) => Boolean(getPresenceSignal(presenceIndex, name))).length,
+        };
 
         const last7Days = new Date();
         last7Days.setDate(last7Days.getDate() - 6);
@@ -628,6 +955,9 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             taskSignals,
             operationalIndicators,
             recentReports,
+            attentionItems,
+            liveActivity,
+            presenceSummary,
             salesByDay,
             salesCompositionData,
             top5Products,
@@ -635,7 +965,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             unidadesActivas,
             ventasRegistradas: todaySales.length,
         };
-    }, [inventory, productGroups, sales, taskAssignments]);
+    }, [activityLog, externalTaskReports, inventory, presenceIndex, productGroups, sales, taskAssignments]);
 
     const PIE_COLORS = ['#a3e635', '#38bdf8', '#f59e0b', '#22c55e', '#fb7185'];
     const axisColor = isDark ? '#94a3b8' : '#475569';
@@ -696,6 +1026,11 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                     <span className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
                         Bloqueos c/owner {dashboardData.operationalIndicators.blockedOwned}
                     </span>
+                    {dashboardData.presenceSummary.total > 0 && (
+                        <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">
+                            Con senal {dashboardData.presenceSummary.withSignal}/{dashboardData.presenceSummary.total}
+                        </span>
+                    )}
                 </div>
             </section>
 
@@ -749,44 +1084,62 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                             <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.reported}</p>
                         </div>
                     </div>
+
+                    <div className="mt-4 space-y-3">
+                        {dashboardData.attentionItems.length > 0 ? (
+                            dashboardData.attentionItems.map((item) => (
+                                <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-black text-current">{item.customerName}</p>
+                                            <p className="mt-1 text-sm text-current/90">{item.title}</p>
+                                        </div>
+                                        <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                                            {item.label}
+                                        </span>
+                                    </div>
+                                    {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
+                                </div>
+                            ))
+                        ) : (
+                            <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
+                                <p className="text-sm font-semibold text-white">Sin riesgos SLA activos.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
                     <div className="mb-5 flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Reportes</p>
-                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Actividad reciente</h2>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Realtime</p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Actividad en vivo</h2>
                         </div>
                         <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
-                            {dashboardData.recentReports.length}
+                            {dashboardData.liveActivity.length}
                         </span>
                     </div>
 
-                    {dashboardData.recentReports.length > 0 ? (
+                    {dashboardData.liveActivity.length > 0 ? (
                         <div className="space-y-3">
-                            {dashboardData.recentReports.map((report) => (
-                                <div key={`${report.id}_${report.createdAt?.getTime() || 0}`} className={`rounded-2xl border px-4 py-3 ${reportToneMap[report.kind]}`}>
+                            {dashboardData.liveActivity.map((item) => (
+                                <div key={item.id} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-current">{report.summary}</p>
-                                            {report.detail && <p className="mt-1 text-xs leading-5 text-slate-300">{report.detail}</p>}
-                                            <p className="mt-2 text-[11px] font-semibold text-slate-400">
-                                                {[report.customerName || report.taskTitle, report.ownerName, report.createdAt?.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })].filter(Boolean).join(' / ')}
-                                            </p>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="rounded-full border border-white/10 bg-slate-950/60 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
-                                                {stageLabelMap[report.stage]}
+                                            <span className="rounded-full border border-current/15 bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-current">
+                                                {item.pill}
                                             </span>
-                                            <i className={`fa-solid ${reportIconMap[report.kind]} text-xs opacity-80`}></i>
+                                            <p className="mt-2 text-sm font-semibold text-current">{item.summary}</p>
+                                            {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/80">{item.meta}</p>}
                                         </div>
+                                        <i className={`fa-solid ${item.icon} mt-1 text-xs opacity-80`}></i>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     ) : (
                         <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
-                            <p className="text-sm font-semibold text-white">Sin reportes recientes.</p>
+                            <p className="text-sm font-semibold text-white">Sin actividad operativa reciente.</p>
                         </div>
                     )}
                 </div>

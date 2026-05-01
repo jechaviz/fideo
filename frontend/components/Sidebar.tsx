@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { ShellIdentity, ShellTaskSummary } from './RoleSwitcher';
+import { ShellSignalBadge, type ShellIdentity, type ShellRealtimeSummary, type ShellTaskSummary } from './RoleSwitcher';
 import { View, UserRole } from '../types';
 import {
     DashboardIcon, MessageIcon, InventoryIcon, TrainingIcon, SalesLogIcon,
@@ -20,6 +20,7 @@ interface SidebarProps {
   toggleCollapse: () => void;
   identity?: ShellIdentity | null;
   taskSummary?: ShellTaskSummary | null;
+  realtimeSummary?: ShellRealtimeSummary | null;
 }
 
 type NavItem = { id: View; label: string; icon: React.ReactNode };
@@ -81,7 +82,7 @@ const delivererNavConfig: NavSection[] = [
     }
 ];
 
-const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse' | 'identity' | 'taskSummary'>> = ({
+const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse' | 'identity' | 'taskSummary' | 'realtimeSummary'>> = ({
     currentView,
     setCurrentView,
     theme,
@@ -92,6 +93,7 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
     toggleCollapse,
     identity,
     taskSummary,
+    realtimeSummary,
 }) => {
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         Operaciones: true,
@@ -210,21 +212,12 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                                 {identity?.employeeId && <p className="truncate text-[11px] text-slate-500">{identity.employeeId}</p>}
                             </div>
                         </div>
-                        {taskSummary && (
-                            <div
-                                title={taskSummary.tooltip}
-                                className={`mt-4 inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
-                                    taskSummary.tone === 'blocked'
-                                        ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
-                                        : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
-                                }`}
-                            >
-                                <span
-                                    className={`h-2 w-2 rounded-full ${
-                                        taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
-                                    }`}
-                                />
-                                <span className="truncate">{taskSummary.label}</span>
+                        {(realtimeSummary || taskSummary?.signals.length) && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} compact />}
+                                {taskSummary?.signals.map((signal) => (
+                                    <ShellSignalBadge key={signal.id} signal={signal} compact />
+                                ))}
                             </div>
                         )}
                     </div>
