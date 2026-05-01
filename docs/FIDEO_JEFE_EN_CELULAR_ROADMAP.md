@@ -21,13 +21,12 @@ La base fuerte ya existe:
 - vistas reales para `PackerView`, `DelivererView`, `ActionCenter` y `Deliveries` leyendo la misma cola
 - SLA vivo para tareas bloqueadas, reportes abiertos de severidad alta y tareas sin acuse
 - loop real de entregas y operacion comercial
-- heartbeat de presencia por sesion ya disponible como base del siguiente runtime global
+- `runtimeOverview` ya disponible en `bootstrap` y en `POST /api/fideo/runtime/overview`, con roster global y bandeja consolidada de excepciones
 
 La brecha principal ya no es "poner otro dashboard". Es cerrar el runtime operativo personal:
 
-- extender el contrato de identidad por empleado a clientes staff mas cerrados
-- consolidar presencia global del staff sobre el heartbeat actual
-- cerrar una bandeja de excepciones para Admin/Cajero sobre tareas, caja, SLA y silencios operativos
+- cerrar la siembra de identidad push por empleado desde bootstrap y clientes staff dedicados
+- volver accionable la bandeja de excepciones desde backend con `reasignar`, `seguimiento` y `resolver`
 - ampliar el SLA mas alla del primer timeout y la severidad alta
 - seguimiento mas fino despues del primer ack
 
@@ -43,7 +42,7 @@ La capa server-side ya esta cerrada alrededor del empleado, no solo del usuario:
 - cae a `fideo_users.id` cuando no existe override,
 - conserva tags `app`, `workspace_slug`, `role` y `employee_id` para fallback limpio.
 
-La base web ya esta alineada con ese contrato: prefiere `pushExternalId` y cae a `fideo_users.id`. Lo que sigue es llevar el mismo sujeto tecnico a clientes staff mas cerrados y dedicados.
+La base web ya esta alineada con ese contrato: prefiere `pushExternalId` y cae a `fideo_users.id`. El helper de bootstrap tambien ya puede preservar esos campos y derivar un alias estable cuando falta. Lo que sigue es llevar el mismo sujeto tecnico a clientes staff mas cerrados y dedicados.
 
 ### 2. PocketBase realtime operativo
 
@@ -56,11 +55,11 @@ PocketBase ya es la capa realtime actual en sentido operativo:
 - la sesion actual ya se suscribe al snapshot activo y reporta presencia con heartbeat,
 - push y escalacion salen de cambios reales del backend.
 
-La nota honesta aqui es igual de importante: esto ya es realtime operativo, pero no multiplayer fino. Hay suscripcion del snapshot activo y presencia de la sesion actual; no hay todavia colaboracion record-by-record ni una vista global de presencia del staff.
+La nota honesta aqui es igual de importante: esto ya es realtime operativo, pero no multiplayer fino. Hay suscripcion del snapshot activo y `runtimeOverview` para presencia/triage; no hay todavia colaboracion record-by-record ni locking fino.
 
 ### 3. Runtime de presencia global + bandeja de excepciones
 
-Sobre ese heartbeat actual, el slice inmediato cierra dos cosas a la vez:
+Sobre ese heartbeat actual, este slice ya cierra dos cosas a la vez:
 
 - roster global por `employeeId`, `role`, `sessionId`, `deviceId`, `status`, `lastSeenAt`, `platform` y `appVersion`,
 - estados derivados utiles para operacion: `online`, `idle`, `stale`, `offline`,
@@ -68,7 +67,7 @@ Sobre ese heartbeat actual, el slice inmediato cierra dos cosas a la vez:
 - la misma cola leyendo `taskAssignments`, `taskReports`, alertas de caja, falta de acuse y silencio de roles criticos,
 - PocketBase como fuente de verdad y OneSignal como carril de empuje para seguimiento y escalacion.
 
-La idea no es sumar otra pantalla. Es que coordinacion y caja operen por excepcion visible, con ownership claro y seguimiento corto.
+La idea no es sumar otra pantalla. Es que coordinacion y caja operen por excepcion visible, con ownership claro y seguimiento corto. El siguiente nivel sobre esta misma base es que esas acciones ya no dependan de mutaciones locales, sino de rutas server-side sobre la entidad origen.
 
 ### 4. Loop de tarea y SLA vivo
 
@@ -88,9 +87,9 @@ El umbral de falta de acuse cae hoy en `20` minutos por default y se gobierna co
 
 ## Lo siguiente sobre esta capa
 
-- consolidar presencia global del staff sobre la infraestructura de `presence/ping` ya viva
-- convertir presencia, bloqueo, caja y SLA en una bandeja de excepciones real para `Admin` y `Cajero`
-- alinear el cliente staff al mismo contrato `employeeId` + `pushExternalId` o `fideo_users.id`
+- cerrar la siembra de `employeeId` + `pushExternalId` desde bootstrap y clientes staff dedicados
+- mover `reasignar`, `seguimiento` y `resolver` a rutas server-side sobre la misma cola de excepciones
+- usar OneSignal y `fideo_action_logs` como rastro nativo de cada accion de excepcion
 - usar subscriptions de PocketBase solo en bandejas donde eliminen friccion real
 - enriquecer formularios de reporte, evidencia y cierre sin duplicar el loop
 - ampliar el SLA por prioridad, horario, ventana y politica por rol
@@ -100,7 +99,7 @@ El umbral de falta de acuse cae hoy en `20` minutos por default y se gobierna co
 
 ### P0 - Identidad push por empleado de punta a punta
 
-Estado: base web cerrada; falta llevar el contrato a clientes staff mas dedicados.
+Estado: base web cerrada; bootstrap local mucho mas claro; falta llevar el contrato a clientes staff mas dedicados.
 
 Objetivo: que push, ownership, feed personal y auditoria apunten al mismo sujeto tecnico.
 
@@ -110,6 +109,7 @@ Backend:
 - `employeeId` y `pushExternalId` en `fideo_users`
 - resolucion de audiencia por `employeeId`
 - fallback a `fideo_users.id` cuando no hay override
+- bootstrap local que preserva bindings existentes, deriva `pushExternalId` estable y resuelve `employeeId` desde el snapshot cuando aplica
 - logs de push en respuestas server-side y `fideo_action_logs`
 
 Cliente staff:
@@ -152,9 +152,9 @@ Hecho cuando:
 
 ### P0 - Presencia global del staff
 
-Estado: el heartbeat por sesion ya existe; falta consolidarlo como roster util para despacho y supervision.
+Estado: ya vive como roster util para despacho y supervision; toca endurecer politicas y thresholds.
 
-Objetivo: dejar de ver solo "la sesion actual vive" y pasar a "quien del equipo esta online, stale u offline, desde que dispositivo y con que ultima senal".
+Objetivo: pasar de "vemos quien sigue vivo" a "podemos gobernar SLA y excepciones sobre esa presencia con menos ambiguedad".
 
 Backend:
 
@@ -162,12 +162,14 @@ Backend:
 - consolidar presencia por `workspaceId`, `employeeId`, `sessionId` y `deviceId`
 - derivar `lastSeenAt`, `status`, `platform`, `appVersion` y marca de vigencia
 - exponer el roster dentro del runtime compartido sin abrir un workflow paralelo
+- afinar thresholds para `active`, `background`, `idle` y `offline` segun rol y ritmo operativo
 
 Cliente staff:
 
 - seguir enviando heartbeat corto desde la sesion activa
 - abrir roster global solo en vistas que lo necesitan de verdad
 - mostrar senal reciente, atraso o silencio sin volver el shell ruidoso
+- usar la misma presencia como contexto del triage y de las acciones server-side de excepciones
 
 Hecho cuando:
 
@@ -175,23 +177,25 @@ Hecho cuando:
 - `Cajero` distingue ausencia operativa de atraso normal
 - un rol critico en silencio ya no se confunde con "no ha pasado nada"
 
-### P0 - Bandeja de excepciones Admin/Cajero
+### P0 - Acciones server-side de excepciones
 
-Estado: siguiente slice inmediato sobre tareas, reportes, caja y SLA ya materializados.
+Estado: el roster global y la bandeja ya viven; el siguiente cierre es mover sus CTAs al backend.
 
-Objetivo: que `Admin` y `Cajero` operen por excepcion consolidada y no por persecucion manual entre modulos.
+Objetivo: que `Admin` y `Cajero` no solo vean la excepcion consolidada, sino que la puedan operar con ownership, push y auditoria desde PocketBase.
 
 Backend:
 
 - reutilizar `taskAssignments`, `taskReports`, alertas de caja y SLA vivo como fuentes de la cola
 - incorporar silencio de presencia y falta de acuse como disparadores del mismo triage
+- exponer rutas tipo `reassign`, `follow-up` y `resolve` sobre la excepcion sin inventar un workflow nuevo
 - mantener ownership, severidad, timestamps y contexto operativo en la misma entidad que origina la excepcion
 - usar OneSignal para empuje y PocketBase para estado y auditoria
+- dejar rastro en `fideo_action_logs` con actor, target, resultado y version aplicada
 
 Cliente staff:
 
 - una sola bandeja con filtros por severidad, owner, rol, caja, entrega o tarea
-- acciones rapidas para reasignar, marcar seguimiento, resolver o abrir detalle
+- acciones rapidas para reasignar, marcar seguimiento, resolver o abrir detalle contra rutas server-side
 - lectura clara de por que la excepcion cayo ahi y a quien le toca moverla
 
 Hecho cuando:
@@ -199,6 +203,7 @@ Hecho cuando:
 - `Admin` ya no persigue bloqueos por varias vistas
 - `Cajero` ya no pierde alertas de caja dentro del ruido general
 - la misma cola mezcla bloqueo, SLA, caja y presencia sin duplicar workflows
+- una reasignacion o resolucion queda viva para todos sin depender de mutacion local
 
 ### P1 - `taskAssignments` snapshot-first con acuse
 
@@ -342,15 +347,14 @@ Hecho cuando:
 
 ## Orden tecnico recomendado
 
-1. alinear todos los clientes staff al contrato cerrado `employeeId` + `pushExternalId` o `fideo_users.id`
-2. consolidar presencia global del staff sobre el heartbeat actual
-3. cerrar la bandeja de excepciones para `Admin` y `Cajero`
-4. endurecer `taskAssignments` y `taskReports` como contrato operativo real
-5. meter subscriptions de PocketBase solo en bandejas donde sumen de verdad
-6. ampliar el SLA vivo sobre PocketBase + OneSignal
-7. volver mas personales las vistas de staff restantes
-8. meter voz de entrada estable
-9. meter voz de salida y automatizacion de seguimiento
+1. alinear todos los clientes staff y helpers de bootstrap al contrato cerrado `employeeId` + `pushExternalId` o `fideo_users.id`
+2. mover `reasignar`, `follow-up` y `resolver` de excepciones a rutas server-side sobre PocketBase
+3. endurecer `taskAssignments` y `taskReports` como contrato operativo real
+4. meter subscriptions de PocketBase solo en bandejas donde sumen de verdad
+5. ampliar el SLA vivo sobre PocketBase + OneSignal
+6. volver mas personales las vistas de staff restantes
+7. meter voz de entrada estable
+8. meter voz de salida y automatizacion de seguimiento
 
 ## Lo que no conviene hacer aun
 

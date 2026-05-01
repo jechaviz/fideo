@@ -92,7 +92,37 @@ Ese helper:
 - autentica como `_superusers`
 - crea o reutiliza el workspace `main`
 - crea o actualiza un usuario en `fideo_users`
+- preserva `employeeId`, `customerId`, `supplierId` y `pushExternalId` si no envias override explicito
+- deriva un `pushExternalId` estable cuando el usuario todavia no trae uno
+- para roles internos, intenta resolver `employeeId` desde el snapshot seeded si no lo pasaste a mano
 - ejecuta `/api/fideo/bootstrap` para dejar listo el snapshot inicial
+
+Ejemplos utiles:
+
+```powershell
+.\bootstrap-pocketbase.ps1 `
+  -SuperuserEmail dev@fideo.local `
+  -SuperuserPassword "ChangeMe123!" `
+  -UserEmail operacion@fideo.local `
+  -UserPassword "ChangeMe123!" `
+  -UserName "Empleado Pepe" `
+  -UserRole Admin `
+  -EmployeeId e1 `
+  -PushExternalId fideo-main-admin
+```
+
+```powershell
+.\bootstrap-pocketbase.ps1 `
+  -SuperuserEmail dev@fideo.local `
+  -SuperuserPassword "ChangeMe123!" `
+  -UserEmail driver@fideo.local `
+  -UserPassword "ChangeMe123!" `
+  -UserName "Empleado Luis" `
+  -UserRole Repartidor `
+  -CanSwitchRoles $false `
+  -EmployeeId e2 `
+  -PushExternalId fideo-main-ruta
+```
 
 Si el usuario ya existia con otra password:
 
@@ -194,17 +224,23 @@ Encima de eso, ya existe una salida operativa de runtime:
 
 El snapshot sigue siendo snapshot-first; este overview sale por fuera del snapshot para no romper compatibilidad con el frontend actual.
 
-## Slice inmediato: presencia global + bandeja de excepciones
+## Siguiente nivel: acciones server-side de excepciones
 
 Sobre ese carril liviano ya vivo, el siguiente runtime de backend queda definido asi:
 
-- consolidar presencia global del staff por `workspaceId`, `employeeId`, `sessionId` y `deviceId`,
-- derivar estados utiles (`online`, `idle`, `stale`, `offline`) desde `status` + `lastSeenAt`,
-- alimentar una sola bandeja de excepciones para `Admin` y `Cajero`,
-- reutilizar como fuentes `taskAssignments`, `taskReports`, alertas de caja, tareas sin acuse y silencios de roles criticos,
-- mantener PocketBase como fuente de verdad y OneSignal como carril de empuje para seguimiento y escalacion.
+- `runtimeOverview` sigue siendo la lectura consolidada de roster + excepciones,
+- las acciones de `reasignar`, `follow-up` y `resolver` deben viajar por rutas server-side sobre la misma excepcion origen,
+- la ruta no debe inventar otra entidad: debe tocar `taskAssignments`, `taskReports`, caja o presencia segun corresponda,
+- cada accion debe respetar auth, workspace, ownership y version lock,
+- OneSignal y `fideo_action_logs` deben registrar el empuje y el resultado de la accion.
 
 La idea de este slice no es abrir otro workflow. Es cerrar coordinacion y caja sobre las mismas entidades ya materializadas por el runtime actual.
+
+Rutas candidatas para este cierre:
+
+- `POST /api/fideo/exceptions/reassign`
+- `POST /api/fideo/exceptions/follow-up`
+- `POST /api/fideo/exceptions/resolve`
 
 ## OneSignal server-side
 
@@ -245,8 +281,13 @@ La migracion agrega estos campos opcionales:
 - `employeeId`: amarra al usuario con `snapshot.employees[].id` y ahora tambien viaja en `profile.employeeId` dentro de `/api/fideo/bootstrap`
 - `pushExternalId`: override del `external_id` que usara OneSignal, y tambien puede refrescarse desde `POST /api/fideo/presence/ping`
 
-Si no defines `pushExternalId`, el backend usa `fideo_users.id`.
-Si no defines `employeeId`, el backend intenta resolver por nombre y luego por rol.
+El helper `bootstrap-pocketbase.ps1` ahora intenta dejar ambos mejor sembrados:
+
+- si no defines `pushExternalId`, conserva el existente o deriva uno estable por `workspace + role + email`
+- si no defines `employeeId`, conserva el existente y, para roles internos, intenta resolverlo desde el snapshot seeded
+
+Si aun asi no queda `pushExternalId`, el backend usa `fideo_users.id`.
+Si aun asi no queda `employeeId`, el backend intenta resolver por nombre y luego por rol.
 
 ### Eventos que ya disparan push
 
@@ -268,7 +309,7 @@ Los disparos viven tanto en:
 
 Eso cubre acciones directas de UI y acciones aprobadas desde el loop IA. Si OneSignal no esta configurado o no encuentra audiencia, el intento igual queda trazado en `fideo_action_logs` dentro de `pushNotifications`.
 
-La misma base de push y logs es la que conviene reutilizar para el siguiente slice de presencia global + excepciones. No hace falta abrir otro carril tecnico para perseguir ausencia, bloqueo o alerta de caja.
+La misma base de push y logs es la que conviene reutilizar para el siguiente slice de acciones server-side de excepciones. No hace falta abrir otro carril tecnico para perseguir ausencia, bloqueo o alerta de caja.
 
 ## Scope por perfil
 

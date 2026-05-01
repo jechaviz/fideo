@@ -23,20 +23,22 @@ El frontend ya corre sobre PocketBase + OneSignal. La capa actual del producto e
 
 - workspace remoto versionado sobre PocketBase como runtime compartido
 - suscripcion realtime del snapshot activo + heartbeat de presencia por sesion
+- `runtimeOverview` remoto con roster global y bandeja consolidada de excepciones
 - `taskAssignments` y `taskReports` como loop operativo actual para staff
 - identidad push cerrada por empleado en cliente y servidor
 - SLA vivo desde PocketBase para bloqueo, severidad alta y falta de acuse
 
-Leccion honesta: este frontend ya consume realtime del snapshot activo y ping de presencia por sesion. Lo que sigue ahora es convertir esa base en roster global de staff y en una bandeja de excepciones para `Admin` y `Cajero`, sin romper el contrato snapshot-first.
+Leccion honesta: este frontend ya consume realtime del snapshot activo, roster global y cola consolidada. Lo que sigue ahora es mover `reasignar`, `follow-up` y `resolver` de excepciones al backend, sin romper el contrato snapshot-first.
 
-## Slice inmediato: presencia global + excepciones
+## Siguiente nivel: acciones server-side de excepciones
 
 Este es el frente inmediato del frontend sobre la base ya viva:
 
 - presencia global por `employeeId`, `role`, `sessionId`, `deviceId`, `status` y `lastSeenAt`,
 - lectura compacta de estados `online`, `idle`, `stale` y `offline`,
 - una sola cola de excepciones para `Admin` y `Cajero`,
-- la misma cola mezclando bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos.
+- la misma cola mezclando bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos,
+- CTAs de `reasignar`, `seguimiento` y `resolver` pegados a rutas server-side, no solo a mutaciones locales.
 
 ## Comandos
 
@@ -55,6 +57,10 @@ Para bootstrap de un usuario local sobre PocketBase:
 ```bash
 bun run pb:bootstrap -- -SuperuserEmail dev@fideo.local -SuperuserPassword "ChangeMe123!"
 ```
+
+Si omites `-PushExternalId`, el helper deriva uno estable.
+Si omites `-EmployeeId` en un rol interno, intenta resolverlo desde el snapshot seeded.
+Si el usuario ya existia, preserva `employeeId`, `customerId`, `supplierId` y `pushExternalId` salvo que pases un override explicito.
 
 ## Variables de entorno
 
@@ -87,6 +93,7 @@ FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 - Los workers web push viven en `public/onesignal/OneSignalSDKWorker.js` y `public/onesignal/OneSignalSDKUpdaterWorker.js`.
 - La identidad push del cliente web ahora prefiere `pushExternalId` y cae a `fideo_users.id`, manteniendo tags de `role`, `workspace_id`, `workspace_slug`, `channel`, `employee_id`, `customer_id` o `supplier_id` cuando aplican.
 - Del lado servidor, PocketBase usa el mismo contrato operativo: resuelve audiencia con `employeeId`, usa `pushExternalId` si existe y cae a `fideo_users.id` cuando no hay override.
+- `runtimeOverview` ya entra en `bootstrap` y tambien puede refrescarse por ruta dedicada para no inflar el `snapshot`.
 - El runtime remoto actual pasa por `bootstrap`, `persist`, `approve` y `/api/fideo/tasks/report`, todos sobre el mismo workspace versionado.
 - La sesion ahora abre suscripcion realtime sobre `fideo_state_snapshots/<snapshotRecordId>` y manda heartbeat a `POST /api/fideo/presence/ping`.
 - `taskAssignments` ya alimenta `ActionCenter`, `Deliveries`, `PackerView` y `DelivererView`.
@@ -95,7 +102,7 @@ FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 - El bloqueo ya tiene owner practico: queda amarrado al `employeeId` que tomo la tarea o a la cola del rol si aun no habia persona asignada.
 - El SLA vivo actual ya existe en PocketBase: escala `taskAssignments` que entran a `blocked`, reportes abiertos con `escalationStatus: pending` y severidad operativa, y tambien tareas en `assigned` sin `acknowledgedAt` despues del umbral configurado.
 - Ese umbral cae en `20` minutos por default y se gobierna con `FIDEO_TASK_ACK_ESCALATION_MINUTES`.
-- La siguiente capa de producto en este frontend es cerrar presencia global del staff y una bandeja de excepciones real para `Admin/Cajero`, sin romper el contrato snapshot-first.
+- La siguiente capa de producto en este frontend es llevar `reasignar`, `follow-up` y `resolver` de esa bandeja a rutas server-side, sin romper el contrato snapshot-first.
 - Si `bun run pb:start` encuentra `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY`, `VITE_GEMINI_API_KEY`, `ONESIGNAL_ENABLED`, `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY`, `FIDEO_APP_URL` o `FIDEO_TASK_ACK_ESCALATION_MINUTES` en `frontend/.env.local`, intenta promoverlas al proceso de PocketBase para habilitar interpretacion server-side, push y SLA vivo.
 - La interpretacion de mensajes ya intenta ir primero al backend (`/api/fideo/messages/interpret`) y cae al Gemini del cliente solo si esa ruta no existe o no esta disponible.
 - PocketBase ya materializa un primer slice normalizado para `productGroups`, `warehouses`, `prices`, `inventory`, `customers`, `suppliers` y `purchaseOrders`, ademas de `fideo_task_assignments` y `fideo_task_reports`.

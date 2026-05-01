@@ -420,15 +420,16 @@ La nota honesta aqui tambien importa: esto ya es realtime operativo, no multipla
 
 ### 3. Runtime de presencia global + bandeja de excepciones
 
-Sobre la capa realtime actual, el siguiente cierre operativo ya esta definido asi:
+Sobre la capa realtime actual, este cierre operativo ya corre asi:
 
+- `runtimeOverview` viaja junto a `bootstrap` y tambien puede refrescarse por `POST /api/fideo/runtime/overview`,
 - presencia consolidada por `employeeId`, `role`, `sessionId`, `deviceId`, `status`, `lastSeenAt`, `platform` y `appVersion`,
 - estados practicos para despacho y supervision: `online`, `idle`, `stale` y `offline`,
-- una sola bandeja para `Admin` y `Cajero` que lea bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos,
+- una sola bandeja para `Admin` y `Cajero` que mezcla bloqueos, reportes abiertos, alertas de caja, tareas sin acuse y silencios de roles criticos,
 - triage y seguimiento sobre las mismas entidades vivas (`taskAssignments`, `taskReports`, caja y presencia), sin abrir workflows paralelos,
 - PocketBase como fuente de verdad del runtime y OneSignal como carril de empuje y escalacion.
 
-La meta de este slice no es adornar el tablero. Es que `Admin` y `Cajero` operen por excepcion visible, con ownership claro, en vez de perseguir manualmente que paso con cada tarea o cada ausencia.
+La meta de este slice ya no es "ver mas". Esa parte ya esta viva. El siguiente nivel es volver accionable esa misma bandeja desde backend: reasignar, marcar seguimiento, resolver y dejar push + auditoria sobre el mismo runtime.
 
 ### 4. SLA vivo ya activo
 
@@ -450,10 +451,10 @@ El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JE
 Para no romantizar el estado actual, estas son las brechas mas claras:
 
 1. El contrato publico del frontend sigue siendo snapshot-first aunque PocketBase ya materializa slices operativos reales; eso simplifica compatibilidad, pero todavia no es un modelo fino record-by-record.
-2. La identidad push base ya esta alineada entre cliente y servidor, pero falta llevarla a clientes staff mas cerrados y dedicados fuera del navegador general.
-3. El runtime remoto ya tiene suscripcion del snapshot activo y heartbeat de presencia por sesion, pero el roster global de staff y la lectura consolidada de excepciones siguen siendo el siguiente cierre operativo pendiente.
+2. La identidad push base ya esta alineada entre cliente y servidor; el helper local de bootstrap ya puede sembrar mejor `employeeId` y `pushExternalId`, pero sigue haciendo falta disciplina para que todos los clientes staff consuman ese mismo contrato sin excepciones.
+3. El runtime remoto ya tiene suscripcion del snapshot activo, presencia global y bandeja consolidada de excepciones; lo que sigue pendiente es mover `reasignar`, `seguimiento` y `resolver` a rutas server-side dedicadas.
 4. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
-5. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero todavia necesitan una cola unificada de excepciones y mejor seguimiento entre bloqueo, caja, SLA y presencia.
+5. Repartidor y Empacador ya tienen bandejas personales usables, y Admin/Cajero ya leen una cola unificada; falta que ese triage deje de depender tanto de mutaciones locales de UI y quede cerrado en backend.
 6. El SLA vivo actual cubre bloqueo, severidad alta y falta de acuse; todavia no hay matriz mas rica por rol, prioridad, horario o ventana de entrega.
 7. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
 
@@ -461,10 +462,10 @@ Para no romantizar el estado actual, estas son las brechas mas claras:
 
 Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correcto parece este:
 
-1. Consolidar presencia global por empleado sobre el heartbeat actual: roster vivo, estado derivado y visibilidad clara por dispositivo y sesion.
-2. Volver esa presencia una bandeja de excepciones real para `Admin` y `Cajero`, alimentada por bloqueos, reportes, caja y tareas sin acuse.
-3. Alinear el cliente staff que consuma push con el contrato cerrado por empleado: `employeeId` como sujeto operativo y `pushExternalId` o `fideo_users.id` como `external_id`.
-4. Endurecer ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
+1. Cerrar la siembra operativa de cuentas staff: `employeeId` como sujeto laboral y `pushExternalId` o `fideo_users.id` como alias estable de push desde el primer bootstrap.
+2. Mover `reasignar`, `seguimiento` y `resolver` de la bandeja de excepciones a rutas server-side sobre PocketBase.
+3. Endurecer ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
+4. Reusar OneSignal y `fideo_action_logs` para que cada accion de excepcion deje empuje, auditoria y resultado visibles.
 5. Expandir el SLA vivo mas alla del primer timeout de acuse y la severidad alta: prioridad, ventanas, horarios, reintentos y politicas por rol.
 6. Seguir normalizando las capas de soporte que aun viven solo en snapshot.
 
@@ -472,9 +473,11 @@ Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correc
 
 Con PocketBase + OneSignal ya aterrizados y con SLA vivo arriba, el frente inmediato cambia de "ya avise" a "ya se quien esta, que se atoró y quien debe resolverlo". Hoy la apuesta concreta es esta:
 
-1. La presencia deja de ser solo `ping` por sesion y pasa a roster global util para operacion.
-2. `taskAssignments` y `taskReports` ya viven en backend; ahora alimentan una bandeja de excepciones unica para `Admin` y `Cajero`.
-3. `blocked`, `incident`, `high`, silencio sin acuse y alerta de caja dejan de verse por separado y pasan al mismo triage.
+Traducido al estado actual: la presencia global y la bandeja ya viven; ahora el salto es operar esa misma cola desde backend sin perder el contrato de identidad push.
+
+1. El helper de bootstrap deja sembrados `employeeId` y `pushExternalId` de forma mucho mas consistente para cuentas staff nuevas o recicladas.
+2. `taskAssignments`, `taskReports`, caja y presencia ya comparten una bandeja unica; ahora toca que `reasignar`, `follow-up` y `resolver` viajen por backend.
+3. Cada accion sobre la excepcion debe caer sobre la misma entidad origen, con lock por version, ownership claro y rastro en `fideo_action_logs`.
 4. OneSignal sigue siendo el mismo carril de empuje; no conviene abrir otro stack de notificaciones para esta capa.
 5. Despues si: subscriptions mas finas, SLA por ventana y automatizacion mas ambiciosa.
 
