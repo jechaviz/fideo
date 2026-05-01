@@ -15,17 +15,19 @@ La base fuerte ya existe:
 - backend PocketBase con auth, workspace y snapshot compartido
 - rutas server-side para interpretar, corregir, aprobar y revertir acciones
 - slices normalizados de ventas, inventario, clientes, actividad y caja
+- identidad base por empleado en `fideo_users` con `employeeId` y `pushExternalId`
+- OneSignal server-side ya conectado para eventos operativos puntuales
 - loop real de entregas y operacion comercial
 
-La brecha principal ya no es de UI. Es de runtime operativo:
+La brecha principal ya no es "poner otro dashboard". Es cerrar el runtime operativo personal:
 
-- identidad empleado-dispositivo
-- push en tiempo real
-- ack del personal
-- voz de entrada estable
-- voz de salida y escalacion
+- asignacion explicita por empleado
+- acuse y cambio de estado sobre el trabajo
+- bandejas personales de staff
+- reportes cortos y bloqueos con ownership
+- escalacion y seguimiento despues del primer ack
 
-## Slice activo ya implementado
+## Base ya aterrizada
 
 La primera capa backend de OneSignal ya queda contemplada en PocketBase:
 
@@ -46,9 +48,29 @@ Contrato recomendado para el cliente movil:
   - `role=<rol>`
   - `employee_id=<employeeId>`
 
+Esto ya abre el canal correcto. Lo que falta no es inventar otro stack, sino montar arriba el loop de tarea confirmada.
+
+## Slice activo en curso
+
+El siguiente slice operativo se mueve sobre el contrato snapshot-first actual:
+
+- `taskAssignments` como capa de trabajo asignado y auditado
+- estados base: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`
+- ownership por `employeeId` y rol
+- quick actions de staff sobre la misma tarea, no sobre pantallas sueltas
+- staff views mas reales: feed personal, pendientes, bloqueos y cierres
+
+Decision de arquitectura:
+
+- primero cerrar este loop sobre snapshot compartido
+- despues decidir que partes merecen normalizacion fuerte propia
+- no abrir un motor paralelo antes de probar el loop humano real
+
 ## Roadmap por prioridad
 
 ### P0 - Backbone movil y despacho push
+
+Estado: base aterrizada; queda endurecimiento de activacion cliente e identidad.
 
 Objetivo: que Fideo ya pueda empujar trabajo y no depender solo de que alguien abra la app.
 
@@ -71,28 +93,33 @@ Hecho cuando:
 - un pedido listo despierta a despacho
 - una alerta de caja no se pierde dentro del tablero
 
-### P1 - Tareas con acuse
+### P1 - `taskAssignments` snapshot-first con acuse
+
+Estado: en curso.
 
 Objetivo: pasar de "te avise" a "ya se quien recibio y quien sigue pendiente".
 
 Backend:
 
-- coleccion o slice de `task_assignments`
+- slice o coleccion `taskAssignments` conectado al snapshot compartido
 - estados `assigned -> acknowledged -> in_progress -> blocked -> done`
-- timestamp de SLA y reasignacion
-- eventos de acuse y cierre
+- ownership por empleado, rol, origen y contexto operativo
+- timestamps de asignacion, acuse, inicio, bloqueo y cierre
+- eventos de acuse y cierre listos para auditoria y SLA despues
 
-Cliente movil:
+Cliente staff:
 
 - acciones rapidas `Recibido`, `Voy`, `Bloqueado`, `Terminado`
-- feed personal por rol
-- notificaciones de recordatorio y escalacion
+- feed personal por empleado y rol
+- lectura corta del contexto de la tarea
+- notificaciones de recordatorio y escalacion como siguiente capa
 
 Hecho cuando:
 
 - Fideo sabe si el repartidor vio la orden
 - Fideo sabe si el empacador ya tomo el pedido
 - el tablero deja de inferir y empieza a confirmar
+- el staff deja de navegar todo el workspace para encontrar lo suyo
 
 ### P1 - Staff reporting estructurado
 
@@ -173,19 +200,21 @@ Hecho cuando:
 
 ## Orden tecnico recomendado
 
-1. cerrar OneSignal y la identidad por empleado
-2. montar tareas con acuse
-3. agregar reportes estructurados
-4. endurecer realtime y presencia
-5. meter voz de entrada estable
-6. meter voz de salida y escalacion
-7. automatizar reglas de seguimiento
+1. cerrar identidad empleado-dispositivo y activacion OneSignal de punta a punta
+2. aterrizar `taskAssignments` snapshot-first
+3. volver personales las vistas de staff
+4. agregar reportes estructurados y bloqueos
+5. endurecer realtime y presencia
+6. meter voz de entrada estable
+7. meter voz de salida y escalacion
+8. automatizar reglas de seguimiento
 
 ## Lo que no conviene hacer aun
 
 - no intentar "microfono siempre abierto" en web movil comun como primer paso
 - no meter autonomia total antes de tener acuse y trazabilidad
 - no mandar push masivo sin identidad y scoping limpios
+- no normalizar cinco subdominios nuevos antes de probar bien `taskAssignments`
 - no mezclar notificacion bonita con evento operativo sin prioridad ni ownership
 
 ## Definicion de exito

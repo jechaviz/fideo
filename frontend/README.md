@@ -17,6 +17,15 @@ Si quieres entender el producto, la vision, el estado actual y como evaluar si e
 - PocketBase SDK
 - OneSignal Web SDK via `react-onesignal`
 
+## Foco inmediato
+
+El frontend ya corre sobre PocketBase + OneSignal. El slice activo no es "mas dashboard", sino cerrar trabajo asignado para staff:
+
+- `taskAssignments` snapshot-first sobre el workspace compartido
+- estados `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`
+- identidad por empleado como llave de feed personal y push
+- vistas de staff mas reales para repartidor, empacador, cajero y admin operativo
+
 ## Comandos
 
 ```bash
@@ -60,6 +69,7 @@ VITE_ONESIGNAL_ALLOW_LOCALHOST=true
 - OneSignal solo se enciende cuando `VITE_ONESIGNAL_ENABLED=true` y existe `VITE_ONESIGNAL_APP_ID`.
 - Los workers web push viven en `public/onesignal/OneSignalSDKWorker.js` y `public/onesignal/OneSignalSDKUpdaterWorker.js`.
 - La identidad push se enlaza con el `external_id` del usuario autenticado de PocketBase y tags de `role`, `workspace_id`, `workspace_slug`, `channel`, `customer_id` o `supplier_id` cuando aplican.
+- La siguiente capa de producto en este frontend es llevar esa identidad a bandejas personales y acciones rapidas sobre `taskAssignments`, sin abandonar todavia el contrato snapshot-first.
 - Si `bun run pb:start` encuentra `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY` o `VITE_GEMINI_API_KEY` en `frontend/.env.local`, intenta promoverlas al proceso de PocketBase para habilitar interpretacion server-side.
 - La interpretacion de mensajes ya intenta ir primero al backend (`/api/fideo/messages/interpret`) y cae al Gemini del cliente solo si esa ruta no existe o no esta disponible.
 - PocketBase ya materializa un primer slice normalizado para `productGroups`, `warehouses`, `prices`, `inventory`, `customers`, `suppliers` y `purchaseOrders`.

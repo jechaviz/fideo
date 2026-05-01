@@ -237,10 +237,12 @@ Backend temporal actual:
 
 - PocketBase para auth,
 - snapshot persistido del workspace,
-- dos slices normalizados en colecciones reales: uno para catalogo/inventario/clientes/proveedores/compras y otro para ventas/pagos/caja/actividad/prestamos,
+- identidad base por empleado en `fideo_users` con `employeeId` y `pushExternalId`,
+- tres slices normalizados en colecciones reales: uno para catalogo/inventario/clientes/proveedores/compras, otro para ventas/pagos/caja/actividad/prestamos y un slice minimo de `taskAssignments` con acuse por `employeeId`,
 - scope server-side por perfil para portales Cliente/Proveedor,
 - backfill de `customerId` para ventas y prestamos historicos,
-- rutas custom para bootstrap, persistencia del estado compartido, interpretacion remota de mensajes y aprobacion server-side de acciones.
+- rutas custom para bootstrap, persistencia del estado compartido, interpretacion remota de mensajes y aprobacion server-side de acciones,
+- OneSignal server-side para empujar eventos operativos puntuales.
 
 Hooks de dominio:
 
@@ -330,7 +332,7 @@ La UI va en la direccion correcta si se siente:
 | Inventario | Bueno | Modelo fuerte, UI todavia puede escalar al nuevo lenguaje |
 | Finanzas | Medio | Util, pero todavia puede ganar claridad ejecutiva |
 | Portales externos | Medio | Ya comparten shell, pero aun no son una experiencia totalmente cerrada |
-| Persistencia real backend | Medio-alto | Ya existe auth real, snapshot remoto, dos slices normalizados y scope server-side para portales |
+| Persistencia real backend | Medio-alto | Ya existe auth real, snapshot remoto, tres slices normalizados y scope server-side para portales |
 | Produccion multiusuario | Bajo | Aun no es la historia principal del sistema |
 
 ## Validacion Tecnica Actual
@@ -404,37 +406,42 @@ El contrato recomendado para el cliente movil que use OneSignal es:
 - `external_id = fideo_users.pushExternalId` si existe, o `fideo_users.id` como fallback
 - tags: `app=fideo`, `workspace_slug=<slug>`, `role=<rol>`, `employee_id=<employeeId>`
 
+Con esa base, el slice operativo ya en curso es `taskAssignments` sobre el contrato snapshot-first actual. La idea no es reescribir todo el modelo interno de golpe, sino cerrar primero ownership, acuse y avance del trabajo con estados `assigned`, `acknowledged`, `in_progress`, `blocked` y `done`.
+
 El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md](C:/git/customers/fideo/docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md).
 
 ## Limitaciones Reales Hoy
 
 Para no romantizar el estado actual, estas son las brechas mas claras:
 
-1. El backend ya corre con PocketBase y dos slices normalizados reales, pero el contrato operativo hacia el frontend sigue siendo snapshot-first.
-2. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad y rutas servidoras.
-3. El loop multiusuario real ya tiene auth y workspace compartido, pero todavia no hay locking fino ni colaboracion en tiempo real.
-4. Aun quedan capas de soporte fuera de la normalizacion fuerte: mensajes, gastos, activos, inventario de cajas, templates y algunas configuraciones.
-5. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
+1. El backend ya corre con PocketBase y tres slices normalizados reales, pero el loop interno sigue siendo snapshot-first y el slice `taskAssignments` apenas esta tomando forma encima de ese contrato.
+2. `employeeId` y `pushExternalId` ya existen, pero aun falta cerrar bien la identidad empleado-dispositivo para que cada push y cada tarea caigan en la persona correcta sin heuristicas.
+3. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
+4. Las vistas de staff todavia leen demasiado contexto general; falta llevarlas a bandejas personales mas reales con acuse, avance, bloqueo y cierre.
+5. El loop multiusuario real ya tiene auth y workspace compartido, pero todavia no hay locking fino ni colaboracion en tiempo real.
+6. Aun quedan capas de soporte fuera de la normalizacion fuerte: mensajes, gastos, activos, inventario de cajas, templates y algunas configuraciones.
+7. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
 
 ## Siguiente Paso Correcto
 
 Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correcto parece este:
 
-1. Llevar correccion manual de interpretaciones y recomendaciones proactivas a rutas servidoras reales.
-2. Endurecer permisos por capacidad para perfiles internos y mover mas validaciones al backend.
-3. Normalizar las capas de soporte que aun viven solo en snapshot: mensajes, gastos, activos, cajas fisicas y configuracion comercial.
-4. Conectar mejor recomendaciones, deuda, promociones e inventario en un mismo loop comercial.
-5. Añadir observabilidad operativa para conflictos, retries y errores de IA.
+1. Terminar `taskAssignments` snapshot-first como slice operativo interno, con ownership claro y transiciones `assigned -> acknowledged -> in_progress -> blocked -> done`.
+2. Cerrar identidad por empleado de punta a punta: `employeeId`, `pushExternalId`, tags, `external_id` y feed personal consistente.
+3. Convertir las vistas de staff en superficies personales reales: lo mio, lo pendiente, lo bloqueado y lo terminado.
+4. Llevar reportes, correcciones y bloqueos del staff al mismo loop servidor.
+5. Endurecer observabilidad, retries, presencia y escalacion sobre PocketBase + OneSignal.
+6. Seguir normalizando las capas de soporte que aun viven solo en snapshot.
 
 ### Actualizacion para el siguiente nivel
 
-Con la capa backend de OneSignal ya abierta, el orden practico actualizado es este:
+Con PocketBase + OneSignal ya aterrizados, el frente inmediato cambia de "mandar push" a "confirmar trabajo". Hoy la apuesta concreta es esta:
 
-1. Cerrar identidad movil por empleado (`employeeId`, `pushExternalId`, tags y `external_id` en OneSignal).
-2. Llevar tareas con acuse al backend para que Fideo sepa quien ya recibio y quien no.
-3. Llevar voz y reportes del staff al mismo loop operativo.
-4. Endurecer realtime, escalacion y observabilidad de pushes.
-5. Automatizar el seguimiento para acercar a Fideo al modo "jefe en celular".
+1. `taskAssignments` ya tiene carril backend minimo snapshot-first; el siguiente paso es endurecerlo sin rehacer aun toda la arquitectura transaccional.
+2. Estados minimos y auditables: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`.
+3. Identidad por empleado como llave unica de push, ownership y vista personal.
+4. Staff views mas reales para repartidor, empacador, cajero y admin operativo.
+5. Luego si: reportes estructurados, SLA, escalacion y automatizacion de seguimiento.
 
 ## Definicion Practica de Exito
 
