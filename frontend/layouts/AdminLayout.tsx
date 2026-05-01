@@ -3,7 +3,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
 import VoiceControl from '../components/VoiceControl';
-import RoleSwitcher from '../components/RoleSwitcher';
+import RoleSwitcher, { getShellIdentity, getShellTaskSummary } from '../components/RoleSwitcher';
 import { BusinessData } from '../hooks/useBusinessData';
 import { OneSignalPushController } from '../hooks/useOneSignalPush';
 import { Bars3Icon } from '../components/icons/Icons';
@@ -37,6 +37,22 @@ const ROLE_META: Record<UserRole, string> = {
     Proveedor: 'Proveedor',
 };
 
+const VIEW_TITLES: Partial<Record<BusinessData['currentView'], string>> = {
+    dashboard: 'Centro Comercial',
+    actions: 'Acciones',
+    inventory: 'Inventario',
+    customers: 'Clientes',
+    deliveries: 'Entregas',
+    finances: 'Finanzas',
+    messages: 'Mensajes',
+    suppliers: 'Proveedores',
+    planogram: 'Planograma',
+    ripening: 'Maduracion',
+    history: 'Historial',
+    assets: 'Activos',
+    training: 'IA',
+};
+
 const ViewLoadingState: React.FC = () => (
     <div className="flex min-h-[360px] items-center justify-center rounded-[1.8rem] border border-white/10 bg-white/[0.03] px-6 py-12">
         <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-300">
@@ -49,6 +65,8 @@ const ViewLoadingState: React.FC = () => (
 const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const { currentView, setCurrentView, theme, toggleTheme, currentRole } = data;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile toggle
+    const shellIdentity = data.authProfile ? getShellIdentity(data) : null;
+    const taskSummary = getShellTaskSummary(data, shellIdentity);
     
     // Initial state logic for responsiveness
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -117,6 +135,8 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                 currentRole={currentRole}
                 isCollapsed={isSidebarCollapsed}
                 toggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                identity={shellIdentity}
+                taskSummary={taskSummary}
             />
             <main className="relative flex-1 flex min-w-0 flex-col h-full overflow-hidden">
                 <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/72 backdrop-blur-2xl">
@@ -129,12 +149,39 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-3">
                                         <h1 className="truncate text-2xl font-extrabold tracking-tight text-white md:text-3xl">
-                                            {currentView === 'dashboard' ? 'Centro Comercial' : currentView === 'actions' ? 'Acciones' : currentView === 'inventory' ? 'Inventario' : currentView === 'customers' ? 'Clientes' : currentView === 'deliveries' ? 'Entregas' : currentView === 'finances' ? 'Finanzas' : currentView === 'messages' ? 'Mensajes' : currentView === 'suppliers' ? 'Proveedores' : currentView === 'planogram' ? 'Planograma' : currentView === 'ripening' ? 'Maduracion' : currentView === 'history' ? 'Historial' : currentView === 'assets' ? 'Activos' : currentView === 'training' ? 'IA' : 'Fideo'}
+                                            {VIEW_TITLES[currentView] || 'Fideo'}
                                         </h1>
                                         <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-brand-200">
                                             <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_16px_rgba(163,230,53,0.7)]" />
                                             {ROLE_META[currentRole]}
                                         </span>
+                                        {shellIdentity && (
+                                            <span
+                                                title={shellIdentity.secondaryLabel || shellIdentity.primaryLabel}
+                                                className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200"
+                                            >
+                                                <span className="h-2 w-2 rounded-full bg-sky-300/90" />
+                                                <span className="max-w-[220px] truncate">{shellIdentity.primaryLabel}</span>
+                                                {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
+                                            </span>
+                                        )}
+                                        {taskSummary && (
+                                            <span
+                                                title={taskSummary.tooltip}
+                                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+                                                    taskSummary.tone === 'blocked'
+                                                        ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+                                                        : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
+                                                }`}
+                                            >
+                                                <span
+                                                    className={`h-2 w-2 rounded-full ${
+                                                        taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
+                                                    }`}
+                                                />
+                                                {taskSummary.label}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -143,14 +190,14 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                             </div>
                         </div>
                         <div className="hidden overflow-hidden xl:block">
-                             <StatusBar activities={data.activityLog} />
+                             <StatusBar activities={data.activityLog} taskSummary={taskSummary} />
                         </div>
                     </div>
                 </header>
                 <div className="flex-grow overflow-y-auto scroll-smooth">
                     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 lg:px-8">
                         <div className="mb-6 xl:hidden">
-                            <StatusBar activities={data.activityLog} />
+                            <StatusBar activities={data.activityLog} taskSummary={taskSummary} />
                         </div>
                         <div className="glass-panel-dark rounded-[2rem] p-4 md:p-5 lg:p-6">
                             <Suspense fallback={<ViewLoadingState />}>{renderRoleSpecificView()}</Suspense>

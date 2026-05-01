@@ -22,34 +22,56 @@ const IconMap: Record<string, React.ReactNode> = {
 };
 
 
-const StatusBar: React.FC<{ activities: ActivityLog[] }> = ({ activities }) => {
+const StatusBar: React.FC<{
+    activities: ActivityLog[];
+    taskSummary?: { label: string; tone: 'pending' | 'blocked'; tooltip: string } | null;
+}> = ({ activities, taskSummary }) => {
     const recentActivities = activities.slice(0, 5);
 
-    if (recentActivities.length === 0) {
+    if (recentActivities.length === 0 && !taskSummary) {
         return null;
     }
 
     return (
         <div className="glass-panel-dark overflow-hidden rounded-[1.6rem] px-4 py-3">
             <div className="flex items-center gap-4">
-                <div className="flex flex-shrink-0 items-center border-r border-white/10 pr-4">
+                <div className={`flex flex-shrink-0 items-center gap-3 ${recentActivities.length ? 'border-r border-white/10 pr-4' : ''}`}>
                     <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.8)]"></span>
+                    {taskSummary && (
+                        <div
+                            title={taskSummary.tooltip}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                                taskSummary.tone === 'blocked'
+                                    ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+                                    : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
+                            }`}
+                        >
+                            <span
+                                className={`h-2 w-2 rounded-full ${
+                                    taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
+                                }`}
+                            />
+                            <span>{taskSummary.label}</span>
+                        </div>
+                    )}
                 </div>
-                <div className="min-w-0 overflow-hidden">
-                    <div className="flex items-center gap-6 whitespace-nowrap animate-marquee">
-                        {[...recentActivities, ...recentActivities].map((activity, index) => (
-                            <div key={`${activity.id}-${index}`} className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-                                <span className="text-base">{IconMap[activity.type] || <SaleIcon />}</span>
-                                <p className="text-xs font-semibold text-slate-200">
-                                    {activity.description}
-                                    <span className="ml-2 font-mono text-[10px] text-slate-500">
-                                        {new Date(activity.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit' })}
-                                    </span>
-                                </p>
-                            </div>
-                        ))}
+                {recentActivities.length > 0 && (
+                    <div className="min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-6 whitespace-nowrap animate-marquee">
+                            {[...recentActivities, ...recentActivities].map((activity, index) => (
+                                <div key={`${activity.id}-${index}`} className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+                                    <span className="text-base">{IconMap[activity.type] || <SaleIcon />}</span>
+                                    <p className="text-xs font-semibold text-slate-200">
+                                        {activity.description}
+                                        <span className="ml-2 font-mono text-[10px] text-slate-500">
+                                            {new Date(activity.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit' })}
+                                        </span>
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

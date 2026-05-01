@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import type { ShellIdentity, ShellTaskSummary } from './RoleSwitcher';
 import { View, UserRole } from '../types';
 import {
     DashboardIcon, MessageIcon, InventoryIcon, TrainingIcon, SalesLogIcon,
@@ -17,6 +18,8 @@ interface SidebarProps {
   currentRole: UserRole;
   isCollapsed: boolean;
   toggleCollapse: () => void;
+  identity?: ShellIdentity | null;
+  taskSummary?: ShellTaskSummary | null;
 }
 
 type NavItem = { id: View; label: string; icon: React.ReactNode };
@@ -78,7 +81,7 @@ const delivererNavConfig: NavSection[] = [
     }
 ];
 
-const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse'>> = ({
+const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentView' | 'theme' | 'toggleTheme' | 'onClose' | 'currentRole' | 'isCollapsed' | 'toggleCollapse' | 'identity' | 'taskSummary'>> = ({
     currentView,
     setCurrentView,
     theme,
@@ -87,6 +90,8 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
     currentRole,
     isCollapsed,
     toggleCollapse,
+    identity,
+    taskSummary,
 }) => {
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         Operaciones: true,
@@ -192,15 +197,36 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
             <div className="relative mt-auto border-t border-white/10 p-4">
                 {!isCollapsed && (
                     <div className="mb-4 rounded-[1.8rem] border border-white/10 bg-white/5 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Rol</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">
+                            {identity ? 'Perfil' : 'Rol'}
+                        </p>
                         <div className="mt-3 flex items-center gap-3">
                             <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-sm font-black text-brand-300 shadow-inner shadow-black/40">
-                                {currentRole.charAt(0)}
+                                {identity?.shortLabel || currentRole.charAt(0)}
                             </div>
                             <div className="min-w-0">
                                 <p className="truncate text-sm font-black text-white">{currentRole}</p>
+                                {identity?.primaryLabel && <p className="truncate text-xs font-semibold text-slate-300">{identity.primaryLabel}</p>}
+                                {identity?.employeeId && <p className="truncate text-[11px] text-slate-500">{identity.employeeId}</p>}
                             </div>
                         </div>
+                        {taskSummary && (
+                            <div
+                                title={taskSummary.tooltip}
+                                className={`mt-4 inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                                    taskSummary.tone === 'blocked'
+                                        ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+                                        : 'border-sky-400/20 bg-sky-500/10 text-sky-100'
+                                }`}
+                            >
+                                <span
+                                    className={`h-2 w-2 rounded-full ${
+                                        taskSummary.tone === 'blocked' ? 'bg-amber-300' : 'bg-sky-300'
+                                    }`}
+                                />
+                                <span className="truncate">{taskSummary.label}</span>
+                            </div>
+                        )}
                     </div>
                 )}
 

@@ -2,10 +2,127 @@ import React from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { OneSignalPushController } from '../hooks/useOneSignalPush';
 import { isPortalOnlyProfile } from '../services/pocketbase/auth';
-import { UserRole } from '../types';
+import { TaskAssignment, UserRole } from '../types';
+import { resolveCurrentEmployee } from '../utils/taskAssignments';
 import PushToggle from './PushToggle';
 
 const ROLES: UserRole[] = ['Admin', 'Empacador', 'Repartidor', 'Cajero', 'Cliente', 'Proveedor'];
+const INTERNAL_TASK_ROLES = new Set<UserRole>(['Admin', 'Empacador', 'Repartidor', 'Cajero']);
+const ROLE_META: Record<UserRole, string> = {
+    Admin: 'Admin',
+    Cajero: 'Caja',
+    Empacador: 'Empaque',
+    Repartidor: 'Ruta',
+    Cliente: 'Cliente',
+    Proveedor: 'Proveedor',
+};
+
+export interface ShellIdentity {
+    primaryLabel: string;
+    secondaryLabel: string | null;
+    shortLabel: string;
+    roleLabel: string;
+    employeeId: string | null;
+    employeeName: string | null;
+}
+
+export interface ShellTaskSummary {
+    label: string;
+    pendingCount: number;
+    blockedCount: number;
+    pendingAckCount: number;
+    tone: 'pending' | 'blocked';
+    tooltip: string;
+}
+
+const normalizeText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const pluralize = (count: number, singular: string, plural = `${singular}s`) => (count === 1 ? singular : plural);
+
+const isInternalTaskRole = (role: UserRole): boolean => INTERNAL_TASK_ROLES.has(role);
+
+export const getShellIdentity = (data: BusinessData): ShellIdentity | null => {
+    const { authProfile, workspaceLabel, currentRole } = data;
+    if (!authProfile && !workspaceLabel) return null;
+
+    const employee = resolveCurrentEmployee(data, authProfile);
+    const primaryLabel = employee?.name || normalizeText(authProfile?.name) || normalizeText(workspaceLabel) || 'Fideo';
+    const employeeId = employee?.id || authProfile?.employeeId || null;
+    const roleLabel = ROLE_META[currentRole] || currentRole;
+    const initials = primaryLabel
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((token) => token.charAt(0).toUpperCase())
+        .join('')
+        .slice(0, 2);
+
+    return {
+        primaryLabel,
+        secondaryLabel: [employeeId, roleLabel].filter(Boolean).join(' / ') || roleLabel,
+        shortLabel: initials || roleLabel.charAt(0).toUpperCase(),
+        roleLabel,
+        employeeId,
+        employeeName: employee?.name || primaryLabel,
+    };
+};
+
+const selectTaskScope = (data: BusinessData, shellIdentity: ShellIdentity | null): TaskAssignment[] => {
+    const { authProfile, canSwitchRoles, currentRole, taskAssignments } = data;
+    if (!taskAssignments.length) return [];
+
+    const shouldPreferEmployeeScope = Boolean(
+        shellIdentity?.employeeId && (!canSwitchRoles || !authProfile || authProfile.role === currentRole),
+    );
+
+    if (shouldPreferEmployeeScope) {
+        const employeeTasks = taskAssignments.filter((task) => task.employeeId === shellIdentity?.employeeId);
+        if (employeeTasks.length) return employeeTasks;
+    }
+
+    if (!isInternalTaskRole(currentRole)) {
+        return [];
+    }
+
+    const roleTasks = taskAssignments.filter((task) => task.role === currentRole);
+    if (roleTasks.length) return roleTasks;
+
+    return currentRole === 'Admin' ? taskAssignments : [];
+};
+
+export const getShellTaskSummary = (data: BusinessData, shellIdentity = getShellIdentity(data)): ShellTaskSummary | null => {
+    const scopedTasks = selectTaskScope(data, shellIdentity);
+    if (!scopedTasks.length) return null;
+
+    const blockedCount = scopedTasks.filter((task) => task.status === 'blocked').length;
+    const pendingTasks = scopedTasks.filter((task) => task.status !== 'done' && task.status !== 'blocked');
+    const pendingCount = pendingTasks.length;
+    const pendingAckCount = pendingTasks.filter((task) => task.status === 'assigned').length;
+
+    if (!blockedCount && !pendingCount) return null;
+
+    const label =
+        blockedCount > 0
+            ? `${blockedCount} ${pluralize(blockedCount, 'bloqueada')}`
+            : pendingAckCount > 0
+              ? `${pendingAckCount} sin acuse`
+              : `${pendingCount} ${pluralize(pendingCount, 'pendiente')}`;
+
+    const scopeLabel = shellIdentity?.employeeId ? shellIdentity.primaryLabel : ROLE_META[data.currentRole] || data.currentRole;
+    const tooltipParts: string[] = [];
+    if (blockedCount) tooltipParts.push(`${blockedCount} ${pluralize(blockedCount, 'bloqueada')}`);
+    if (pendingCount) tooltipParts.push(`${pendingCount} ${pluralize(pendingCount, 'pendiente')}`);
+    if (pendingAckCount) tooltipParts.push(`${pendingAckCount} sin acuse`);
+
+    return {
+        label,
+        pendingCount,
+        blockedCount,
+        pendingAckCount,
+        tone: blockedCount > 0 ? 'blocked' : 'pending',
+        tooltip: tooltipParts.length ? `${scopeLabel}: ${tooltipParts.join(' / ')}` : scopeLabel,
+    };
+};
 
 const RoleSwitcher: React.FC<{ data: BusinessData; push: OneSignalPushController }> = ({ data, push }) => {
     const {
@@ -26,7 +143,7 @@ const RoleSwitcher: React.FC<{ data: BusinessData; push: OneSignalPushController
         'min-w-[150px] rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-brand-400/50 focus:ring-2 focus:ring-brand-400/20';
     const availableRoles = canSwitchRoles ? ROLES : [currentRole];
     const portalReadOnly = isPortalOnlyProfile(authProfile);
-    const profileTag = authProfile?.name?.split(' ')[0] || authProfile?.name || workspaceLabel || 'main';
+    const shellIdentity = getShellIdentity(data);
 
     const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setCurrentRole(e.target.value as UserRole);
@@ -38,10 +155,17 @@ const RoleSwitcher: React.FC<{ data: BusinessData; push: OneSignalPushController
 
     return (
         <div className="glass-panel-dark flex flex-wrap items-center gap-3 rounded-[1.6rem] px-3 py-3">
-            {authEnabled && authProfile && (
-                <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.65)]"></span>
-                    <p className="truncate text-xs font-black text-slate-100">{profileTag}</p>
+            {authEnabled && authProfile && shellIdentity && (
+                <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                    <span className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-[11px] font-black text-brand-300 shadow-inner shadow-black/30">
+                        {shellIdentity.shortLabel}
+                    </span>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-50">{shellIdentity.primaryLabel}</p>
+                        <p className="truncate text-[11px] font-semibold text-slate-400">
+                            {shellIdentity.secondaryLabel || workspaceLabel || 'main'}
+                        </p>
+                    </div>
                 </div>
             )}
 
