@@ -47,7 +47,7 @@ Interpretacion:
 Fideo hoy es una app React + Vite + TypeScript que combina:
 
 - cockpit administrativo por roles,
-- estado de negocio persistido en localStorage,
+- estado de negocio local-first con capa remota actual en PocketBase,
 - acciones de dominio sobre inventario, ventas, credito, cajas y promociones,
 - interpretacion asistida por Gemini para mensajes y resumentes,
 - dashboards de operacion y rentabilidad,
@@ -233,16 +233,17 @@ La mayor parte del estado vive en `useBusinessData()`:
 - compone hooks de dominio,
 - expone acciones y estado a toda la app.
 
-Backend temporal actual:
+Backend operativo actual:
 
-- PocketBase para auth,
-- snapshot persistido del workspace,
-- identidad base por empleado en `fideo_users` con `employeeId` y `pushExternalId` como override server-side para push,
-- tres slices normalizados en colecciones reales: uno para catalogo/inventario/clientes/proveedores/compras, otro para ventas/pagos/caja/actividad/prestamos y un slice operativo de `taskAssignments` con ownership por `employeeId`, estados auditables, timestamps y `blockedReason`,
+- PocketBase como auth, workspace remoto y runtime compartido del producto,
+- snapshot versionado del workspace como contrato publico actual,
+- identidad push cerrada del lado servidor por empleado en `fideo_users` usando `employeeId` para resolver audiencia y `pushExternalId` como override de `external_id`, con fallback a `fideo_users.id`,
+- dos capas operativas reales materializadas en PocketBase: `taskAssignments` y `taskReports`, ademas de los slices normalizados de catalogo, inventario, clientes, proveedores, compras, ventas, pagos, caja, actividad y prestamos,
 - scope server-side por perfil para portales Cliente/Proveedor,
 - backfill de `customerId` para ventas y prestamos historicos,
-- rutas custom para bootstrap, persistencia del estado compartido, interpretacion remota de mensajes y aprobacion server-side de acciones,
-- OneSignal server-side para empujar eventos operativos puntuales.
+- rutas custom para bootstrap, persistencia versionada del estado compartido, interpretacion remota de mensajes, aprobacion server-side de acciones y reportes de tarea,
+- OneSignal server-side para empujar eventos operativos y escalaciones vivas,
+- SLA vivo sobre tareas con reglas actuales de bloqueo, severidad y falta de acuse.
 
 Hooks de dominio:
 
@@ -332,8 +333,8 @@ La UI va en la direccion correcta si se siente:
 | Inventario | Bueno | Modelo fuerte, UI todavia puede escalar al nuevo lenguaje |
 | Finanzas | Medio | Util, pero todavia puede ganar claridad ejecutiva |
 | Portales externos | Medio | Ya comparten shell, pero aun no son una experiencia totalmente cerrada |
-| Persistencia real backend | Medio-alto | Ya existe auth real, snapshot remoto, tres slices normalizados y scope server-side para portales |
-| Produccion multiusuario | Bajo | Aun no es la historia principal del sistema |
+| Persistencia real backend | Alto | Ya existe auth real, snapshot remoto versionado, slices materializados, push operativo y SLA vivo |
+| Produccion multiusuario | Medio-bajo | Ya hay runtime remoto y escalacion real; faltan subscriptions cliente, locking fino y presencia |
 
 ## Validacion Tecnica Actual
 
@@ -380,73 +381,55 @@ ONESIGNAL_ENABLED=1
 ONESIGNAL_APP_ID=tu_app_id_de_onesignal
 ONESIGNAL_REST_API_KEY=tu_rest_api_key_de_onesignal
 FIDEO_APP_URL=https://tu-host-de-fideo/
+FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 ```
 
 La configuracion y las migraciones de PocketBase viven en `backend/pocketbase/`.
 
-`bun run pb:start` ya intenta heredar `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY`, `VITE_GEMINI_API_KEY`, `GEMINI_MODEL`, `FIDEO_GEMINI_MODEL`, `ONESIGNAL_ENABLED`, `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY` y `FIDEO_APP_URL` desde `frontend/.env.local` para que PocketBase pueda interpretar mensajes y disparar push operativo sin wiring manual extra.
+`bun run pb:start` ya intenta heredar `GEMINI_API_KEY`, `FIDEO_GEMINI_API_KEY`, `VITE_GEMINI_API_KEY`, `GEMINI_MODEL`, `FIDEO_GEMINI_MODEL`, `ONESIGNAL_ENABLED`, `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY`, `FIDEO_APP_URL` y `FIDEO_TASK_ACK_ESCALATION_MINUTES` desde `frontend/.env.local` para que PocketBase pueda interpretar mensajes, disparar push operativo y evaluar el SLA vivo sin wiring manual extra.
 
-## OneSignal Operativo
+## Capa actual: identidad push, realtime y SLA vivo
 
-Fideo ya trae una primera capa server-side para OneSignal desde PocketBase. Hoy se dispara en estos casos:
+Este es el slice nuevo que hoy ya funciona como capa actual del producto. No vive en una presentacion aparte; ya esta montado sobre la shell y el backend reales.
 
-- `pedido listo` -> push a `Admin` / despacho
-- `asignacion de entrega` -> push al `Repartidor` asignado
-- `alerta de caja` -> push a `Admin` cuando hay incidencia segura
+### 1. Identidad push cerrada por empleado
 
-La idea no es mandar ruido, sino abrir el carril del siguiente nivel operativo: que la app no solo refleje la operacion, sino que tambien la empuje.
+Del lado servidor, PocketBase ya resuelve push operativo con sujeto laboral, no solo con usuario generico:
 
-Para ese targeting, el backend ya soporta dos estrategias:
+- busca audiencias por `employeeId` cuando la tarea, entrega o reporte ya trae owner operativo,
+- usa `pushExternalId` como override de OneSignal cuando existe,
+- cae a `fideo_users.id` cuando no existe override,
+- conserva fallback por tags (`workspace_slug`, `role`, `employee_id`) cuando no hay alias explicito.
 
-- `include_aliases.external_id` para usuarios identificados
-- `filters` por tags de `workspace_slug`, `role` y `employee_id`
+Eso significa que el contrato serio ya existe para un cliente staff cerrado: push, ownership y auditoria pueden apuntar al mismo empleado.
 
-El contrato recomendado para el cliente movil que use OneSignal es:
+La capa web ya quedo alineada con ese contrato: ahora prefiere `pushExternalId` y cae a `fideo_users.id`, conservando tags utiles por workspace, rol y empleado. Lo que sigue pendiente no es la identidad base, sino llevar este mismo contrato a clientes staff mas cerrados y dedicados.
 
-- `external_id = fideo_users.pushExternalId` si existe, o `fideo_users.id` como fallback
-- tags: `app=fideo`, `workspace_slug=<slug>`, `role=<rol>`, `employee_id=<employeeId>`
+### 2. PocketBase realtime como runtime operativo
 
-Estado real del carril hoy:
+PocketBase ya es la capa realtime actual de Fideo en un sentido operativo concreto:
 
-- PocketBase ya resuelve audiencias con `pushExternalId` si existe y cae a `fideo_users.id` como baseline.
-- El cliente web actual sincroniza OneSignal con `external_id = profile.id` y tags de `workspace_id`, `workspace_slug`, `role`, `channel`, `customer_id` o `supplier_id`.
-- Eso deja el carril util, pero la unificacion completa entre `pushExternalId`, `external_id` y la identidad del empleado sigue siendo una brecha real para el siguiente corte.
+- el workspace remoto vive versionado y compartido,
+- `bootstrap`, `persist`, `approve` y `tasks/report` ya hacen roundtrip server-side sobre el mismo estado,
+- `taskAssignments` y `taskReports` se materializan en colecciones reales y se reconstruyen de regreso al snapshot,
+- cuando hay conflicto `409`, el cliente recarga la ultima version remota y sigue desde ahi,
+- la sesion ya abre suscripcion realtime sobre el snapshot activo y manda heartbeat de presencia por sesion,
+- el backend dispara push y escalacion sobre cambios reales del runtime, no sobre mocks locales.
 
-Con esa base, el slice operativo ya en curso es `taskAssignments` sobre el contrato snapshot-first actual. La idea no es reescribir todo el modelo interno de golpe, sino cerrar primero ownership, acuse y avance del trabajo con estados `assigned`, `acknowledged`, `in_progress`, `blocked` y `done`.
+La nota honesta aqui tambien importa: esto ya es realtime operativo, no multiplayer fino. Hay suscripcion del snapshot activo y presencia de la sesion actual, pero todavia no existe colaboracion record-by-record, locking detallado ni una vista global de presencia de todo el staff.
 
-## Slice siguiente: reportes, bloqueos y escalacion
+### 3. SLA vivo ya activo
 
-Sobre esa base, el siguiente slice no necesita un motor paralelo nuevo. Necesita endurecer el loop actual de `taskAssignments`.
+El SLA ya no esta solo en intencion. Ya hay reglas activas en PocketBase:
 
-Que ya existe hoy:
+- `taskReports` reales con `kind`, `status`, `severity`, `summary`, `detail`, `evidence` y `escalationStatus`,
+- escalacion a `Admin` cuando una `taskAssignment` entra a `blocked`,
+- escalacion a `Admin` cuando entra un reporte abierto con `escalationStatus: pending` y severidad operativa (`blocker`, `incident`, `high`),
+- escalacion a `Admin` cuando una tarea sigue en `assigned` sin `acknowledgedAt` pasado el umbral,
+- umbral configurable con `FIDEO_TASK_ACK_ESCALATION_MINUTES` y default actual de `20`,
+- trazabilidad del intento de envio en `fideo_action_logs`, incluso si OneSignal no encuentra audiencia o no esta configurado.
 
-- estados `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`
-- timestamps `acknowledgedAt`, `startedAt`, `blockedAt`, `completedAt` en frontend y `doneAt` en la materializacion de PocketBase
-- `blockReason` persistido en PocketBase y visible en `ActionCenter`, `Deliveries`, `PackerView` y `DelivererView`
-- cierre operativo de entrega con notas y resultado de cobro sobre la venta relacionada
-
-Como debemos leer "task reports estructurados" en este corte:
-
-- no como una coleccion nueva desde dia uno,
-- sino como reportes pegados a la tarea y su contexto:
-  - acuse -> `acknowledgedAt`
-  - avance -> `startedAt`
-  - bloqueo -> `blockedAt` + `blockReason`
-  - cierre -> `completedAt` en frontend, `doneAt` en PocketBase, y notas operativas ligadas a la orden cuando apliquen
-- el `payload` del task materializado en PocketBase queda como puente para crecer a evidencia o notas mas ricas sin romper el contrato snapshot-first.
-
-Ownership de bloqueos en este estado:
-
-- cuando una tarea pasa a `blocked`, el ownership sigue amarrado al `employeeId` que la tenia tomada, o a la cola del rol si aun no habia persona asignada,
-- Admin/dispatch ya puede ver ese bloqueo en las superficies operativas y decidir si resuelve, reasigna o persigue el cierre,
-- lo importante aqui es no perder quien reporto el bloqueo ni sobre que tarea exacta cayo.
-
-Primera escalacion sobre OneSignal/PocketBase:
-
-- el carril de push actual ya resuelve `pedido listo`, `asignacion de entrega` y `alerta de caja`,
-- la primera escalacion correcta a montar encima de esa base es `tarea bloqueada` y, despues, `tarea sin acuse`,
-- hoy esa escalacion automatica todavia no existe para `taskAssignments`; queda como siguiente corte directo sobre los hooks de PocketBase y el helper server-side de OneSignal,
-- el disparo debe vivir en PocketBase, dejar huella en logs y subir a Admin/dispatch con contexto de `taskId`, `employeeId`, `role`, `status` y `blockReason`.
+Este no es un SLA perfecto ni un motor autonomo completo. Es un SLA vivo y util: ya persigue silencio y bloqueo en el loop real.
 
 El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md](C:/git/customers/fideo/docs/FIDEO_JEFE_EN_CELULAR_ROADMAP.md).
 
@@ -454,34 +437,34 @@ El roadmap completo de "control desk" a "jefe en celular" vive en [docs/FIDEO_JE
 
 Para no romantizar el estado actual, estas son las brechas mas claras:
 
-1. El backend ya corre con PocketBase y `taskAssignments` ya alimenta vistas reales, pero el loop sigue siendo snapshot-first y todavia no existe un event log dedicado de task reports.
-2. PocketBase ya soporta `pushExternalId`, pero el cliente web actual sincroniza OneSignal con `profile.id`; esa unificacion de identidad sigue pendiente para que push, ownership y escalacion apunten al mismo sujeto sin ambiguedad.
-3. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
-4. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero y el triage de bloqueos todavia necesitan ownership mas fino y seguimiento mas claro.
-5. No existe aun una escalacion automatica para `blocked` o `assigned` sin acuse; los pushes actuales solo cubren `pedido listo`, `asignacion de entrega` y `alerta de caja`.
-6. El loop multiusuario real ya tiene auth y workspace compartido, pero todavia no hay locking fino ni colaboracion en tiempo real.
+1. El contrato publico del frontend sigue siendo snapshot-first aunque PocketBase ya materializa slices operativos reales; eso simplifica compatibilidad, pero todavia no es un modelo fino record-by-record.
+2. La identidad push base ya esta alineada entre cliente y servidor, pero falta llevarla a clientes staff mas cerrados y dedicados fuera del navegador general.
+3. El runtime remoto ya tiene suscripcion del snapshot activo y heartbeat de presencia por sesion, pero todavia no existe colaboracion fina record-by-record ni una presencia global de todo el equipo.
+4. Cliente y Proveedor ya reciben snapshots recortados y en solo lectura, pero los perfiles internos aun pueden endurecerse mas por capacidad, ownership y rutas servidoras.
+5. Repartidor y Empacador ya tienen bandejas personales usables, pero Admin/Cajero y el triage de bloqueos todavia necesitan ownership mas fino, mejores bandejas de excepcion y seguimiento mas claro.
+6. El SLA vivo actual cubre bloqueo, severidad alta y falta de acuse; todavia no hay matriz mas rica por rol, prioridad, horario o ventana de entrega.
 7. Si la key de Gemini del backend no existe o es invalida, la interpretacion remota degrada a `DESCONOCIDO` de forma segura en vez de romper el flujo.
 
 ## Siguiente Paso Correcto
 
 Si la pregunta es "que sigue para acercarnos de verdad al goal", el orden correcto parece este:
 
-1. Endurecer los task reports estructurados sobre `taskAssignments`, sin abrir todavia una coleccion nueva: acuse, inicio, bloqueo, cierre y notas de resultado.
-2. Cerrar ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
-3. Montar la primera escalacion sobre PocketBase + OneSignal para `blocked` y, despues, para `assigned` sin acuse.
-4. Unificar identidad por empleado entre `employeeId`, `pushExternalId`, `external_id` y tags para que push, feed personal y auditoria usen la misma llave.
+1. Alinear el cliente staff que consuma push con el contrato cerrado por empleado: `employeeId` como sujeto operativo y `pushExternalId` o `fideo_users.id` como `external_id`.
+2. Meter subscriptions nativas de PocketBase solo donde mejoren de verdad despacho, triage y seguimiento, sin romper el contrato snapshot-first actual.
+3. Endurecer ownership de bloqueos de punta a punta: quien tomo la tarea, quien la bloqueo, quien la resuelve y quien puede reasignarla.
+4. Expandir el SLA vivo mas alla del primer timeout de acuse y la severidad alta: prioridad, ventanas, horarios, reintentos y politicas por rol.
 5. Terminar de volver personales las vistas de staff, sobre todo para Admin/Cajero y el seguimiento de excepciones.
 6. Seguir normalizando las capas de soporte que aun viven solo en snapshot.
 
 ### Actualizacion para el siguiente nivel
 
-Con PocketBase + OneSignal ya aterrizados, el frente inmediato cambia de "mandar push" a "confirmar trabajo". Hoy la apuesta concreta es esta:
+Con PocketBase + OneSignal ya aterrizados y con SLA vivo arriba, el frente inmediato cambia de "ya avise" a "ya cerre seguimiento". Hoy la apuesta concreta es esta:
 
-1. `taskAssignments` ya tiene carril backend minimo snapshot-first y ya vive en vistas reales; el siguiente paso es tratar cada cambio de estado como reporte operativo valido.
-2. Estados minimos y auditables: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`.
-3. `blocked` deja de ser solo un badge y se vuelve excepcion con owner, motivo y triage claro.
-4. La primera escalacion se monta en PocketBase usando el helper server-side de OneSignal; no conviene abrir otro stack de notificaciones.
-5. Despues si: SLA, recordatorios, presencia y automatizacion mas ambiciosa.
+1. `taskAssignments` y `taskReports` ya viven en backend y en vistas reales; el siguiente paso es volverlos mas densos y menos ambiguos para excepciones.
+2. Estados minimos y auditables ya activos: `assigned`, `acknowledged`, `in_progress`, `blocked`, `done`.
+3. `blocked` ya es excepcion visible; ahora toca cerrar mejor ownership, resolucion y reasignacion.
+4. La escalacion inicial ya vive en PocketBase usando el helper server-side de OneSignal; no conviene abrir otro stack de notificaciones.
+5. Despues si: subscriptions finas, presencia, SLA por ventana y automatizacion mas ambiciosa.
 
 ## Definicion Practica de Exito
 
