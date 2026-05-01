@@ -1,0 +1,12 @@
+pocketbase.exe
+pocketbase
+pocketbase_*.zip
+pocketbase.stdout.log
+pocketbase.stderr.log
+pb_stdout.log
+pb_stderr.log
+CHANGELOG.md
+LICENSE.md
+pb_data/
+pb_public/
+.tmp/
