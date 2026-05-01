@@ -1,5 +1,5 @@
 
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
 import VoiceControl from '../components/VoiceControl';
@@ -66,6 +66,22 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
     const { currentView, setCurrentView, theme, toggleTheme, currentRole } = data;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile toggle
     const { identity: shellIdentity, taskSummary, realtimeSummary, runtimeSummary } = useShellStatusSummaries(data, push);
+    const headerSignals = useMemo(
+        () =>
+            [
+                runtimeSummary.exceptionSignal,
+                taskSummary?.signals[0] || null,
+                runtimeSummary.pushSignal,
+                realtimeSummary.signal,
+                runtimeSummary.staffSignal?.tone === 'warning' || runtimeSummary.staffSignal?.tone === 'offline'
+                    ? runtimeSummary.staffSignal
+                    : null,
+            ].filter(
+                (signal, index, array): signal is NonNullable<typeof signal> =>
+                    Boolean(signal) && array.findIndex((item) => item?.id === signal?.id) === index,
+            ),
+        [realtimeSummary.signal, runtimeSummary.exceptionSignal, runtimeSummary.pushSignal, runtimeSummary.staffSignal, taskSummary],
+    );
     
     // Initial state logic for responsiveness
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -160,16 +176,17 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                                 title={shellIdentity.secondaryLabel || shellIdentity.primaryLabel}
                                                 className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200"
                                             >
-                                                <span className="h-2 w-2 rounded-full bg-sky-300/90" />
+                                                <span className={`h-2 w-2 rounded-full ${shellIdentity.pushExternalId ? 'bg-brand-300 shadow-[0_0_10px_rgba(163,230,53,0.6)]' : 'bg-sky-300/90'}`} />
                                                 <span className="max-w-[220px] truncate">{shellIdentity.primaryLabel}</span>
                                                 {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
+                                                {shellIdentity.pushExternalId && (
+                                                    <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.2em] text-brand-200">
+                                                        Push
+                                                    </span>
+                                                )}
                                             </span>
                                         )}
-                                        {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} />}
-                                        {runtimeSummary.signals.map((signal) => (
-                                            <ShellSignalBadge key={signal.id} signal={signal} />
-                                        ))}
-                                        {taskSummary?.signals.map((signal) => (
+                                        {headerSignals.map((signal) => (
                                             <ShellSignalBadge key={signal.id} signal={signal} />
                                         ))}
                                     </div>

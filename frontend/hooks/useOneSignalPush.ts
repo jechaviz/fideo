@@ -35,10 +35,11 @@ export interface OneSignalPushController {
 
 const mergeSdkState = (
     previousState: OneSignalPushState,
+    identity: ReturnType<typeof buildOneSignalIdentity> = null,
     patch: Partial<OneSignalPushState> = {},
 ): OneSignalPushState => ({
     ...previousState,
-    ...readOneSignalPushState(),
+    ...readOneSignalPushState(identity),
     ...patch,
 });
 
@@ -63,20 +64,23 @@ export const useOneSignalPush = ({
 
         try {
             await ensureOneSignalReady();
-            const nextState = readOneSignalPushState();
-            setState((previousState) => mergeSdkState(previousState, { ...nextState, initError: '', lastError: '' }));
+            const nextState = readOneSignalPushState(identity);
+            setState((previousState) => mergeSdkState(previousState, identity, { ...nextState, initError: '', lastError: '' }));
             return nextState;
         } catch (error) {
             const message = normalizeOneSignalError(error, 'No se pudo inicializar push.');
             const nextState = {
                 ...createEmptyOneSignalPushState(),
+                ...readOneSignalPushState(identity),
                 initError: message,
                 lastError: message,
+                bindingStatus: 'error' as const,
+                bindingMessage: message,
             };
             setState(nextState);
             return nextState;
         }
-    }, []);
+    }, [identity]);
 
     const clearIdentity = useCallback(async () => {
         if (!oneSignalPushConfig.configured || !oneSignalPushConfig.enabled) return;
@@ -84,10 +88,10 @@ export const useOneSignalPush = ({
         try {
             await clearOneSignalIdentity();
             hadIdentityRef.current = false;
-            setState((previousState) => mergeSdkState(previousState, { lastError: '' }));
+            setState((previousState) => mergeSdkState(previousState, null, { lastError: '' }));
         } catch (error) {
             const message = normalizeOneSignalError(error, 'No se pudo limpiar push al salir.');
-            setState((previousState) => mergeSdkState(previousState, { lastError: message }));
+            setState((previousState) => mergeSdkState(previousState, null, { lastError: message, bindingStatus: 'error', bindingMessage: message }));
             throw error;
         }
     }, []);
@@ -95,35 +99,35 @@ export const useOneSignalPush = ({
     const promptSubscription = useCallback(async () => {
         if (!identity || !authEnabled || sessionStatus !== 'authenticated') return false;
 
-        setState((previousState) => ({ ...previousState, prompting: true, lastError: '' }));
+        setState((previousState) => ({ ...previousState, prompting: true, syncing: true, lastError: '', bindingStatus: 'syncing', bindingMessage: 'Solicitando permiso...' }));
 
         try {
             await optInOneSignalPush(identity);
             hadIdentityRef.current = true;
-            const nextState = readOneSignalPushState();
-            setState((previousState) => mergeSdkState(previousState, { ...nextState, prompting: false }));
+            const nextState = readOneSignalPushState(identity);
+            setState((previousState) => mergeSdkState(previousState, identity, { ...nextState, prompting: false, syncing: false }));
             return Boolean(nextState.optedIn);
         } catch (error) {
             const message = normalizeOneSignalError(error, 'No se pudo activar push.');
-            setState((previousState) => mergeSdkState(previousState, { prompting: false, lastError: message }));
+            setState((previousState) => mergeSdkState(previousState, identity, { prompting: false, syncing: false, lastError: message, bindingStatus: 'error', bindingMessage: message }));
             return false;
         }
     }, [authEnabled, identity, sessionStatus]);
 
     const optOut = useCallback(async () => {
-        setState((previousState) => ({ ...previousState, prompting: true, lastError: '' }));
+        setState((previousState) => ({ ...previousState, prompting: true, syncing: true, lastError: '', bindingStatus: 'syncing', bindingMessage: 'Desenlazando push...' }));
 
         try {
             await optOutOneSignalPush();
-            const nextState = readOneSignalPushState();
-            setState((previousState) => mergeSdkState(previousState, { ...nextState, prompting: false }));
+            const nextState = readOneSignalPushState(identity);
+            setState((previousState) => mergeSdkState(previousState, identity, { ...nextState, prompting: false, syncing: false }));
             return !nextState.optedIn;
         } catch (error) {
             const message = normalizeOneSignalError(error, 'No se pudo desactivar push.');
-            setState((previousState) => mergeSdkState(previousState, { prompting: false, lastError: message }));
+            setState((previousState) => mergeSdkState(previousState, identity, { prompting: false, syncing: false, lastError: message, bindingStatus: 'error', bindingMessage: message }));
             return false;
         }
-    }, []);
+    }, [identity]);
 
     useEffect(() => {
         if (!authEnabled || sessionStatus !== 'authenticated' || !identity || !oneSignalPushConfig.enabled) {
@@ -134,11 +138,17 @@ export const useOneSignalPush = ({
 
         const syncStateFromSdk = () => {
             if (cancelled) return;
-            setState((previousState) => mergeSdkState(previousState));
+            setState((previousState) => mergeSdkState(previousState, identity));
         };
 
         const attachAndSync = async () => {
-            setState((previousState) => ({ ...previousState, syncing: true, lastError: '' }));
+            setState((previousState) => ({
+                ...previousState,
+                syncing: true,
+                lastError: '',
+                bindingStatus: 'syncing',
+                bindingMessage: identity.employeeId ? `Enlazando ${identity.employeeId}...` : 'Enlazando push...',
+            }));
 
             try {
                 await ensureOneSignalReady();
@@ -152,11 +162,11 @@ export const useOneSignalPush = ({
                 if (cancelled) return;
 
                 hadIdentityRef.current = true;
-                setState((previousState) => mergeSdkState(previousState, { syncing: false, lastError: '' }));
+                setState((previousState) => mergeSdkState(previousState, identity, { syncing: false, lastError: '' }));
             } catch (error) {
                 if (cancelled) return;
                 const message = normalizeOneSignalError(error, 'No se pudo sincronizar push.');
-                setState((previousState) => mergeSdkState(previousState, { syncing: false, lastError: message }));
+                setState((previousState) => mergeSdkState(previousState, identity, { syncing: false, lastError: message, bindingStatus: 'error', bindingMessage: message }));
             }
         };
 
@@ -186,18 +196,40 @@ export const useOneSignalPush = ({
             .then(() => {
                 if (cancelled) return;
                 hadIdentityRef.current = false;
-                setState((previousState) => mergeSdkState(previousState, { lastError: '' }));
+                setState((previousState) => mergeSdkState(previousState, null, { lastError: '' }));
             })
             .catch((error) => {
                 if (cancelled) return;
                 const message = normalizeOneSignalError(error, 'No se pudo limpiar push al cerrar sesion.');
-                setState((previousState) => mergeSdkState(previousState, { lastError: message }));
+                setState((previousState) => mergeSdkState(previousState, null, { lastError: message, bindingStatus: 'error', bindingMessage: message }));
             });
 
         return () => {
             cancelled = true;
         };
     }, [sessionStatus]);
+
+    useEffect(() => {
+        if (!oneSignalPushConfig.enabled) return;
+        setState((previousState) => {
+            if (previousState.syncing) {
+                return mergeSdkState(previousState, identity, {
+                    bindingStatus: 'syncing',
+                    bindingMessage: previousState.bindingMessage || 'Sincronizando push...',
+                });
+            }
+
+            if (previousState.lastError || previousState.initError) {
+                const message = previousState.lastError || previousState.initError;
+                return mergeSdkState(previousState, identity, {
+                    bindingStatus: 'error',
+                    bindingMessage: message,
+                });
+            }
+
+            return mergeSdkState(previousState, identity);
+        });
+    }, [identity, identityKey]);
 
     return {
         state,

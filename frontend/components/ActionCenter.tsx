@@ -1,6 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
-import { ActionItem, Sale, View } from '../types';
+import {
+    ActionItem,
+    Employee,
+    OperationalException,
+    OperationalExceptionKind,
+    OperationalExceptionSeverity,
+    PresenceRosterEntry,
+    Sale,
+    TaskRole,
+    TaskStatus,
+    View,
+} from '../types';
 
 type OperationalTaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
 type OperationalTaskStage = 'packing' | 'assignment' | 'route' | 'other';
@@ -70,6 +81,16 @@ type ExceptionItem = {
     timestamp: Date;
     targetView: View;
     ctaText: string;
+    taskId?: string;
+    saleId?: string;
+    reportId?: string;
+    drawerId?: string;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    taskRole?: TaskRole;
+    taskStatus?: TaskStatus;
+    exceptionKind?: OperationalExceptionKind;
+    exceptionSeverity?: OperationalExceptionSeverity;
 };
 
 type CashPulse = {
@@ -90,6 +111,8 @@ type QueueTask = {
     id: string;
     source: TaskSource;
     saleId?: string;
+    employeeId?: string | null;
+    role?: TaskRole;
     stage: OperationalTaskStage;
     status: OperationalTaskStatus;
     title: string;
@@ -106,6 +129,18 @@ type QueueTask = {
     signals: TaskSignal[];
     targetView: View;
     ctaText: string;
+};
+
+type PresenceRosterLike = PresenceRosterEntry & {
+    status?: PresenceRosterEntry['status'];
+};
+
+type AssigneeOption = {
+    employeeId: string;
+    name: string;
+    role: Employee['role'];
+    status: PresenceRosterEntry['status'];
+    lastSeenAt?: Date;
 };
 
 const statusLabelMap: Record<OperationalTaskStatus, string> = {
@@ -193,6 +228,25 @@ const saleStatusToTaskStatusMap: Partial<Record<Sale['status'], OperationalTaskS
     'En Ruta': 'in_progress',
     Completado: 'done',
     Cancelado: 'done',
+};
+
+const presenceStatusRank: Record<PresenceRosterEntry['status'], number> = {
+    active: 0,
+    background: 1,
+    idle: 2,
+    offline: 3,
+};
+
+const inferTaskRoleFromStage = (stage: OperationalTaskStage): TaskRole => {
+    if (stage === 'packing') return 'Empacador';
+    if (stage === 'assignment' || stage === 'route') return 'Repartidor';
+    return 'Admin';
+};
+
+const toTaskRole = (value: unknown): TaskRole | undefined => {
+    if (typeof value !== 'string') return undefined;
+    if (value === 'Admin' || value === 'Repartidor' || value === 'Empacador' || value === 'Cajero') return value;
+    return undefined;
 };
 
 const asRecord = (value: unknown): LooseRecord | null => (value && typeof value === 'object' ? (value as LooseRecord) : null);
@@ -688,8 +742,200 @@ const buildLiveActivity = (tasks: QueueTask[], activityLog: BusinessData['activi
         .slice(0, 6);
 };
 
+const exceptionScopeByKind: Record<OperationalExceptionKind, ExceptionScope> = {
+    task_report: 'Operacion',
+    task_blocked: 'Operacion',
+    cash_drawer: 'Caja',
+    sla: 'Operacion',
+    system: 'Operacion',
+    other: 'Operacion',
+};
+
+const exceptionToneBySeverity: Record<OperationalExceptionSeverity, string> = {
+    critical: 'border-rose-400/20 bg-rose-400/10 text-rose-50',
+    high: 'border-amber-400/20 bg-amber-400/10 text-amber-50',
+    normal: 'border-white/10 bg-white/[0.03] text-slate-100',
+};
+
+const exceptionIconByKind: Record<OperationalExceptionKind, string> = {
+    task_report: 'fa-file-lines',
+    task_blocked: 'fa-circle-exclamation',
+    cash_drawer: 'fa-cash-register',
+    sla: 'fa-hourglass-half',
+    system: 'fa-bolt',
+    other: 'fa-circle-info',
+};
+
+const exceptionViewByKind = (exception: OperationalException): View => {
+    if (exception.drawerId || exception.kind === 'cash_drawer') return 'finances';
+    if (exception.customerId || exception.customerName) return 'customers';
+    if (exception.taskId || exception.saleId) return 'deliveries';
+    return 'dashboard';
+};
+
+const dedupeExceptionItems = (items: ExceptionItem[]) => {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+        const key =
+            item.reportId ||
+            (item.taskId ? `${item.exceptionKind || 'task'}:${item.taskId}` : undefined) ||
+            (item.drawerId ? `${item.exceptionKind || 'drawer'}:${item.drawerId}` : undefined) ||
+            item.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
+const buildRuntimeExceptionItems = (exceptions: OperationalException[]): ExceptionItem[] =>
+    exceptions
+        .filter((exception) => exception.status !== 'resolved')
+        .map<ExceptionItem>((exception) => ({
+            id: exception.id,
+            scope: exceptionScopeByKind[exception.kind] || 'Operacion',
+            title: exception.title,
+            detail: exception.detail || exception.summary,
+            meta: [
+                exception.employeeName,
+                exception.role || undefined,
+                formatAgeCompact(exception.lastSeenAt || exception.updatedAt || exception.createdAt),
+            ]
+                .filter(Boolean)
+                .join(' / '),
+            label: exception.severity === 'critical' ? 'Critica' : exception.severity === 'high' ? 'Alta' : 'Abierta',
+            tone: exceptionToneBySeverity[exception.severity] || exceptionToneBySeverity.normal,
+            icon: exceptionIconByKind[exception.kind] || 'fa-circle-info',
+            priority: exception.severity === 'critical' ? 0 : exception.severity === 'high' ? 1 : 2,
+            timestamp: exception.updatedAt || exception.lastSeenAt || exception.createdAt,
+            targetView: exceptionViewByKind(exception),
+            ctaText:
+                exception.drawerId || exception.kind === 'cash_drawer'
+                    ? 'Abrir caja'
+                    : exception.taskId || exception.saleId
+                      ? 'Abrir entregas'
+                      : exception.customerId || exception.customerName
+                        ? 'Ver clientes'
+                        : 'Abrir',
+            taskId: exception.taskId || undefined,
+            saleId: exception.saleId || undefined,
+            reportId: exception.reportId || undefined,
+            drawerId: exception.drawerId || undefined,
+            employeeId: exception.employeeId || undefined,
+            employeeName: exception.employeeName || undefined,
+            taskRole: toTaskRole(exception.role),
+            exceptionKind: exception.kind,
+            exceptionSeverity: exception.severity,
+        }))
+        .sort(compareExceptionItems);
+
 const compareExceptionItems = (left: ExceptionItem, right: ExceptionItem) =>
     left.priority - right.priority || right.timestamp.getTime() - left.timestamp.getTime();
+
+const buildExceptionStub = (item: ExceptionItem): OperationalException => ({
+    id: item.id,
+    kind:
+        item.exceptionKind ||
+        (item.reportId ? 'task_report' : item.drawerId ? 'cash_drawer' : item.taskStatus === 'blocked' ? 'task_blocked' : 'sla'),
+    severity: item.exceptionSeverity || (item.priority === 0 ? 'critical' : item.priority <= 2 ? 'high' : 'normal'),
+    status: 'open',
+    title: item.title,
+    summary: item.detail,
+    detail: item.meta,
+    createdAt: item.timestamp,
+    updatedAt: item.timestamp,
+    role: item.taskRole || null,
+    employeeId: item.employeeId || null,
+    employeeName: item.employeeName || null,
+    taskId: item.taskId || null,
+    saleId: item.saleId || null,
+    reportId: item.reportId || null,
+    drawerId: item.drawerId || null,
+    source: 'action_center',
+    meta: null,
+});
+
+const findOperationalExceptionRecord = (item: ExceptionItem, exceptions: OperationalException[]) =>
+    exceptions.find((exception) => exception.id === item.id)
+    || (item.reportId ? exceptions.find((exception) => exception.reportId === item.reportId && exception.status !== 'resolved') : undefined)
+    || (item.taskId
+        ? exceptions.find(
+              (exception) =>
+                  exception.taskId === item.taskId &&
+                  exception.status !== 'resolved' &&
+                  (!item.exceptionKind || exception.kind === item.exceptionKind || exception.kind === 'sla' || exception.kind === 'task_blocked'),
+          )
+        : undefined)
+    || (item.drawerId
+        ? exceptions.find(
+              (exception) =>
+                  exception.drawerId === item.drawerId &&
+                  exception.status !== 'resolved' &&
+                  (exception.kind === 'cash_drawer' || !item.exceptionKind),
+          )
+        : undefined)
+    || null;
+
+const getResolutionPayload = (item: ExceptionItem): { nextTaskStatus?: TaskStatus; resolutionNote?: string } => {
+    if (item.taskStatus === 'assigned') {
+        return { nextTaskStatus: 'acknowledged', resolutionNote: 'Acuse desde ActionCenter' };
+    }
+    if (item.taskStatus === 'blocked') {
+        return { nextTaskStatus: 'in_progress', resolutionNote: 'Desbloqueada desde ActionCenter' };
+    }
+    if (item.reportId) {
+        return { resolutionNote: 'Resuelta desde ActionCenter' };
+    }
+    return {};
+};
+
+const getAssignableRolesForException = (item: ExceptionItem): TaskRole[] => {
+    if (item.taskRole) {
+        return item.taskRole === 'Admin' ? ['Admin'] : [item.taskRole, 'Admin'];
+    }
+    if (item.scope === 'Caja' || item.scope === 'Cobro' || item.scope === 'Credito') {
+        return ['Cajero', 'Admin'];
+    }
+    if (item.scope === 'Activo') {
+        return ['Admin'];
+    }
+    return ['Admin', 'Empacador', 'Repartidor'];
+};
+
+const buildAssigneeOptions = (item: ExceptionItem, employees: Employee[], staffPresence: PresenceRosterLike[]) => {
+    const allowedRoles = new Set(getAssignableRolesForException(item));
+    const presenceByEmployeeId = new Map<string, PresenceRosterLike>();
+
+    staffPresence.forEach((entry) => {
+        if (!entry.employeeId) return;
+        const current = presenceByEmployeeId.get(entry.employeeId);
+        const currentTimestamp = current?.lastSeenAt ? new Date(current.lastSeenAt).getTime() : 0;
+        const nextTimestamp = entry.lastSeenAt ? new Date(entry.lastSeenAt).getTime() : 0;
+        if (!current || nextTimestamp >= currentTimestamp) {
+            presenceByEmployeeId.set(entry.employeeId, entry);
+        }
+    });
+
+    return employees
+        .filter((employee) => allowedRoles.has(employee.role as TaskRole))
+        .map((employee) => {
+            const presence = presenceByEmployeeId.get(employee.id);
+            return {
+                employeeId: employee.id,
+                name: employee.name,
+                role: employee.role,
+                status: presence?.status || 'offline',
+                lastSeenAt: toDate(presence?.lastSeenAt),
+            } satisfies AssigneeOption;
+        })
+        .sort((left, right) => {
+            const statusDelta = presenceStatusRank[left.status] - presenceStatusRank[right.status];
+            if (statusDelta !== 0) return statusDelta;
+            const leftRecent = left.lastSeenAt?.getTime() || 0;
+            const rightRecent = right.lastSeenAt?.getTime() || 0;
+            if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+            return left.name.localeCompare(right.name, 'es');
+        });
+};
 
 const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<string, PresenceEntry>) =>
     tasks
@@ -720,6 +966,15 @@ const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<s
                     timestamp: latestReport?.createdAt || task.blockedAt || task.updatedAt || task.timestamp,
                     targetView: task.targetView,
                     ctaText: task.ctaText,
+                    taskId: task.id,
+                    saleId: task.saleId,
+                    reportId: latestReport?.id,
+                    employeeId: task.employeeId,
+                    employeeName: task.assigneeName || task.ownerName,
+                    taskRole: task.role,
+                    taskStatus: task.status,
+                    exceptionKind: latestReport?.id ? 'task_report' : 'task_blocked',
+                    exceptionSeverity: 'critical',
                 } satisfies ExceptionItem;
             }
 
@@ -737,6 +992,15 @@ const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<s
                     timestamp: task.blockedAt || latestReport?.createdAt || task.updatedAt || task.timestamp,
                     targetView: task.targetView,
                     ctaText: task.ctaText,
+                    taskId: task.id,
+                    saleId: task.saleId,
+                    reportId: latestReport?.id,
+                    employeeId: task.employeeId,
+                    employeeName: task.assigneeName || task.ownerName,
+                    taskRole: task.role,
+                    taskStatus: task.status,
+                    exceptionKind: 'task_blocked',
+                    exceptionSeverity: 'high',
                 } satisfies ExceptionItem;
             }
 
@@ -755,6 +1019,14 @@ const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<s
                     timestamp: task.createdAt || task.timestamp,
                     targetView: task.targetView,
                     ctaText: task.ctaText,
+                    taskId: task.id,
+                    saleId: task.saleId,
+                    employeeId: task.employeeId,
+                    employeeName: task.assigneeName || task.ownerName,
+                    taskRole: task.role,
+                    taskStatus: task.status,
+                    exceptionKind: 'sla',
+                    exceptionSeverity: ageMinutes >= 45 ? 'critical' : 'high',
                 } satisfies ExceptionItem;
             }
 
@@ -775,6 +1047,15 @@ const buildOperationalExceptionItems = (tasks: QueueTask[], presenceIndex: Map<s
                     timestamp: latestReport.createdAt || task.updatedAt || task.timestamp,
                     targetView: task.targetView,
                     ctaText: task.ctaText,
+                    taskId: task.id,
+                    saleId: task.saleId,
+                    reportId: latestReport.id,
+                    employeeId: task.employeeId,
+                    employeeName: task.assigneeName || task.ownerName,
+                    taskRole: task.role,
+                    taskStatus: task.status,
+                    exceptionKind: 'task_report',
+                    exceptionSeverity: latestReport.kind === 'blocker' ? 'high' : 'normal',
                 } satisfies ExceptionItem;
             }
 
@@ -823,6 +1104,9 @@ const buildCashExceptionItems = ({
                 timestamp: toDate(lastActivity?.timestamp) || lastOpened || now,
                 targetView: 'finances',
                 ctaText: 'Abrir caja',
+                drawerId: drawer.id,
+                exceptionKind: 'cash_drawer',
+                exceptionSeverity: 'critical',
             });
         }
 
@@ -840,6 +1124,9 @@ const buildCashExceptionItems = ({
                 timestamp: lastOpened || now,
                 targetView: 'finances',
                 ctaText: 'Revisar corte',
+                drawerId: drawer.id,
+                exceptionKind: 'cash_drawer',
+                exceptionSeverity: 'high',
             });
         }
 
@@ -857,6 +1144,9 @@ const buildCashExceptionItems = ({
                 timestamp: toDate(lastActivity?.timestamp) || lastOpened || now,
                 targetView: 'finances',
                 ctaText: 'Ver caja',
+                drawerId: drawer.id,
+                exceptionKind: 'cash_drawer',
+                exceptionSeverity: 'normal',
             });
         }
     });
@@ -887,6 +1177,8 @@ const buildCashExceptionItems = ({
                 .sort((left, right) => right.getTime() - left.getTime())[0] || now,
             targetView: 'finances',
             ctaText: 'Abrir finanzas',
+            exceptionKind: 'other',
+            exceptionSeverity: delivered > 0 ? 'high' : 'normal',
         });
     }
 
@@ -931,6 +1223,8 @@ const buildCashExceptionItems = ({
                 timestamp: debt.lastTimestamp,
                 targetView: 'finances',
                 ctaText: 'Ver cartera',
+                exceptionKind: 'other',
+                exceptionSeverity: debt.oldestAge >= 7 ? 'high' : 'normal',
             });
         });
 
@@ -955,6 +1249,8 @@ const buildCashExceptionItems = ({
                 .sort((left, right) => right.getTime() - left.getTime())[0] || now,
             targetView: 'customers',
             ctaText: 'Ver clientes',
+            exceptionKind: 'other',
+            exceptionSeverity: 'normal',
         });
     }
 
@@ -977,6 +1273,8 @@ const buildCashExceptionItems = ({
                 timestamp,
                 targetView: 'customers',
                 ctaText: 'Ver clientes',
+                exceptionKind: 'other',
+                exceptionSeverity: 'high',
             });
         });
 
@@ -1001,6 +1299,8 @@ const buildCashExceptionItems = ({
                 timestamp,
                 targetView: 'finances',
                 ctaText: 'Revisar caja',
+                exceptionKind: 'cash_drawer',
+                exceptionSeverity: Math.abs(difference) >= 1000 ? 'critical' : 'high',
             });
         });
 
@@ -1045,6 +1345,8 @@ const buildTaskFromSale = (sale: Sale) => {
         id: `sale_fallback_${sale.id}_${stage}`,
         source: 'fallback',
         saleId: sale.id,
+        employeeId: sale.assignedEmployeeId || null,
+        role: inferTaskRoleFromStage(stage),
         stage,
         status,
         title: stage === 'packing' ? 'Empaque pendiente' : stage === 'assignment' ? 'Asignar ruta' : 'Entrega en curso',
@@ -1105,6 +1407,7 @@ const buildTaskFromAssignment = (input: unknown, sales: Sale[], index: number): 
         (status === 'acknowledged' || status === 'in_progress' ? timestamp : undefined);
     const blockedAt = readDate(sources, ['blockedAt', 'holdAt']) || (status === 'blocked' ? updatedAt : undefined);
     const blockedReason = status === 'blocked' ? readString(sources, ['blockedReason', 'blockReason', 'issue', 'holdReason']) : undefined;
+    const employeeId = readString(sources, ['employeeId', 'assigneeId', 'driverId', 'ownerId']) || sale?.assignedEmployeeId || null;
     const assigneeName = readString(sources, ['assigneeName', 'employeeName', 'driverName', 'ownerName']);
     const ownerName = readString(sources, ['ownerName', 'resolverName']) || assigneeName;
     const reports = buildTaskReports(sources, ownerName || assigneeName, blockedReason, blockedAt);
@@ -1121,6 +1424,8 @@ const buildTaskFromAssignment = (input: unknown, sales: Sale[], index: number): 
         id: readString(sources, ['id']) || `task_${index}`,
         source: 'assignment',
         saleId,
+        employeeId,
+        role: toTaskRole(readString(sources, ['role', 'taskRole', 'assignedRole'])) || inferTaskRoleFromStage(stage),
         stage,
         status,
         title,
@@ -1291,7 +1596,37 @@ const exceptionScopeToneMap: Record<ExceptionScope, string> = {
     Activo: 'border-orange-400/20 bg-orange-400/10 text-orange-100',
 };
 
-const ExceptionRow: React.FC<{ item: ExceptionItem; onOpen: (item: ExceptionItem) => void }> = ({ item, onOpen }) => (
+const ExceptionRow: React.FC<{
+    item: ExceptionItem;
+    onOpen: (item: ExceptionItem) => void;
+    onResolve: (item: ExceptionItem) => void;
+    onStartReassign: (item: ExceptionItem) => void;
+    onCancelReassign: () => void;
+    onConfirmReassign: (item: ExceptionItem) => void;
+    onSelectAssignee: (itemId: string, employeeId: string) => void;
+    assigneeOptions: AssigneeOption[];
+    selectedAssigneeId?: string;
+    isReassigning: boolean;
+    isResolving: boolean;
+    isSubmittingReassign: boolean;
+    canResolve: boolean;
+    canReassign: boolean;
+}> = ({
+    item,
+    onOpen,
+    onResolve,
+    onStartReassign,
+    onCancelReassign,
+    onConfirmReassign,
+    onSelectAssignee,
+    assigneeOptions,
+    selectedAssigneeId,
+    isReassigning,
+    isResolving,
+    isSubmittingReassign,
+    canResolve,
+    canReassign,
+}) => (
     <div className={`rounded-[1.5rem] border px-4 py-3 ${item.tone}`}>
         <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-current/15 bg-black/10">
@@ -1309,6 +1644,47 @@ const ExceptionRow: React.FC<{ item: ExceptionItem; onOpen: (item: ExceptionItem
                 <p className="mt-2 text-sm font-black text-current">{item.title}</p>
                 <p className="mt-1 text-sm leading-5 text-current/90">{item.detail}</p>
                 {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/75">{item.meta}</p>}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                        onClick={() => onResolve(item)}
+                        disabled={!canResolve || isResolving}
+                        className="inline-flex items-center justify-center rounded-2xl border border-current/15 bg-black/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        {isResolving ? '...' : 'Resolver'}
+                    </button>
+                    <button
+                        onClick={() => (isReassigning ? onCancelReassign() : onStartReassign(item))}
+                        disabled={!canReassign || isSubmittingReassign}
+                        className="inline-flex items-center justify-center rounded-2xl border border-current/15 bg-black/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        {isReassigning ? 'Cerrar' : 'Mover'}
+                    </button>
+                </div>
+
+                {isReassigning && (
+                    <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-current/15 bg-black/10 p-3 md:flex-row">
+                        <select
+                            value={selectedAssigneeId || ''}
+                            onChange={(event) => onSelectAssignee(item.id, event.target.value)}
+                            className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-current/30"
+                        >
+                            <option value="">Asignar...</option>
+                            {assigneeOptions.map((option) => (
+                                <option key={option.employeeId} value={option.employeeId}>
+                                    {option.name} · {option.role} · {option.status}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => onConfirmReassign(item)}
+                            disabled={!selectedAssigneeId || isSubmittingReassign}
+                            className="inline-flex items-center justify-center rounded-2xl bg-black/20 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            {isSubmittingReassign ? '...' : 'Confirmar'}
+                        </button>
+                    </div>
+                )}
             </div>
             <button
                 onClick={() => onOpen(item)}
@@ -1323,18 +1699,34 @@ const ExceptionRow: React.FC<{ item: ExceptionItem; onOpen: (item: ExceptionItem
 const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
     const {
         actionItems,
+        employees,
         sales,
         setCurrentView,
         taskReports,
         activities,
         activityLog,
         currentRole,
+        operationalExceptions,
+        reassignTask,
+        resolveException,
+        staffPresence,
         cashDrawers,
         cashDrawerActivities,
         crateLoans,
         crateTypes,
     } = data;
+    const [activeReassignId, setActiveReassignId] = useState<string | null>(null);
+    const [selectedAssignees, setSelectedAssignees] = useState<Record<string, string>>({});
+    const [pendingAction, setPendingAction] = useState<{ itemId: string; kind: 'resolve' | 'reassign' } | null>(null);
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
+    const exceptionRecords = useMemo(
+        () => (Array.isArray(operationalExceptions) ? (operationalExceptions as OperationalException[]) : []),
+        [operationalExceptions],
+    );
+    const staffPresenceRoster = useMemo(
+        () => (Array.isArray(staffPresence) ? (staffPresence as PresenceRosterLike[]) : []),
+        [staffPresence],
+    );
     const externalTaskReports = useMemo(() => buildExternalTaskReportIndex(taskReports), [taskReports]);
     const presenceIndex = useMemo(() => buildPresenceIndex(activities, activityLog, taskReports), [activities, activityLog, taskReports]);
 
@@ -1406,6 +1798,25 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
         () => buildOperationalExceptionItems(queueTasks, presenceIndex),
         [presenceIndex, queueTasks],
     );
+    const runtimeExceptionItems = useMemo(
+        () =>
+            buildRuntimeExceptionItems(exceptionRecords).map<ExceptionItem>((item) => {
+                const linkedTask =
+                    (item.taskId ? queueTasks.find((task) => task.id === item.taskId) : undefined)
+                    || (item.reportId ? queueTasks.find((task) => task.reports.some((report) => report.id === item.reportId)) : undefined);
+                if (!linkedTask) return item;
+
+                return {
+                    ...item,
+                    saleId: item.saleId || linkedTask.saleId,
+                    employeeId: item.employeeId ?? linkedTask.employeeId,
+                    employeeName: item.employeeName ?? linkedTask.assigneeName ?? linkedTask.ownerName,
+                    taskRole: item.taskRole || linkedTask.role,
+                    taskStatus: item.taskStatus || linkedTask.status,
+                };
+            }),
+        [exceptionRecords, queueTasks],
+    );
     const cashExceptionItems = useMemo(
         () =>
             buildCashExceptionItems({
@@ -1421,10 +1832,13 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
     const isAdminOrCashier = currentRole === 'Admin' || currentRole === 'Cajero';
     const exceptionQueue = useMemo(
         () =>
-            (isAdminOrCashier ? [...operationalExceptionItems, ...cashExceptionItems] : operationalExceptionItems)
+            dedupeExceptionItems([
+                ...runtimeExceptionItems,
+                ...(isAdminOrCashier ? [...operationalExceptionItems, ...cashExceptionItems] : operationalExceptionItems),
+            ])
                 .sort(compareExceptionItems)
                 .slice(0, 8),
-        [cashExceptionItems, isAdminOrCashier, operationalExceptionItems],
+        [cashExceptionItems, isAdminOrCashier, operationalExceptionItems, runtimeExceptionItems],
     );
     const cashPulse = useMemo(() => {
         const openDrawers = cashDrawers.filter((drawer) => drawer.status === 'Abierta');
@@ -1465,6 +1879,22 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
         () => actionItems.filter((item) => item.type !== 'PACK_ORDER' && item.type !== 'ASSIGN_DELIVERY'),
         [actionItems],
     );
+    const assigneeOptionsByExceptionId = useMemo(
+        () =>
+            exceptionQueue.reduce<Record<string, AssigneeOption[]>>((accumulator, item) => {
+                accumulator[item.id] = item.taskId ? buildAssigneeOptions(item, employees, staffPresenceRoster) : [];
+                return accumulator;
+            }, {}),
+        [employees, exceptionQueue, staffPresenceRoster],
+    );
+    const exceptionRecordByItemId = useMemo(
+        () =>
+            exceptionQueue.reduce<Record<string, OperationalException | null>>((accumulator, item) => {
+                accumulator[item.id] = findOperationalExceptionRecord(item, exceptionRecords);
+                return accumulator;
+            }, {}),
+        [exceptionQueue, exceptionRecords],
+    );
 
     const handleTaskOpen = (task: QueueTask) => {
         setCurrentView(task.targetView);
@@ -1476,6 +1906,54 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
 
     const handleExceptionOpen = (item: ExceptionItem) => {
         setCurrentView(item.targetView);
+    };
+
+    const handleExceptionResolve = async (item: ExceptionItem) => {
+        const exceptionRecord = exceptionRecordByItemId[item.id] || buildExceptionStub(item);
+        const resolution = getResolutionPayload(item);
+        setPendingAction({ itemId: item.id, kind: 'resolve' });
+        try {
+            await resolveException(exceptionRecord, resolution);
+        } finally {
+            setPendingAction((current) => (current?.itemId === item.id && current.kind === 'resolve' ? null : current));
+        }
+    };
+
+    const handleExceptionReassignStart = (item: ExceptionItem) => {
+        const options = assigneeOptionsByExceptionId[item.id] || [];
+        const fallbackAssignee =
+            options.find((option) => option.employeeId !== item.employeeId)
+            || options[0];
+
+        setActiveReassignId(item.id);
+        setSelectedAssignees((current) => ({
+            ...current,
+            [item.id]: current[item.id] || fallbackAssignee?.employeeId || '',
+        }));
+    };
+
+    const handleExceptionReassignCancel = () => {
+        setActiveReassignId(null);
+    };
+
+    const handleExceptionReassignConfirm = async (item: ExceptionItem) => {
+        if (!item.taskId) return;
+        const selectedEmployeeId = selectedAssignees[item.id];
+        const assignee = (assigneeOptionsByExceptionId[item.id] || []).find((option) => option.employeeId === selectedEmployeeId);
+        if (!assignee) return;
+
+        setPendingAction({ itemId: item.id, kind: 'reassign' });
+        try {
+            const exceptionRecord = exceptionRecordByItemId[item.id] || buildExceptionStub(item);
+            await reassignTask(item.taskId, {
+                employeeId: assignee.employeeId,
+                employeeName: assignee.name,
+                reason: 'Reasignada desde ActionCenter',
+            }, exceptionRecord);
+            setActiveReassignId((current) => (current === item.id ? null : current));
+        } finally {
+            setPendingAction((current) => (current?.itemId === item.id && current.kind === 'reassign' ? null : current));
+        }
     };
 
     if (queueTasks.length === 0 && secondaryActionItems.length === 0 && exceptionQueue.length === 0) {
@@ -1578,7 +2056,27 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
 
                     <div className="mt-4 space-y-3">
                         {exceptionQueue.length > 0 ? (
-                            exceptionQueue.map((item) => <ExceptionRow key={item.id} item={item} onOpen={handleExceptionOpen} />)
+                            exceptionQueue.map((item) => (
+                                <ExceptionRow
+                                    key={item.id}
+                                    item={item}
+                                    onOpen={handleExceptionOpen}
+                                    onResolve={handleExceptionResolve}
+                                    onStartReassign={handleExceptionReassignStart}
+                                    onCancelReassign={handleExceptionReassignCancel}
+                                    onConfirmReassign={handleExceptionReassignConfirm}
+                                    onSelectAssignee={(itemId, employeeId) =>
+                                        setSelectedAssignees((current) => ({ ...current, [itemId]: employeeId }))
+                                    }
+                                    assigneeOptions={assigneeOptionsByExceptionId[item.id] || []}
+                                    selectedAssigneeId={selectedAssignees[item.id]}
+                                    isReassigning={activeReassignId === item.id}
+                                    isResolving={pendingAction?.itemId === item.id && pendingAction.kind === 'resolve'}
+                                    isSubmittingReassign={pendingAction?.itemId === item.id && pendingAction.kind === 'reassign'}
+                                    canResolve={Boolean(item.taskId || item.reportId || exceptionRecordByItemId[item.id])}
+                                    canReassign={Boolean(item.taskId && (assigneeOptionsByExceptionId[item.id] || []).length > 0)}
+                                />
+                            ))
                         ) : (
                             <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center">
                                 <p className="text-sm font-semibold text-white">Sin excepciones activas.</p>

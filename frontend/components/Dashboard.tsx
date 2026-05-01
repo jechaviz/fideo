@@ -49,6 +49,10 @@ type StaffPresenceItem = {
     lastSeenLabel: string;
     taskCount: number;
     exceptionCount: number;
+    employeeId?: string;
+    pushLabel?: string;
+    pushTone?: string;
+    deviceLabel?: string;
 };
 
 type LiveActivityItem = {
@@ -72,6 +76,39 @@ type AttentionItem = {
     timestamp: Date;
 };
 
+type RuntimePresenceEntry = {
+    id: string;
+    name: string;
+    role: string;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    status?: string | null;
+    lastSeenAt?: Date;
+    deviceName?: string | null;
+    platform?: string | null;
+    pushExternalId?: string | null;
+};
+
+type RuntimeExceptionEntry = {
+    id: string;
+    kind: string;
+    severity: string;
+    status: string;
+    title: string;
+    summary: string;
+    detail?: string;
+    createdAt: Date;
+    updatedAt?: Date;
+    lastSeenAt?: Date;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    customerName?: string | null;
+    role?: string | null;
+    taskId?: string | null;
+    escalationStatus?: string | null;
+    drawerName?: string | null;
+};
+
 type ExternalTaskReportIndex = {
     byTaskId: Map<string, TaskReport[]>;
     bySaleId: Map<string, TaskReport[]>;
@@ -85,7 +122,9 @@ type DashboardTask = {
     status: OperationalTaskStatus;
     title: string;
     customerName?: string;
+    employeeId?: string;
     assigneeName?: string;
+    ownerEmployeeId?: string;
     ownerName?: string;
     blockedReason?: string;
     timestamp: Date;
@@ -207,6 +246,99 @@ const formatAgeCompact = (timestamp?: Date) => {
     const elapsedHours = Math.floor(elapsedMinutes / 60);
     if (elapsedHours < 24) return `${elapsedHours}h`;
     return `${Math.floor(elapsedHours / 24)}d`;
+};
+
+const normalizeRuntimePresenceEntry = (input: unknown): RuntimePresenceEntry | null => {
+    const record = asRecord(input);
+    if (!record) return null;
+
+    const sources = [record, asRecord(record.meta)];
+    const name =
+        readString(sources, ['employeeName', 'name'])
+        || readString(sources, ['employeeId'])
+        || readString(sources, ['id']);
+    if (!name) return null;
+
+    return {
+        id: readString(sources, ['id']) || `presence_${normalizeNameKey(name)}`,
+        name,
+        role: readString(sources, ['role']) || 'Admin',
+        employeeId: readString(sources, ['employeeId']) || null,
+        employeeName: readString(sources, ['employeeName']) || null,
+        status: readString(sources, ['status']) || null,
+        lastSeenAt: readDate(sources, ['lastSeenAt', 'updatedAt', 'createdAt', 'timestamp']),
+        deviceName: readString(sources, ['deviceName']) || null,
+        platform: readString(sources, ['platform']) || null,
+        pushExternalId: readString(sources, ['pushExternalId']) || null,
+    };
+};
+
+const normalizeRuntimeExceptionEntry = (input: unknown): RuntimeExceptionEntry | null => {
+    const record = asRecord(input);
+    if (!record) return null;
+
+    const sources = [record, asRecord(record.meta)];
+    const title =
+        readString(sources, ['title', 'summary'])
+        || readString(sources, ['kind'])
+        || 'Excepcion';
+    const summary =
+        readString(sources, ['summary', 'title'])
+        || readString(sources, ['detail'])
+        || title;
+    const createdAt = readDate(sources, ['createdAt', 'updatedAt', 'lastSeenAt', 'timestamp']) || new Date();
+
+    return {
+        id: readString(sources, ['id']) || `exception_${createdAt.getTime()}`,
+        kind: readString(sources, ['kind']) || 'runtime',
+        severity: readString(sources, ['severity']) || 'medium',
+        status: readString(sources, ['status']) || 'open',
+        title,
+        summary,
+        detail: readString(sources, ['detail']),
+        createdAt,
+        updatedAt: readDate(sources, ['updatedAt']) || undefined,
+        lastSeenAt: readDate(sources, ['lastSeenAt']) || undefined,
+        employeeId: readString(sources, ['employeeId']) || null,
+        employeeName: readString(sources, ['employeeName']) || null,
+        customerName: readString(sources, ['customerName']) || null,
+        role: readString(sources, ['role']) || null,
+        taskId: readString(sources, ['taskId']) || null,
+        escalationStatus: readString(sources, ['escalationStatus']) || null,
+        drawerName: readString(sources, ['drawerName']) || null,
+    };
+};
+
+const isRuntimeExceptionOpen = (exception: RuntimeExceptionEntry) => !['resolved', 'closed', 'done', 'dismissed'].includes(exception.status.toLowerCase());
+
+const isRuntimeExceptionCritical = (exception: RuntimeExceptionEntry) => {
+    const severity = exception.severity.toLowerCase();
+    const kind = exception.kind.toLowerCase();
+    return (
+        severity === 'critical'
+        || severity === 'high'
+        || exception.status.toLowerCase() === 'blocked'
+        || exception.escalationStatus === 'pending'
+        || /block|cash|drawer|offline|stale|incident/.test(kind)
+    );
+};
+
+const buildRuntimeExceptionLabel = (exception: RuntimeExceptionEntry) => {
+    const kind = exception.kind.toLowerCase();
+    if (exception.escalationStatus === 'pending' || /escal/.test(kind)) return 'Escalada';
+    if (/ack|acuse/.test(kind) || /sin acuse/i.test(`${exception.title} ${exception.summary}`)) return 'Sin acuse';
+    if (/cash|drawer|caja/.test(kind)) return 'Caja';
+    if (/offline|presence|stale/.test(kind)) return 'Staff';
+    if (/block|incident/.test(kind) || exception.status.toLowerCase() === 'blocked') return 'Bloqueo';
+    return 'Abierta';
+};
+
+const buildRuntimeExceptionTone = (exception: RuntimeExceptionEntry) => {
+    const label = buildRuntimeExceptionLabel(exception);
+    if (label === 'Escalada' || label === 'Bloqueo') return 'border-rose-400/20 bg-rose-400/10 text-rose-50';
+    if (label === 'Caja' || label === 'Sin acuse') return 'border-amber-400/20 bg-amber-400/10 text-amber-50';
+    if (label === 'Staff') return 'border-sky-400/20 bg-sky-400/10 text-sky-50';
+    return 'border-white/10 bg-white/[0.03] text-slate-200';
 };
 
 const normalizeReportKind = (value: unknown, summary = ''): TaskReportKind => {
@@ -468,7 +600,108 @@ const buildStaffPresenceRoster = (
     employees: BusinessData['employees'],
     tasks: DashboardTask[],
     presenceIndex: Map<string, PresenceEntry>,
-) => {
+    runtimePresence: RuntimePresenceEntry[],
+    runtimeExceptions: RuntimeExceptionEntry[],
+): StaffPresenceItem[] => {
+    const statsByEmployeeId = new Map<string, { taskCount: number; exceptionCount: number }>();
+    const statsByName = new Map<string, { taskCount: number; exceptionCount: number }>();
+    const updateStats = (employeeId: string | undefined, name: string | undefined, taskDelta: number, exceptionDelta: number) => {
+        if (employeeId) {
+            const current = statsByEmployeeId.get(employeeId) || { taskCount: 0, exceptionCount: 0 };
+            current.taskCount += taskDelta;
+            current.exceptionCount += exceptionDelta;
+            statsByEmployeeId.set(employeeId, current);
+        }
+
+        const normalizedName = normalizeNameKey(name);
+        if (!normalizedName) return;
+        const current = statsByName.get(normalizedName) || { taskCount: 0, exceptionCount: 0 };
+        current.taskCount += taskDelta;
+        current.exceptionCount += exceptionDelta;
+        statsByName.set(normalizedName, current);
+    };
+
+    tasks.forEach((task) => {
+        const hasException =
+            task.status === 'blocked' ||
+            task.signals.some((signal) => signal.id === 'no_ack' || signal.id === 'escalation') ||
+            task.reports.some((report) => report.kind === 'blocker' || report.kind === 'escalation');
+        updateStats(task.employeeId || task.ownerEmployeeId || undefined, task.assigneeName || task.ownerName, 1, hasException ? 1 : 0);
+    });
+
+    runtimeExceptions.filter(isRuntimeExceptionOpen).forEach((exception) => {
+        updateStats(exception.employeeId || undefined, exception.employeeName || undefined, 0, 1);
+    });
+
+    const resolveStats = (employeeId?: string | null, name?: string | null) => {
+        if (employeeId && statsByEmployeeId.has(employeeId)) {
+            return statsByEmployeeId.get(employeeId) || { taskCount: 0, exceptionCount: 0 };
+        }
+        const normalizedName = normalizeNameKey(name);
+        if (normalizedName && statsByName.has(normalizedName)) {
+            return statsByName.get(normalizedName) || { taskCount: 0, exceptionCount: 0 };
+        }
+        return { taskCount: 0, exceptionCount: 0 };
+    };
+
+    const stateRank: Record<StaffPresenceState, number> = {
+        active: 0,
+        recent: 1,
+        inactive: 2,
+    };
+
+    if (runtimePresence.length > 0) {
+        return runtimePresence
+            .map((entry) => {
+                const ageMinutes = getAgeMinutes(entry.lastSeenAt);
+                const taskStats = resolveStats(entry.employeeId, entry.employeeName || entry.name);
+
+                let state: StaffPresenceState = 'inactive';
+                if (entry.status === 'active' || entry.status === 'background') state = 'active';
+                else if (entry.status === 'idle') state = 'recent';
+                else if (typeof ageMinutes === 'number' && ageMinutes <= 20) state = 'active';
+                else if (typeof ageMinutes === 'number' && ageMinutes <= 120) state = 'recent';
+
+                const stateLabel = state === 'active' ? 'Activo' : state === 'recent' ? 'Reciente' : 'Sin senal';
+                const stateTone =
+                    state === 'active'
+                        ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
+                        : state === 'recent'
+                          ? 'border-sky-400/20 bg-sky-400/10 text-sky-100'
+                          : 'border-white/10 bg-white/[0.04] text-slate-300';
+                const dotTone = state === 'active' ? 'bg-emerald-300' : state === 'recent' ? 'bg-sky-300' : 'bg-slate-500';
+                const deviceLabel = [entry.deviceName, entry.platform].filter(Boolean).join(' / ') || undefined;
+                const pushTone = entry.pushExternalId
+                    ? 'border-brand-400/20 bg-brand-400/10 text-brand-100'
+                    : taskStats.taskCount > 0 || taskStats.exceptionCount > 0
+                      ? 'border-amber-400/20 bg-amber-400/10 text-amber-100'
+                      : undefined;
+
+                return {
+                    id: entry.id,
+                    name: entry.employeeName || entry.name,
+                    roleLabel: roleLabelMap[entry.role] || entry.role || 'Staff',
+                    state,
+                    stateLabel,
+                    stateTone,
+                    dotTone,
+                    lastSeenLabel: entry.lastSeenAt ? `Ult. ${formatAgeCompact(entry.lastSeenAt) || 'ahora'}` : 'Sin senal',
+                    taskCount: taskStats.taskCount,
+                    exceptionCount: taskStats.exceptionCount,
+                    employeeId: entry.employeeId || undefined,
+                    pushLabel: entry.pushExternalId ? 'Push' : pushTone ? 'Sin push' : undefined,
+                    pushTone,
+                    deviceLabel,
+                } satisfies StaffPresenceItem;
+            })
+            .sort((left, right) => {
+                if (stateRank[left.state] !== stateRank[right.state]) return stateRank[left.state] - stateRank[right.state];
+                if (right.exceptionCount !== left.exceptionCount) return right.exceptionCount - left.exceptionCount;
+                if (right.taskCount !== left.taskCount) return right.taskCount - left.taskCount;
+                return left.name.localeCompare(right.name, 'es-MX');
+            });
+    }
+
     const displayNameByKey = new Map<string, string>();
     const roleByKey = new Map<string, string>();
 
@@ -486,33 +719,11 @@ const buildStaffPresenceRoster = (
         task.reports.forEach((report) => register(report.authorName));
     });
 
-    const taskStatsByKey = new Map<string, { taskCount: number; exceptionCount: number }>();
-    tasks.forEach((task) => {
-        const key = normalizeNameKey(task.assigneeName || task.ownerName);
-        if (!key) return;
-
-        const hasException =
-            task.status === 'blocked' ||
-            task.signals.some((signal) => signal.id === 'no_ack' || signal.id === 'escalation') ||
-            task.reports.some((report) => report.kind === 'blocker' || report.kind === 'escalation');
-
-        const current = taskStatsByKey.get(key) || { taskCount: 0, exceptionCount: 0 };
-        current.taskCount += 1;
-        if (hasException) current.exceptionCount += 1;
-        taskStatsByKey.set(key, current);
-    });
-
-    const stateRank: Record<StaffPresenceState, number> = {
-        active: 0,
-        recent: 1,
-        inactive: 2,
-    };
-
     return Array.from(displayNameByKey.entries())
         .map(([key, name]) => {
             const presence = getPresenceSignal(presenceIndex, name);
             const ageMinutes = getAgeMinutes(presence?.lastSeenAt);
-            const taskStats = taskStatsByKey.get(key) || { taskCount: 0, exceptionCount: 0 };
+            const taskStats = resolveStats(undefined, key);
 
             let state: StaffPresenceState = 'inactive';
             if (typeof ageMinutes === 'number' && ageMinutes <= 20) state = 'active';
@@ -613,6 +824,66 @@ const buildAttentionItems = (tasks: DashboardTask[]) =>
         .filter((item): item is AttentionItem => item !== null)
         .sort((left, right) => left.priority - right.priority || left.timestamp.getTime() - right.timestamp.getTime())
         .slice(0, 5);
+
+const buildRuntimeAttentionItems = (exceptions: RuntimeExceptionEntry[]) =>
+    exceptions
+        .filter(isRuntimeExceptionOpen)
+        .map((exception) => {
+            const label = buildRuntimeExceptionLabel(exception);
+            const timestamp = exception.updatedAt || exception.lastSeenAt || exception.createdAt;
+            const ownerLabel =
+                exception.employeeName
+                || exception.customerName
+                || exception.drawerName
+                || (exception.role ? roleLabelMap[exception.role] || exception.role : 'Operacion');
+
+            return {
+                id: exception.id,
+                title: exception.title,
+                customerName: ownerLabel,
+                label,
+                meta: [
+                    exception.summary !== exception.title ? exception.summary : null,
+                    formatAgeCompact(timestamp),
+                ]
+                    .filter(Boolean)
+                    .join(' / '),
+                tone: buildRuntimeExceptionTone(exception),
+                priority: isRuntimeExceptionCritical(exception) ? 0 : label === 'Sin acuse' ? 1 : label === 'Staff' ? 2 : 3,
+                timestamp,
+            } satisfies AttentionItem;
+        })
+        .sort((left, right) => left.priority - right.priority || right.timestamp.getTime() - left.timestamp.getTime())
+        .slice(0, 5);
+
+const buildAttentionSummary = (
+    exceptions: RuntimeExceptionEntry[],
+    fallbackIndicators: {
+        escalated: number;
+        noAck: number;
+        blockedOwned: number;
+    },
+    fallbackPresence: {
+        inactive: number;
+    },
+) => {
+    const openExceptions = exceptions.filter(isRuntimeExceptionOpen);
+    if (!openExceptions.length) {
+        return {
+            critical: fallbackIndicators.escalated + fallbackIndicators.blockedOwned,
+            escalated: fallbackIndicators.escalated,
+            noAck: fallbackIndicators.noAck,
+            staffDown: fallbackPresence.inactive,
+        };
+    }
+
+    return {
+        critical: openExceptions.filter(isRuntimeExceptionCritical).length,
+        escalated: openExceptions.filter((exception) => exception.escalationStatus === 'pending' || /escal/i.test(exception.kind)).length,
+        noAck: openExceptions.filter((exception) => buildRuntimeExceptionLabel(exception) === 'Sin acuse').length,
+        staffDown: openExceptions.filter((exception) => buildRuntimeExceptionLabel(exception) === 'Staff').length,
+    };
+};
 
 const buildLiveActivity = (tasks: DashboardTask[], activityLog: BusinessData['activityLog']) => {
     const reportEvents = tasks.flatMap((task) =>
@@ -741,6 +1012,8 @@ const buildDashboardTask = (input: unknown, sales: Sale[]): DashboardTask | null
         (status === 'acknowledged' || status === 'in_progress' ? timestamp : undefined);
     const blockedAt = readDate(sources, ['blockedAt', 'holdAt']) || (status === 'blocked' ? updatedAt : undefined);
     const blockedReason = status === 'blocked' ? readString(sources, ['blockedReason', 'blockReason', 'issue', 'holdReason']) : undefined;
+    const employeeId = readString(sources, ['employeeId', 'assigneeId', 'assignedEmployeeId', 'driverId']);
+    const ownerEmployeeId = readString(sources, ['ownerEmployeeId', 'resolverEmployeeId', 'employeeId', 'assigneeId']);
     const assigneeName = readString(sources, ['assigneeName', 'employeeName', 'driverName', 'ownerName']);
     const ownerName = readString(sources, ['ownerName', 'resolverName']) || assigneeName;
     const reports = buildTaskReports(sources, ownerName || assigneeName, blockedReason, blockedAt);
@@ -761,7 +1034,9 @@ const buildDashboardTask = (input: unknown, sales: Sale[]): DashboardTask | null
         status,
         title,
         customerName,
+        employeeId,
         assigneeName,
+        ownerEmployeeId,
         ownerName,
         blockedReason,
         timestamp,
@@ -871,13 +1146,35 @@ const InteligenciaFideo: React.FC<{ insights: string; isLoading: boolean }> = ({
 };
 
 const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
-    const { sales, inventory, productGroups, theme, taskReports, activities, activityLog, employees } = data;
+    const {
+        sales,
+        inventory,
+        productGroups,
+        theme,
+        taskReports,
+        activities,
+        activityLog,
+        employees,
+        staffPresence: runtimePresenceRaw,
+        exceptionInbox: runtimeExceptionRaw,
+    } = data as BusinessData & {
+        staffPresence?: unknown[];
+        exceptionInbox?: unknown[];
+    };
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
     const isDark = theme === 'dark';
     const [insights, setInsights] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const externalTaskReports = useMemo(() => buildExternalTaskReportIndex(taskReports), [taskReports]);
     const presenceIndex = useMemo(() => buildPresenceIndex(activities, activityLog, taskReports), [activities, activityLog, taskReports]);
+    const runtimePresence = useMemo(
+        () => (Array.isArray(runtimePresenceRaw) ? runtimePresenceRaw.map((entry) => normalizeRuntimePresenceEntry(entry)).filter((entry): entry is RuntimePresenceEntry => Boolean(entry)) : []),
+        [runtimePresenceRaw],
+    );
+    const runtimeExceptions = useMemo(
+        () => (Array.isArray(runtimeExceptionRaw) ? runtimeExceptionRaw.map((entry) => normalizeRuntimeExceptionEntry(entry)).filter((entry): entry is RuntimeExceptionEntry => Boolean(entry)) : []),
+        [runtimeExceptionRaw],
+    );
 
     const generateInsights = async () => {
         setIsLoading(true);
@@ -1004,15 +1301,18 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             )
             .sort((left, right) => (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
             .slice(0, 6);
-        const attentionItems = buildAttentionItems(operationalTasks);
+        const attentionItems = runtimeExceptions.length > 0 ? buildRuntimeAttentionItems(runtimeExceptions) : buildAttentionItems(operationalTasks);
         const liveActivity = buildLiveActivity(operationalTasks, activityLog);
-        const staffPresence = buildStaffPresenceRoster(employees, operationalTasks, presenceIndex);
+        const staffPresence = buildStaffPresenceRoster(employees, operationalTasks, presenceIndex, runtimePresence, runtimeExceptions);
         const presenceSummary = {
             total: staffPresence.length,
             withSignal: staffPresence.filter((item) => item.state !== 'inactive').length,
             active: staffPresence.filter((item) => item.state === 'active').length,
             inactive: staffPresence.filter((item) => item.state === 'inactive').length,
+            pushBound: staffPresence.filter((item) => item.pushLabel === 'Push').length,
+            pushMissing: staffPresence.filter((item) => item.pushLabel === 'Sin push').length,
         };
+        const attentionSummary = buildAttentionSummary(runtimeExceptions, operationalIndicators, presenceSummary);
 
         const last7Days = new Date();
         last7Days.setDate(last7Days.getDate() - 6);
@@ -1064,6 +1364,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             liveActivity,
             staffPresence,
             presenceSummary,
+            attentionSummary,
             salesByDay,
             salesCompositionData,
             top5Products,
@@ -1071,7 +1372,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             unidadesActivas,
             ventasRegistradas: todaySales.length,
         };
-    }, [activityLog, employees, externalTaskReports, inventory, presenceIndex, productGroups, sales, taskAssignments]);
+    }, [activityLog, employees, externalTaskReports, inventory, presenceIndex, productGroups, runtimeExceptions, runtimePresence, sales, taskAssignments]);
 
     const PIE_COLORS = ['#a3e635', '#38bdf8', '#f59e0b', '#22c55e', '#fb7185'];
     const axisColor = isDark ? '#94a3b8' : '#475569';
@@ -1120,21 +1421,21 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2">
+                    <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
+                        Crit {dashboardData.attentionSummary.critical}
+                    </span>
                     <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
                         Reportes {dashboardData.operationalIndicators.reported}
                     </span>
-                    <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
-                        Escaladas {dashboardData.operationalIndicators.escalated}
-                    </span>
                     <span className="inline-flex rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
-                        Sin acuse {dashboardData.operationalIndicators.noAck}
+                        Sin acuse {dashboardData.attentionSummary.noAck}
                     </span>
                     <span className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
-                        Bloqueos c/owner {dashboardData.operationalIndicators.blockedOwned}
+                        Staff off {dashboardData.attentionSummary.staffDown}
                     </span>
                     {dashboardData.presenceSummary.total > 0 && (
                         <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">
-                            Con senal {dashboardData.presenceSummary.withSignal}/{dashboardData.presenceSummary.total}
+                            Push {dashboardData.presenceSummary.pushBound}/{dashboardData.presenceSummary.total}
                         </span>
                     )}
                 </div>
@@ -1170,30 +1471,26 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
                     <div className="mb-5 flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Atencion</p>
-                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Inmediata</h2>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Excepciones</p>
+                            <h2 className="mt-2 text-xl font-black tracking-tight text-white">Vivas</h2>
                         </div>
                         <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-300">
                             {dashboardData.attentionItems.length}
                         </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-4">
-                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100">Sin acuse</p>
-                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.noAck}</p>
-                        </div>
-                        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-4">
-                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-100">Escaladas</p>
-                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.escalated}</p>
-                        </div>
-                        <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-4">
-                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-100">Bloqueos c/owner</p>
-                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.blockedOwned}</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Reportes</p>
-                            <p className="mt-2 text-2xl font-black text-white">{dashboardData.operationalIndicators.reported}</p>
-                        </div>
+                    <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
+                            Crit {dashboardData.attentionSummary.critical}
+                        </span>
+                        <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
+                            Sin acuse {dashboardData.attentionSummary.noAck}
+                        </span>
+                        <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
+                            Staff off {dashboardData.attentionSummary.staffDown}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                            Esc {dashboardData.attentionSummary.escalated}
+                        </span>
                     </div>
 
                     <div className="mt-4 space-y-3">
@@ -1233,6 +1530,14 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
                                 Sin senal {dashboardData.presenceSummary.inactive}
                             </span>
+                            <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-brand-100">
+                                Push {dashboardData.presenceSummary.pushBound}
+                            </span>
+                            {dashboardData.presenceSummary.pushMissing > 0 && (
+                                <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
+                                    Sin push {dashboardData.presenceSummary.pushMissing}
+                                </span>
+                            )}
                         </div>
                     </div>
 
@@ -1248,6 +1553,11 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                                             </div>
                                             <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{item.roleLabel}</p>
                                             <div className="mt-3 flex flex-wrap gap-2">
+                                                {item.employeeId && (
+                                                    <span className="rounded-full border border-white/10 bg-slate-950/70 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                                        {item.employeeId}
+                                                    </span>
+                                                )}
                                                 <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${item.stateTone}`}>
                                                     {item.stateLabel}
                                                 </span>
@@ -1259,6 +1569,16 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                                                 {item.exceptionCount > 0 && (
                                                     <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
                                                         {item.exceptionCount} alerta{item.exceptionCount === 1 ? '' : 's'}
+                                                    </span>
+                                                )}
+                                                {item.pushLabel && item.pushTone && (
+                                                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${item.pushTone}`}>
+                                                        {item.pushLabel}
+                                                    </span>
+                                                )}
+                                                {item.deviceLabel && (
+                                                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                                        {item.deviceLabel}
                                                     </span>
                                                 )}
                                             </div>

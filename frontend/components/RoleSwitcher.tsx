@@ -24,6 +24,9 @@ export interface ShellIdentity {
     roleLabel: string;
     employeeId: string | null;
     employeeName: string | null;
+    pushExternalId: string | null;
+    deviceLabel: string | null;
+    presenceStatus: string | null;
 }
 
 export interface ShellTaskSummary {
@@ -56,6 +59,7 @@ export interface ShellRealtimeSummary {
 }
 
 export interface ShellRuntimeSummary {
+    pushSignal: ShellStatusSignal | null;
     staffSignal: ShellStatusSignal | null;
     exceptionSignal: ShellStatusSignal | null;
     signals: ShellStatusSignal[];
@@ -291,11 +295,110 @@ const getShellExceptionSignal = (data: BusinessData): ShellStatusSignal | null =
     return buildSignal('exception_inbox', label, label, tone, tooltipParts.join(' / '));
 };
 
+const getShellPushSignal = (
+    data: BusinessData,
+    push: OneSignalPushController | null | undefined,
+    identity: ShellIdentity | null,
+): ShellStatusSignal | null => {
+    const profile = data.authProfile;
+    if (!data.authEnabled || !profile) return null;
+
+    const pushState = push?.state;
+    const expectedExternalId = normalizeText(profile.pushExternalId) || normalizeText(profile.id);
+    const currentExternalId =
+        normalizeText(pushState?.externalId)
+        || normalizeText(profile.presence?.pushExternalId)
+        || normalizeText(profile.pushExternalId);
+    const employeeId = identity?.employeeId || profile.employeeId || null;
+    const hasPushRuntime = Boolean(pushState?.configured && pushState.enabled);
+    const hasSubscription = Boolean(normalizeText(pushState?.subscriptionId));
+    const isBound = Boolean(expectedExternalId && currentExternalId && expectedExternalId === currentExternalId);
+    const expectedLabel = employeeId ? `${employeeId}` : 'usuario';
+
+    if (!hasPushRuntime) {
+        return buildSignal(
+            'push_binding',
+            'Push off',
+            'Push off',
+            'muted',
+            employeeId
+                ? `Push apagado para ${expectedLabel}.`
+                : 'Push apagado para este perfil.',
+        );
+    }
+
+    if (pushState?.initialized && !pushState.supported) {
+        return buildSignal(
+            'push_binding',
+            'Push s/soporte',
+            'Push s/soporte',
+            'warning',
+            'Este equipo no soporta push.',
+        );
+    }
+
+    if (pushState?.syncing || pushState?.prompting) {
+        return buildSignal(
+            'push_binding',
+            employeeId ? `Push ${expectedLabel}` : 'Push sync',
+            'Push sync',
+            'pending',
+            employeeId
+                ? `Cerrando binding push para ${expectedLabel}.`
+                : 'Sincronizando binding push.',
+        );
+    }
+
+    if (isBound && (hasSubscription || pushState?.optedIn || Boolean(profile.presence?.pushExternalId))) {
+        return buildSignal(
+            'push_binding',
+            employeeId ? `Push ${expectedLabel}` : 'Push ok',
+            'Push ok',
+            'live',
+            [
+                employeeId ? `Empleado ${employeeId}` : 'Perfil enlazado',
+                expectedExternalId ? `external_id ${expectedExternalId}` : null,
+                hasSubscription ? `sub ${pushState?.subscriptionId}` : null,
+            ]
+                .filter(Boolean)
+                .join(' / '),
+        );
+    }
+
+    if (currentExternalId || pushState?.optedIn) {
+        return buildSignal(
+            'push_binding',
+            'Push revisar',
+            'Push revisar',
+            'warning',
+            [
+                employeeId ? `Empleado ${employeeId}` : 'Perfil',
+                expectedExternalId ? `esperado ${expectedExternalId}` : null,
+                currentExternalId ? `actual ${currentExternalId}` : 'sin external_id',
+            ]
+                .filter(Boolean)
+                .join(' / '),
+        );
+    }
+
+    return buildSignal(
+        'push_binding',
+        employeeId ? `Push ${expectedLabel}` : 'Push listo',
+        'Push listo',
+        'muted',
+        employeeId
+            ? `Falta enlazar push para ${expectedLabel}.`
+            : 'Push disponible, aun sin enlazar.',
+    );
+};
+
 export const getShellIdentity = (data: BusinessData): ShellIdentity | null => {
     const { authProfile, workspaceLabel, currentRole } = data;
     if (!authProfile && !workspaceLabel) return null;
 
     const employee = resolveCurrentEmployee(data, authProfile);
+    const pushExternalId = authProfile?.pushExternalId || authProfile?.presence?.pushExternalId || null;
+    const deviceLabel = [authProfile?.presence?.deviceName, authProfile?.presence?.platform].filter(Boolean).join(' / ') || null;
     const primaryLabel = employee?.name || normalizeText(authProfile?.name) || normalizeText(workspaceLabel) || 'Fideo';
     const employeeId = employee?.id || authProfile?.employeeId || null;
     const roleLabel = ROLE_META[currentRole] || currentRole;
@@ -314,6 +417,9 @@ export const getShellIdentity = (data: BusinessData): ShellIdentity | null => {
         roleLabel,
         employeeId,
         employeeName: employee?.name || primaryLabel,
+        pushExternalId,
+        deviceLabel,
+        presenceStatus: authProfile?.presence?.status || null,
     };
 };
 
@@ -514,6 +620,7 @@ export const useShellStatusSummaries = (data: BusinessData, push: OneSignalPushC
     const identity = getShellIdentity(data);
     const taskSummary = getShellTaskSummary(data, identity);
     const realtimeSummary = getShellRealtimeSummary(data, push, isOnline);
+    const pushSignal = getShellPushSignal(data, push, identity);
     const staffSignal = getShellStaffSignal(data);
     const exceptionSignal = getShellExceptionSignal(data);
 
@@ -522,9 +629,10 @@ export const useShellStatusSummaries = (data: BusinessData, push: OneSignalPushC
         taskSummary,
         realtimeSummary,
         runtimeSummary: {
+            pushSignal,
             staffSignal,
             exceptionSignal,
-            signals: [exceptionSignal, staffSignal].filter((signal): signal is ShellStatusSignal => Boolean(signal)),
+            signals: [exceptionSignal, pushSignal, staffSignal].filter((signal): signal is ShellStatusSignal => Boolean(signal)),
         },
     };
 };
@@ -570,6 +678,12 @@ const RoleSwitcher: React.FC<{
     const availableRoles = canSwitchRoles ? ROLES : [currentRole];
     const portalReadOnly = isPortalOnlyProfile(authProfile);
     const shellIdentity = identity;
+    const identitySignals = [
+        runtimeSummary.exceptionSignal,
+        taskSummary?.signals[0] || null,
+        runtimeSummary.pushSignal,
+        realtimeSummary.signal,
+    ].filter((signal, index, array): signal is ShellStatusSignal => Boolean(signal) && array.findIndex((item) => item?.id === signal?.id) === index);
 
     const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setCurrentRole(e.target.value as UserRole);
@@ -592,9 +706,21 @@ const RoleSwitcher: React.FC<{
                             <p className="truncate text-[11px] font-semibold text-slate-400">
                                 {shellIdentity.secondaryLabel || workspaceLabel || 'main'}
                             </p>
-                            {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} compact />}
-                            {!realtimeSummary && runtimeSummary.signals[0] && <ShellSignalBadge signal={runtimeSummary.signals[0]} compact />}
-                            {!realtimeSummary && !runtimeSummary.signals[0] && taskSummary?.signals[0] && <ShellSignalBadge signal={taskSummary.signals[0]} compact />}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {shellIdentity.employeeId && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
+                                    Emp {shellIdentity.employeeId}
+                                </span>
+                            )}
+                            {shellIdentity.deviceLabel && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+                                    {shellIdentity.deviceLabel}
+                                </span>
+                            )}
+                            {identitySignals.slice(0, 3).map((signal) => (
+                                <ShellSignalBadge key={signal.id} signal={signal} compact />
+                            ))}
                         </div>
                     </div>
                 </div>
