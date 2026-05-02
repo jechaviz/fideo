@@ -3485,181 +3485,215 @@ routerAdd(
                 })
                 .filter((item) => !!item);
 
-        const syncNormalizedFromSnapshot = (targetWorkspaceId, sourceSnapshot) => {
+        const syncNormalizedFromSnapshot = (targetWorkspaceId, sourceSnapshot, sourcePatch) => {
             const normalizedSnapshot = toObject(sourceSnapshot);
+            const incomingPatch = toObject(sourcePatch);
+            const hasKey = (key) => Object.prototype.hasOwnProperty.call(incomingPatch, key);
 
-            replaceWorkspaceCollectionByExternalId('fideo_product_groups', targetWorkspaceId, normalizedSnapshot.productGroups, (record, item) => {
-                record.set('name', toText(item.name, ''));
-                record.set('icon', toText(item.icon, ''));
-                record.set('category', toText(item.category, ''));
-                record.set('unit', toText(item.unit, 'cajas'));
-                record.set('archived', toBoolean(item.archived));
-                record.set('varieties', toArray(item.varieties));
-            });
+            if (hasKey('productGroups')) {
+                replaceWorkspaceCollectionByExternalId('fideo_product_groups', targetWorkspaceId, normalizedSnapshot.productGroups, (record, item) => {
+                    record.set('name', toText(item.name, ''));
+                    record.set('icon', toText(item.icon, ''));
+                    record.set('category', toText(item.category, ''));
+                    record.set('unit', toText(item.unit, 'cajas'));
+                    record.set('archived', toBoolean(item.archived));
+                    record.set('varieties', toArray(item.varieties));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_warehouses', targetWorkspaceId, normalizedSnapshot.warehouses, (record, item) => {
-                record.set('name', toText(item.name, ''));
-                record.set('icon', toText(item.icon, ''));
-                record.set('archived', toBoolean(item.archived));
-            });
+            if (hasKey('warehouses')) {
+                replaceWorkspaceCollectionByExternalId('fideo_warehouses', targetWorkspaceId, normalizedSnapshot.warehouses, (record, item) => {
+                    record.set('name', toText(item.name, ''));
+                    record.set('icon', toText(item.icon, ''));
+                    record.set('archived', toBoolean(item.archived));
+                });
+            }
 
-            replaceWorkspacePriceCollection(targetWorkspaceId, normalizedSnapshot.prices);
+            if (hasKey('prices')) {
+                replaceWorkspacePriceCollection(targetWorkspaceId, normalizedSnapshot.prices);
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_inventory_batches', targetWorkspaceId, normalizedSnapshot.inventory, (record, item) => {
-                record.set('varietyId', toText(item.varietyId, ''));
-                record.set('size', toText(item.size, ''));
-                record.set('quality', toText(item.quality, ''));
-                record.set('quantity', toNumber(item.quantity, 0));
-                record.set('state', toText(item.state, ''));
-                record.set('location', toText(item.location, ''));
-                record.set('warehouseId', toText(item.warehouseId, ''));
-                record.set('packagingId', toText(item.packagingId, ''));
-                record.set('entryDate', toIsoString(item.entryDate));
-            });
+            if (hasKey('inventory')) {
+                replaceWorkspaceCollectionByExternalId('fideo_inventory_batches', targetWorkspaceId, normalizedSnapshot.inventory, (record, item) => {
+                    record.set('varietyId', toText(item.varietyId, ''));
+                    record.set('size', toText(item.size, ''));
+                    record.set('quality', toText(item.quality, ''));
+                    record.set('quantity', toNumber(item.quantity, 0));
+                    record.set('state', toText(item.state, ''));
+                    record.set('location', toText(item.location, ''));
+                    record.set('warehouseId', toText(item.warehouseId, ''));
+                    record.set('packagingId', toText(item.packagingId, ''));
+                    record.set('entryDate', toIsoString(item.entryDate));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_customers', targetWorkspaceId, normalizedSnapshot.customers, (record, item) => {
-                record.set('name', toText(item.name, ''));
-                record.set('contacts', toArray(item.contacts));
-                record.set('specialPrices', toArray(item.specialPrices));
-                record.set('schedule', item.schedule ? toObject(item.schedule) : null);
-                record.set('deliveryNotes', toText(item.deliveryNotes, ''));
-                record.set('creditStatus', toText(item.creditStatus, 'Confiable'));
-                if (item.creditLimit === undefined || item.creditLimit === null || item.creditLimit === '') {
-                    record.set('creditLimit', null);
-                } else {
-                    record.set('creditLimit', toNumber(item.creditLimit, 0));
-                }
-            });
+            if (hasKey('customers')) {
+                replaceWorkspaceCollectionByExternalId('fideo_customers', targetWorkspaceId, normalizedSnapshot.customers, (record, item) => {
+                    record.set('name', toText(item.name, ''));
+                    record.set('contacts', toArray(item.contacts));
+                    record.set('specialPrices', toArray(item.specialPrices));
+                    record.set('schedule', item.schedule ? toObject(item.schedule) : null);
+                    record.set('deliveryNotes', toText(item.deliveryNotes, ''));
+                    record.set('creditStatus', toText(item.creditStatus, 'Confiable'));
+                    if (item.creditLimit === undefined || item.creditLimit === null || item.creditLimit === '') {
+                        record.set('creditLimit', null);
+                    } else {
+                        record.set('creditLimit', toNumber(item.creditLimit, 0));
+                    }
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_suppliers', targetWorkspaceId, normalizedSnapshot.suppliers, (record, item) => {
-                record.set('name', toText(item.name, ''));
-                record.set('contact', toText(item.contact, ''));
-                record.set('supplies', toArray(item.supplies));
-            });
+            if (hasKey('suppliers')) {
+                replaceWorkspaceCollectionByExternalId('fideo_suppliers', targetWorkspaceId, normalizedSnapshot.suppliers, (record, item) => {
+                    record.set('name', toText(item.name, ''));
+                    record.set('contact', toText(item.contact, ''));
+                    record.set('supplies', toArray(item.supplies));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_purchase_orders', targetWorkspaceId, normalizedSnapshot.purchaseOrders, (record, item) => {
-                record.set('supplierId', toText(item.supplierId, ''));
-                record.set('varietyId', toText(item.varietyId, ''));
-                record.set('size', toText(item.size, ''));
-                record.set('packaging', toText(item.packaging, ''));
-                record.set('quantity', toNumber(item.quantity, 0));
-                record.set('totalCost', toNumber(item.totalCost, 0));
-                record.set('status', toText(item.status, 'Pendiente'));
-                record.set('orderDate', toIsoString(item.orderDate));
-                record.set('expectedArrivalDate', toIsoString(item.expectedArrivalDate));
-                record.set('paymentMethod', toText(item.paymentMethod, 'N/A'));
-            });
+            if (hasKey('purchaseOrders')) {
+                replaceWorkspaceCollectionByExternalId('fideo_purchase_orders', targetWorkspaceId, normalizedSnapshot.purchaseOrders, (record, item) => {
+                    record.set('supplierId', toText(item.supplierId, ''));
+                    record.set('varietyId', toText(item.varietyId, ''));
+                    record.set('size', toText(item.size, ''));
+                    record.set('packaging', toText(item.packaging, ''));
+                    record.set('quantity', toNumber(item.quantity, 0));
+                    record.set('totalCost', toNumber(item.totalCost, 0));
+                    record.set('status', toText(item.status, 'Pendiente'));
+                    record.set('orderDate', toIsoString(item.orderDate));
+                    record.set('expectedArrivalDate', toIsoString(item.expectedArrivalDate));
+                    record.set('paymentMethod', toText(item.paymentMethod, 'N/A'));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_sales', targetWorkspaceId, normalizedSnapshot.sales, (record, item) => {
-                record.set('productGroupId', toText(item.productGroupId, ''));
-                record.set('varietyId', toText(item.varietyId, ''));
-                record.set('customerId', toText(item.customerId, ''));
-                record.set('productGroupName', toText(item.productGroupName, ''));
-                record.set('varietyName', toText(item.varietyName, ''));
-                record.set('size', toText(item.size, ''));
-                record.set('quality', toText(item.quality, ''));
-                record.set('state', toText(item.state, ''));
-                record.set('quantity', toNumber(item.quantity, 0));
-                record.set('price', toNumber(item.price, 0));
-                record.set('cogs', toNumber(item.cogs, 0));
-                record.set('unit', toText(item.unit, ''));
-                record.set('customer', toText(item.customer, ''));
-                record.set('destination', toText(item.destination, ''));
-                record.set('locationQuery', toText(item.locationQuery, ''));
-                record.set('status', toText(item.status, 'Pendiente de Empaque'));
-                record.set('paymentStatus', toText(item.paymentStatus, 'Pendiente'));
-                record.set('paymentMethod', toText(item.paymentMethod, 'N/A'));
-                record.set('paymentNotes', toText(item.paymentNotes, ''));
-                record.set('assignedEmployeeId', toText(item.assignedEmployeeId, ''));
-                record.set('timestamp', toIsoString(item.timestamp));
-                record.set('deliveryDeadline', toIsoString(item.deliveryDeadline));
-            });
+            if (hasKey('sales')) {
+                replaceWorkspaceCollectionByExternalId('fideo_sales', targetWorkspaceId, normalizedSnapshot.sales, (record, item) => {
+                    record.set('productGroupId', toText(item.productGroupId, ''));
+                    record.set('varietyId', toText(item.varietyId, ''));
+                    record.set('customerId', toText(item.customerId, ''));
+                    record.set('productGroupName', toText(item.productGroupName, ''));
+                    record.set('varietyName', toText(item.varietyName, ''));
+                    record.set('size', toText(item.size, ''));
+                    record.set('quality', toText(item.quality, ''));
+                    record.set('state', toText(item.state, ''));
+                    record.set('quantity', toNumber(item.quantity, 0));
+                    record.set('price', toNumber(item.price, 0));
+                    record.set('cogs', toNumber(item.cogs, 0));
+                    record.set('unit', toText(item.unit, ''));
+                    record.set('customer', toText(item.customer, ''));
+                    record.set('destination', toText(item.destination, ''));
+                    record.set('locationQuery', toText(item.locationQuery, ''));
+                    record.set('status', toText(item.status, 'Pendiente de Empaque'));
+                    record.set('paymentStatus', toText(item.paymentStatus, 'Pendiente'));
+                    record.set('paymentMethod', toText(item.paymentMethod, 'N/A'));
+                    record.set('paymentNotes', toText(item.paymentNotes, ''));
+                    record.set('assignedEmployeeId', toText(item.assignedEmployeeId, ''));
+                    record.set('timestamp', toIsoString(item.timestamp));
+                    record.set('deliveryDeadline', toIsoString(item.deliveryDeadline));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_payments', targetWorkspaceId, normalizedSnapshot.payments, (record, item) => {
-                record.set('customerId', toText(item.customerId, ''));
-                record.set('amount', toNumber(item.amount, 0));
-                record.set('date', toIsoString(item.date));
-                record.set('saleId', toText(item.saleId, ''));
-            });
+            if (hasKey('payments')) {
+                replaceWorkspaceCollectionByExternalId('fideo_payments', targetWorkspaceId, normalizedSnapshot.payments, (record, item) => {
+                    record.set('customerId', toText(item.customerId, ''));
+                    record.set('amount', toNumber(item.amount, 0));
+                    record.set('date', toIsoString(item.date));
+                    record.set('saleId', toText(item.saleId, ''));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_crate_loans', targetWorkspaceId, normalizedSnapshot.crateLoans, (record, item) => {
-                record.set('customerId', toText(item.customerId, ''));
-                record.set('customer', toText(item.customer, ''));
-                record.set('crateTypeId', toText(item.crateTypeId, ''));
-                record.set('quantity', toNumber(item.quantity, 0));
-                record.set('timestamp', toIsoString(item.timestamp));
-                record.set('dueDate', toIsoString(item.dueDate));
-                record.set('status', toText(item.status, 'Prestado'));
-            });
+            if (hasKey('crateLoans')) {
+                replaceWorkspaceCollectionByExternalId('fideo_crate_loans', targetWorkspaceId, normalizedSnapshot.crateLoans, (record, item) => {
+                    record.set('customerId', toText(item.customerId, ''));
+                    record.set('customer', toText(item.customer, ''));
+                    record.set('crateTypeId', toText(item.crateTypeId, ''));
+                    record.set('quantity', toNumber(item.quantity, 0));
+                    record.set('timestamp', toIsoString(item.timestamp));
+                    record.set('dueDate', toIsoString(item.dueDate));
+                    record.set('status', toText(item.status, 'Prestado'));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_employee_activities', targetWorkspaceId, normalizedSnapshot.activities, (record, item) => {
-                record.set('employee', toText(item.employee, ''));
-                record.set('activity', toText(item.activity, ''));
-                record.set('timestamp', toIsoString(item.timestamp));
-            });
+            if (hasKey('activities')) {
+                replaceWorkspaceCollectionByExternalId('fideo_employee_activities', targetWorkspaceId, normalizedSnapshot.activities, (record, item) => {
+                    record.set('employee', toText(item.employee, ''));
+                    record.set('activity', toText(item.activity, ''));
+                    record.set('timestamp', toIsoString(item.timestamp));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_activity_logs', targetWorkspaceId, normalizedSnapshot.activityLog, (record, item) => {
-                const details = toObject(item.details);
-                record.set('type', toText(item.type, 'NAVEGACION'));
-                record.set('timestamp', toIsoString(item.timestamp));
-                record.set('description', toText(item.description, ''));
-                record.set('details', Object.keys(details).length > 0 ? details : null);
-            });
+            if (hasKey('activityLog')) {
+                replaceWorkspaceCollectionByExternalId('fideo_activity_logs', targetWorkspaceId, normalizedSnapshot.activityLog, (record, item) => {
+                    const details = toObject(item.details);
+                    record.set('type', toText(item.type, 'NAVEGACION'));
+                    record.set('timestamp', toIsoString(item.timestamp));
+                    record.set('description', toText(item.description, ''));
+                    record.set('details', Object.keys(details).length > 0 ? details : null);
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_cash_drawers', targetWorkspaceId, normalizedSnapshot.cashDrawers, (record, item) => {
-                record.set('name', toText(item.name, ''));
-                record.set('balance', toNumber(item.balance, 0));
-                record.set('status', toText(item.status, 'Cerrada'));
-                record.set('lastOpened', toIsoString(item.lastOpened));
-                record.set('lastClosed', toIsoString(item.lastClosed));
-            });
+            if (hasKey('cashDrawers')) {
+                replaceWorkspaceCollectionByExternalId('fideo_cash_drawers', targetWorkspaceId, normalizedSnapshot.cashDrawers, (record, item) => {
+                    record.set('name', toText(item.name, ''));
+                    record.set('balance', toNumber(item.balance, 0));
+                    record.set('status', toText(item.status, 'Cerrada'));
+                    record.set('lastOpened', toIsoString(item.lastOpened));
+                    record.set('lastClosed', toIsoString(item.lastClosed));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_cash_drawer_activities', targetWorkspaceId, normalizedSnapshot.cashDrawerActivities, (record, item) => {
-                record.set('drawerId', toText(item.drawerId, ''));
-                record.set('type', toText(item.type, 'SALDO_INICIAL'));
-                record.set('amount', toNumber(item.amount, 0));
-                record.set('timestamp', toIsoString(item.timestamp));
-                record.set('notes', toText(item.notes, ''));
-                record.set('relatedId', toText(item.relatedId, ''));
-            });
+            if (hasKey('cashDrawerActivities')) {
+                replaceWorkspaceCollectionByExternalId('fideo_cash_drawer_activities', targetWorkspaceId, normalizedSnapshot.cashDrawerActivities, (record, item) => {
+                    record.set('drawerId', toText(item.drawerId, ''));
+                    record.set('type', toText(item.type, 'SALDO_INICIAL'));
+                    record.set('amount', toNumber(item.amount, 0));
+                    record.set('timestamp', toIsoString(item.timestamp));
+                    record.set('notes', toText(item.notes, ''));
+                    record.set('relatedId', toText(item.relatedId, ''));
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(normalizedSnapshot.taskAssignments), (record, item) => {
-                const payload = toObject(item);
-                record.set('taskId', toText(item.taskId, ''));
-                record.set('employeeId', toText(item.employeeId, ''));
-                record.set('role', toText(item.role, ''));
-                record.set('status', toText(item.status, 'assigned'));
-                record.set('assignedAt', toIsoString(item.assignedAt));
-                record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
-                record.set('startedAt', toIsoString(item.startedAt));
-                record.set('blockedAt', toIsoString(item.blockedAt));
-                record.set('doneAt', toIsoString(item.doneAt));
-                record.set('blockedReason', toText(item.blockedReason, ''));
-                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
-            });
+            if (hasKey('taskAssignments')) {
+                replaceWorkspaceCollectionByExternalId('fideo_task_assignments', targetWorkspaceId, normalizeTaskAssignmentsForSync(normalizedSnapshot.taskAssignments), (record, item) => {
+                    const payload = toObject(item);
+                    record.set('taskId', toText(item.taskId, ''));
+                    record.set('employeeId', toText(item.employeeId, ''));
+                    record.set('role', toText(item.role, ''));
+                    record.set('status', toText(item.status, 'assigned'));
+                    record.set('assignedAt', toIsoString(item.assignedAt));
+                    record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+                    record.set('startedAt', toIsoString(item.startedAt));
+                    record.set('blockedAt', toIsoString(item.blockedAt));
+                    record.set('doneAt', toIsoString(item.doneAt));
+                    record.set('blockedReason', toText(item.blockedReason, ''));
+                    record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+                });
+            }
 
-            replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(normalizedSnapshot.taskReports), (record, item) => {
-                const payload = toObject(item);
-                record.set('taskId', toText(item.taskId, ''));
-                record.set('saleId', toText(item.saleId, ''));
-                record.set('role', toText(item.role, ''));
-                record.set('employeeId', toText(item.employeeId, ''));
-                record.set('employeeName', toText(item.employeeName, ''));
-                record.set('customerId', toText(item.customerId, ''));
-                record.set('customerName', toText(item.customerName, ''));
-                record.set('taskTitle', toText(item.taskTitle, ''));
-                record.set('kind', toText(item.kind, 'note'));
-                record.set('status', toText(item.status, 'resolved'));
-                record.set('severity', toText(item.severity, 'normal'));
-                record.set('summary', toText(item.summary, ''));
-                record.set('detail', toText(item.detail, ''));
-                record.set('evidence', toText(item.evidence, ''));
-                record.set('escalationStatus', toText(item.escalationStatus, 'none'));
-                record.set('createdAt', toIsoString(item.createdAt));
-                record.set('resolvedAt', toIsoString(item.resolvedAt));
-                record.set('escalatedAt', toIsoString(item.escalatedAt));
-                record.set('payload', Object.keys(payload).length > 0 ? payload : null);
-            });
+            if (hasKey('taskReports')) {
+                replaceWorkspaceCollectionByExternalId('fideo_task_reports', targetWorkspaceId, normalizeTaskReportsForSync(normalizedSnapshot.taskReports), (record, item) => {
+                    const payload = toObject(item);
+                    record.set('taskId', toText(item.taskId, ''));
+                    record.set('saleId', toText(item.saleId, ''));
+                    record.set('role', toText(item.role, ''));
+                    record.set('employeeId', toText(item.employeeId, ''));
+                    record.set('employeeName', toText(item.employeeName, ''));
+                    record.set('customerId', toText(item.customerId, ''));
+                    record.set('customerName', toText(item.customerName, ''));
+                    record.set('taskTitle', toText(item.taskTitle, ''));
+                    record.set('kind', toText(item.kind, 'note'));
+                    record.set('status', toText(item.status, 'resolved'));
+                    record.set('severity', toText(item.severity, 'normal'));
+                    record.set('summary', toText(item.summary, ''));
+                    record.set('detail', toText(item.detail, ''));
+                    record.set('evidence', toText(item.evidence, ''));
+                    record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+                    record.set('createdAt', toIsoString(item.createdAt));
+                    record.set('resolvedAt', toIsoString(item.resolvedAt));
+                    record.set('escalatedAt', toIsoString(item.escalatedAt));
+                    record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+                });
+            }
         };
 
         if (!workspaceId || authWorkspaceId !== workspaceId) {
@@ -3688,21 +3722,24 @@ routerAdd(
         }
 
         const previousSnapshot = backfillCustomerRefsInSnapshot(snapshotRecord.get('snapshot'));
-        const normalizedSnapshot = backfillCustomerRefsInSnapshot(snapshot);
+        const normalizedSnapshot = backfillCustomerRefsInSnapshot(Object.assign({}, previousSnapshot, toObject(snapshot)));
 
         snapshotRecord.set('snapshot', normalizedSnapshot);
         snapshotRecord.set('version', currentVersion > 0 ? currentVersion + 1 : 1);
         snapshotRecord.set('updatedBy', authRecord.id);
         e.app.save(snapshotRecord);
 
-        syncNormalizedFromSnapshot(workspaceId, normalizedSnapshot);
+        syncNormalizedFromSnapshot(workspaceId, normalizedSnapshot, toObject(snapshot));
 
-        const pushNotifications = fideoPushDispatchOperational(e.app, {
-            workspaceId: workspaceId,
-            workspaceSlug: fideoPushGetWorkspaceSlug(e.app, workspaceId),
-            previousSnapshot: previousSnapshot,
-            nextSnapshot: normalizedSnapshot,
-        });
+        const pushNotifications =
+            typeof fideoPushDispatchOperational === 'function' && typeof fideoPushGetWorkspaceSlug === 'function'
+                ? fideoPushDispatchOperational(e.app, {
+                    workspaceId: workspaceId,
+                    workspaceSlug: fideoPushGetWorkspaceSlug(e.app, workspaceId),
+                    previousSnapshot: previousSnapshot,
+                    nextSnapshot: normalizedSnapshot,
+                })
+                : [];
 
         writeActionLog(workspaceId, authRecord.id, 'persist_state', {
             version: snapshotRecord.get('version'),
@@ -3966,7 +4003,7 @@ routerAdd(
         }
 
         const previousSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
-        const workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshot, {}));
+        const workingSnapshot = backfillCustomerRefsInSnapshot(Object.assign({}, previousSnapshot, cloneValue(toObject(snapshot), {})));
         const tasks = cloneValue(toArray(workingSnapshot.taskAssignments), []);
         const taskIndex = tasks.findIndex((item) => toText(item && item.id, '') === toText(taskId, ''));
         if (taskIndex < 0) {
@@ -4132,7 +4169,9 @@ const fideoExceptionReassignHandler = (e) => {
 
     const previousSnapshot = fideoExceptionBackfillCustomerRefs(fideoExceptionClone(snapshotRecord.get('snapshot'), {}));
     const workingSnapshot = fideoExceptionBackfillCustomerRefs(
-        Object.keys(incomingSnapshot).length > 0 ? fideoExceptionClone(incomingSnapshot, {}) : fideoExceptionClone(previousSnapshot, {}),
+        Object.keys(incomingSnapshot).length > 0
+            ? Object.assign({}, fideoExceptionClone(previousSnapshot, {}), fideoExceptionClone(incomingSnapshot, {}))
+            : fideoExceptionClone(previousSnapshot, {}),
     );
     const taskAssignments = fideoExceptionClone(fideoPushArray(workingSnapshot.taskAssignments), []);
     const taskReports = fideoExceptionClone(fideoPushArray(workingSnapshot.taskReports), []);
@@ -4375,7 +4414,9 @@ const fideoExceptionResolveHandler = (e) => {
 
     const previousSnapshot = fideoExceptionBackfillCustomerRefs(fideoExceptionClone(snapshotRecord.get('snapshot'), {}));
     const workingSnapshot = fideoExceptionBackfillCustomerRefs(
-        Object.keys(incomingSnapshot).length > 0 ? fideoExceptionClone(incomingSnapshot, {}) : fideoExceptionClone(previousSnapshot, {}),
+        Object.keys(incomingSnapshot).length > 0
+            ? Object.assign({}, fideoExceptionClone(previousSnapshot, {}), fideoExceptionClone(incomingSnapshot, {}))
+            : fideoExceptionClone(previousSnapshot, {}),
     );
     const taskAssignments = fideoExceptionClone(fideoPushArray(workingSnapshot.taskAssignments), []);
     const taskReports = fideoExceptionClone(fideoPushArray(workingSnapshot.taskReports), []);
@@ -4814,6 +4855,80 @@ const fideoExceptionFollowUpHandler = (e) => {
             escalatedAt: toIsoString(normalizedOverrides.escalatedAt),
         };
     };
+    const mapTaskAssignmentRecord = (record) => {
+        const payload = toObject(record.get('payload'));
+        const mapped = Object.assign({}, payload);
+        mapped.id = toText(record.get('externalId'), toText(mapped.id, ''));
+        mapped.taskId = toText(record.get('taskId'), toText(mapped.taskId, ''));
+        mapped.employeeId = toText(record.get('employeeId'), toText(mapped.employeeId, ''));
+        mapped.role = toText(record.get('role'), toText(mapped.role, 'Admin')) || 'Admin';
+        mapped.status = toText(record.get('status'), toText(mapped.status, 'assigned')) || 'assigned';
+        mapped.assignedAt = toIsoString(record.get('assignedAt') || mapped.assignedAt);
+        mapped.acknowledgedAt = toIsoString(record.get('acknowledgedAt') || mapped.acknowledgedAt);
+        mapped.startedAt = toIsoString(record.get('startedAt') || mapped.startedAt);
+        mapped.blockedAt = toIsoString(record.get('blockedAt') || mapped.blockedAt);
+        mapped.doneAt = toIsoString(record.get('doneAt') || mapped.doneAt);
+        mapped.updatedAt = toIsoString(mapped.updatedAt || record.get('doneAt') || record.get('blockedAt') || record.get('startedAt') || record.get('acknowledgedAt') || record.get('assignedAt'));
+        mapped.blockedReason = toText(record.get('blockedReason'), toText(mapped.blockedReason, ''));
+        return mapped;
+    };
+    const getWorkspaceRecords = (collectionName) =>
+        e.app.findRecordsByFilter(collectionName, "workspace = '" + workspaceId + "'", '', 2000, 0);
+    const replaceWorkspaceCollectionByExternalId = (collectionName, items, assignRecord) => {
+        const collection = e.app.findCollectionByNameOrId(collectionName);
+        const existingRecords = getWorkspaceRecords(collectionName);
+        const existingByExternalId = {};
+        existingRecords.forEach((record) => {
+            existingByExternalId[toText(record.get('externalId'), '')] = record;
+        });
+
+        const seen = {};
+        toArray(items).forEach((item) => {
+            const externalId = toText(item && item.id, '');
+            if (!externalId) return;
+
+            seen[externalId] = true;
+            const record = existingByExternalId[externalId] || new Record(collection);
+            record.set('workspace', workspaceId);
+            record.set('externalId', externalId);
+            assignRecord(record, item || {});
+            e.app.save(record);
+        });
+
+        existingRecords.forEach((record) => {
+            const externalId = toText(record.get('externalId'), '');
+            if (!seen[externalId]) {
+                e.app.delete(record);
+            }
+        });
+    };
+    const normalizeTaskAssignmentsForSync = (items) =>
+        toArray(items)
+            .map((item) => {
+                const normalizedItem = toObject(item);
+                const fallbackId = [toText(normalizedItem.taskId, ''), toText(normalizedItem.employeeId, '')]
+                    .filter((value) => !!value)
+                    .join('::');
+                const externalId = toText(normalizedItem.id, fallbackId);
+                return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+            })
+            .filter((item) => !!item);
+    const normalizeTaskReportsForSync = (items) =>
+        toArray(items)
+            .map((item) => {
+                const normalizedItem = toObject(item);
+                const fallbackId = [
+                    toText(normalizedItem.taskId, ''),
+                    toText(normalizedItem.createdAt, ''),
+                    toText(normalizedItem.kind, ''),
+                    toText(normalizedItem.employeeId, ''),
+                ]
+                    .filter((value) => !!value)
+                    .join('::');
+                const externalId = toText(normalizedItem.id, fallbackId);
+                return externalId ? Object.assign({}, normalizedItem, { id: externalId }) : null;
+            })
+            .filter((item) => !!item);
     const findLatestOpenReportIndex = (reports, taskId, kinds) => {
         const normalizedKinds = toArray(kinds).map((value) => toText(value, ''));
         let fallbackIndex = -1;
@@ -4884,7 +4999,9 @@ const fideoExceptionFollowUpHandler = (e) => {
 
     const previousSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
     const workingSnapshot = backfillCustomerRefsInSnapshot(
-        Object.keys(incomingSnapshot).length > 0 ? cloneValue(incomingSnapshot, {}) : cloneValue(previousSnapshot, {}),
+        Object.keys(incomingSnapshot).length > 0
+            ? Object.assign({}, cloneValue(previousSnapshot, {}), cloneValue(incomingSnapshot, {}))
+            : cloneValue(previousSnapshot, {}),
     );
     const taskAssignments = cloneValue(toArray(workingSnapshot.taskAssignments), []);
     const taskReports = cloneValue(toArray(workingSnapshot.taskReports), []);
@@ -4916,6 +5033,15 @@ const fideoExceptionFollowUpHandler = (e) => {
     let taskIndex = -1;
     if (taskId) {
         taskIndex = taskAssignments.findIndex((item) => toText(item && item.id, '').trim() === taskId);
+        if (taskIndex < 0) {
+            try {
+                const persistedTask = e.app.findFirstRecordByData('fideo_task_assignments', 'externalId', taskId);
+                if (persistedTask && toText(persistedTask.get('workspace'), '').trim() === workspaceId) {
+                    taskAssignments.unshift(mapTaskAssignmentRecord(persistedTask));
+                    taskIndex = 0;
+                }
+            } catch (_) {}
+        }
     }
 
     let previousTask = null;
@@ -5154,19 +5280,109 @@ const fideoExceptionFollowUpHandler = (e) => {
     snapshotRecord.set('updatedBy', authRecord.id);
     e.app.save(snapshotRecord);
 
+    replaceWorkspaceCollectionByExternalId('fideo_task_assignments', normalizeTaskAssignmentsForSync(taskAssignments), (record, item) => {
+        const payload = toObject(item);
+        record.set('taskId', toText(item.taskId, ''));
+        record.set('employeeId', toText(item.employeeId, ''));
+        record.set('role', toText(item.role, ''));
+        record.set('status', toText(item.status, 'assigned'));
+        record.set('assignedAt', toIsoString(item.assignedAt));
+        record.set('acknowledgedAt', toIsoString(item.acknowledgedAt));
+        record.set('startedAt', toIsoString(item.startedAt));
+        record.set('blockedAt', toIsoString(item.blockedAt));
+        record.set('doneAt', toIsoString(item.doneAt));
+        record.set('blockedReason', toText(item.blockedReason, ''));
+        record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+    });
+    replaceWorkspaceCollectionByExternalId('fideo_task_reports', normalizeTaskReportsForSync(taskReports), (record, item) => {
+        const payload = toObject(item);
+        record.set('taskId', toText(item.taskId, ''));
+        record.set('saleId', toText(item.saleId, ''));
+        record.set('role', toText(item.role, ''));
+        record.set('employeeId', toText(item.employeeId, ''));
+        record.set('employeeName', toText(item.employeeName, ''));
+        record.set('customerId', toText(item.customerId, ''));
+        record.set('customerName', toText(item.customerName, ''));
+        record.set('taskTitle', toText(item.taskTitle, ''));
+        record.set('kind', toText(item.kind, 'note'));
+        record.set('status', toText(item.status, 'resolved'));
+        record.set('severity', toText(item.severity, 'normal'));
+        record.set('summary', toText(item.summary, ''));
+        record.set('detail', toText(item.detail, ''));
+        record.set('evidence', toText(item.evidence, ''));
+        record.set('escalationStatus', toText(item.escalationStatus, 'none'));
+        record.set('createdAt', toIsoString(item.createdAt));
+        record.set('resolvedAt', toIsoString(item.resolvedAt));
+        record.set('escalatedAt', toIsoString(item.escalatedAt));
+        record.set('payload', Object.keys(payload).length > 0 ? payload : null);
+    });
+
+    const runtimeOverview =
+        typeof fideoRuntimeBuildOverview === 'function' && typeof fideoPushGetWorkspaceSlug === 'function'
+            ? fideoRuntimeBuildOverview(e.app, workspaceId, nextSnapshot, {
+                workspaceSlug: fideoPushGetWorkspaceSlug(e.app, workspaceId),
+            })
+            : null;
+    const diffPushNotifications =
+        typeof fideoPushDispatchOperational === 'function' && typeof fideoPushGetWorkspaceSlug === 'function'
+            ? fideoPushDispatchOperational(e.app, {
+                workspaceId: workspaceId,
+                workspaceSlug: fideoPushGetWorkspaceSlug(e.app, workspaceId),
+                previousSnapshot: previousSnapshot,
+                nextSnapshot: nextSnapshot,
+            })
+            : [];
+    const directPush =
+        typeof fideoExceptionBuildTaskPush === 'function'
+            && taskForNote
+            && targetEmployeeId
+            && toText(taskForNote.employeeId, '') === targetEmployeeId
+            ? fideoExceptionBuildTaskPush(
+                e.app,
+                workspaceId,
+                updatedTask || taskForNote,
+                'Seguimiento operativo',
+                defaultMessage || followUpSummary || 'Hay una actualizacion sobre tu tarea.',
+                'task_follow_up',
+            )
+            : null;
+    const pushNotifications = directPush ? diffPushNotifications.concat([directPush]) : diffPushNotifications;
+    const actionLogRecord =
+        typeof fideoExceptionWriteActionLog === 'function'
+            ? fideoExceptionWriteActionLog(e.app, workspaceId, authRecord.id, 'follow_up_operational_exception', {
+                exceptionId: exceptionId || null,
+                taskId: taskId || null,
+                reportId: updatedReport ? toText(updatedReport.id, '') : previousReport ? toText(previousReport.id, '') : null,
+                drawerId: updatedDrawer ? toText(updatedDrawer.id, '') : previousDrawer ? toText(previousDrawer.id, '') : null,
+                followUpTarget: normalizedFollowUpTarget,
+                previousVersion: currentVersion || 0,
+                version: snapshotRecord.get('version'),
+                taskAssignment: updatedTask ? cloneValue(updatedTask, {}) : taskForNote ? cloneValue(taskForNote, {}) : null,
+                report: updatedReport ? cloneValue(updatedReport, {}) : previousReport ? cloneValue(previousReport, {}) : null,
+                noteReport: noteReport ? cloneValue(noteReport, {}) : null,
+                pushNotifications: pushNotifications,
+            })
+            : null;
+
     return e.json(200, {
         version: snapshotRecord.get('version'),
         snapshotRecordId: snapshotRecord.id,
         updatedAt: nowIso,
         snapshot: nextSnapshot,
+        runtimeOverview: runtimeOverview,
         taskAssignment: updatedTask,
         report: updatedReport,
         cashDrawer: updatedDrawer,
         noteReport: noteReport,
         followUpTarget: normalizedFollowUpTarget,
-        actionLogId: null,
-        pushNotifications: [],
-        notification: null,
+        actionLogId: actionLogRecord ? actionLogRecord.id : null,
+        pushNotifications: pushNotifications,
+        notification: noteReport
+            ? {
+                text: followUpSummary || 'Seguimiento operativo registrado.',
+                isError: false,
+            }
+            : null,
     });
 };
 
@@ -5669,7 +5885,10 @@ routerAdd(
         }
 
         const storedSnapshot = toObject(snapshotRecord.get('snapshot'));
-        const workingBaseSnapshot = Object.keys(toObject(snapshot)).length > 0 ? snapshot : storedSnapshot;
+        const incomingSnapshot = toObject(snapshot);
+        const workingBaseSnapshot = Object.keys(incomingSnapshot).length > 0
+            ? Object.assign({}, storedSnapshot, incomingSnapshot)
+            : storedSnapshot;
         let workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(workingBaseSnapshot, {}));
         const preparedMessageState = upsertMessageOnSnapshot(workingSnapshot);
         workingSnapshot = preparedMessageState.snapshot;
@@ -6884,7 +7103,7 @@ routerAdd(
         }
 
         const storedSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
-        let workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshot, {}));
+        let workingSnapshot = backfillCustomerRefsInSnapshot(Object.assign({}, storedSnapshot, cloneValue(toObject(snapshot), {})));
         workingSnapshot = ensureMessageOnSnapshot(workingSnapshot);
         const approvalMessage = workingSnapshot._approvalMessage;
         delete workingSnapshot._approvalMessage;
@@ -7249,7 +7468,10 @@ routerAdd(
         }
 
         const storedSnapshot = toObject(snapshotRecord.get('snapshot'));
-        const workingBaseSnapshot = Object.keys(toObject(snapshot)).length > 0 ? snapshot : storedSnapshot;
+        const incomingSnapshot = toObject(snapshot);
+        const workingBaseSnapshot = Object.keys(incomingSnapshot).length > 0
+            ? Object.assign({}, storedSnapshot, incomingSnapshot)
+            : storedSnapshot;
         let workingSnapshot = backfillCustomerRefsInSnapshot(cloneValue(workingBaseSnapshot, {}));
         const preparedMessageState = upsertMessageOnSnapshot(workingSnapshot);
         workingSnapshot = preparedMessageState.snapshot;
