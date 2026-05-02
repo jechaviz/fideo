@@ -59,6 +59,7 @@ export interface ShellRealtimeSummary {
 }
 
 export interface ShellRuntimeSummary {
+    followUpSignal: ShellStatusSignal | null;
     pushSignal: ShellStatusSignal | null;
     staffSignal: ShellStatusSignal | null;
     exceptionSignal: ShellStatusSignal | null;
@@ -125,7 +126,14 @@ const formatAgeCompact = (timestamp?: Date) => {
     return `${Math.floor(elapsedHours / 24)}d`;
 };
 
+const getAgeMinutes = (timestamp?: Date) => {
+    if (!timestamp) return undefined;
+    return Math.max(1, Math.floor((Date.now() - timestamp.getTime()) / 60000));
+};
+
 const PRESENCE_STALE_AFTER_MS = 3 * 60 * 1000;
+const FOLLOW_UP_WARNING_MINUTES = 15;
+const FOLLOW_UP_ALERT_MINUTES = 30;
 
 const shellSignalToneClasses: Record<ShellSignalTone, string> = {
     live: 'border-brand-400/20 bg-brand-400/10 text-brand-100',
@@ -293,6 +301,87 @@ const getShellExceptionSignal = (data: BusinessData): ShellStatusSignal | null =
     }
 
     return buildSignal('exception_inbox', label, label, tone, tooltipParts.join(' / '));
+};
+
+const getShellFollowUpSignal = (data: BusinessData, identity: ShellIdentity | null): ShellStatusSignal | null => {
+    const scopedTasks = selectTaskScope(data, identity);
+    const scopedReports = scopedTasks.length ? buildScopedTaskReports(data, scopedTasks, identity) : [];
+    const inbox = Array.isArray(data.exceptionInbox) ? data.exceptionInbox : [];
+    const openExceptions = inbox
+        .map((item) => asRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .filter(isOpenException);
+
+    if (!scopedTasks.length && !openExceptions.length) return null;
+
+    const followUpKeys = new Set<string>();
+    const urgentKeys = new Set<string>();
+    let oldestAt: Date | undefined;
+
+    const register = (key: string, timestamp: Date | undefined, urgent: boolean) => {
+        followUpKeys.add(key);
+        if (urgent) urgentKeys.add(key);
+        if (timestamp && (!oldestAt || timestamp.getTime() < oldestAt.getTime())) {
+            oldestAt = timestamp;
+        }
+    };
+
+    scopedTasks.forEach((task) => {
+        const taskKey = `task:${task.id}`;
+        const createdAt = toDate(task.createdAt) || toDate(task.updatedAt);
+        const linkedReports = scopedReports.filter((report) => report.taskId === task.id);
+        const hasEscalation = isEscalatedTask(task, linkedReports);
+        const pendingAckAge =
+            task.status === 'assigned' && !task.acknowledgedAt
+                ? getAgeMinutes(toDate(task.createdAt) || toDate(task.updatedAt))
+                : undefined;
+
+        if (task.status === 'blocked') {
+            register(taskKey, toDate(task.updatedAt) || createdAt, true);
+        }
+
+        if (hasEscalation) {
+            register(taskKey, toDate(task.updatedAt) || createdAt, true);
+        }
+
+        if (typeof pendingAckAge === 'number' && pendingAckAge >= FOLLOW_UP_WARNING_MINUTES) {
+            register(taskKey, createdAt, pendingAckAge >= FOLLOW_UP_ALERT_MINUTES);
+        }
+    });
+
+    openExceptions.forEach((exception, index) => {
+        const sources = [exception, asRecord(exception.payload), asRecord(exception.context), asRecord(exception.metadata)];
+        const taskId = readString(sources, ['taskId']);
+        const exceptionId = readString(sources, ['id']) || `exception_${index}`;
+        const kind = readString(sources, ['kind', 'category', 'type']) || '';
+        const title = readString(sources, ['title', 'summary', 'detail']) || '';
+        const urgent =
+            isCriticalException(exception)
+            || /escal|ack|acuse|block|incident|cash|drawer/i.test(`${kind} ${title}`);
+        register(
+            taskId ? `task:${taskId}` : `exception:${exceptionId}`,
+            readDate(sources, ['createdAt', 'updatedAt', 'timestamp', 'lastSeenAt']),
+            urgent,
+        );
+    });
+
+    const total = followUpKeys.size;
+    if (!total) {
+        return buildSignal('follow_up', 'SLA ok', 'SLA ok', 'live', 'Sin follow-up pendiente.');
+    }
+
+    const urgent = urgentKeys.size;
+    const oldestLabel = formatAgeCompact(oldestAt);
+    const label = urgent > 0 ? `SLA ${urgent}/${total}` : `SLA ${total}`;
+    const tooltip = [
+        `${urgent} urgente${urgent === 1 ? '' : 's'}`,
+        `${Math.max(0, total - urgent)} en seguimiento`,
+        oldestLabel ? `max ${oldestLabel}` : null,
+    ]
+        .filter(Boolean)
+        .join(' / ');
+
+    return buildSignal('follow_up', label, label, urgent > 0 ? 'blocked' : 'warning', tooltip);
 };
 
 const getShellPushSignal = (
@@ -620,6 +709,7 @@ export const useShellStatusSummaries = (data: BusinessData, push: OneSignalPushC
     const identity = getShellIdentity(data);
     const taskSummary = getShellTaskSummary(data, identity);
     const realtimeSummary = getShellRealtimeSummary(data, push, isOnline);
+    const followUpSignal = getShellFollowUpSignal(data, identity);
     const pushSignal = getShellPushSignal(data, push, identity);
     const staffSignal = getShellStaffSignal(data);
     const exceptionSignal = getShellExceptionSignal(data);
@@ -629,10 +719,11 @@ export const useShellStatusSummaries = (data: BusinessData, push: OneSignalPushC
         taskSummary,
         realtimeSummary,
         runtimeSummary: {
+            followUpSignal,
             pushSignal,
             staffSignal,
             exceptionSignal,
-            signals: [exceptionSignal, pushSignal, staffSignal].filter((signal): signal is ShellStatusSignal => Boolean(signal)),
+            signals: [followUpSignal, exceptionSignal, pushSignal, staffSignal].filter((signal): signal is ShellStatusSignal => Boolean(signal)),
         },
     };
 };
@@ -679,10 +770,10 @@ const RoleSwitcher: React.FC<{
     const portalReadOnly = isPortalOnlyProfile(authProfile);
     const shellIdentity = identity;
     const identitySignals = [
-        runtimeSummary.exceptionSignal,
-        taskSummary?.signals[0] || null,
+        runtimeSummary.followUpSignal || taskSummary?.signals[0] || null,
+        runtimeSummary.exceptionSignal?.tone === 'blocked' ? runtimeSummary.exceptionSignal : null,
         runtimeSummary.pushSignal,
-        realtimeSummary.signal,
+        realtimeSummary.signal.tone !== 'live' ? realtimeSummary.signal : null,
     ].filter((signal, index, array): signal is ShellStatusSignal => Boolean(signal) && array.findIndex((item) => item?.id === signal?.id) === index);
 
     const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

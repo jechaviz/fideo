@@ -76,6 +76,15 @@ type AttentionItem = {
     timestamp: Date;
 };
 
+type FollowUpSummary = {
+    total: number;
+    urgent: number;
+    staleStaff: number;
+    oldestLabel?: string;
+    slaLabel: string;
+    tone: string;
+};
+
 type RuntimePresenceEntry = {
     id: string;
     name: string;
@@ -113,6 +122,9 @@ type ExternalTaskReportIndex = {
     byTaskId: Map<string, TaskReport[]>;
     bySaleId: Map<string, TaskReport[]>;
 };
+
+const FOLLOW_UP_WARNING_MINUTES = 15;
+const FOLLOW_UP_ALERT_MINUTES = 30;
 
 type DashboardTask = {
     id: string;
@@ -885,6 +897,74 @@ const buildAttentionSummary = (
     };
 };
 
+const buildFollowUpSummary = (
+    tasks: DashboardTask[],
+    exceptions: RuntimeExceptionEntry[],
+    staffPresence: StaffPresenceItem[],
+): FollowUpSummary => {
+    const followUpKeys = new Set<string>();
+    const urgentKeys = new Set<string>();
+    let oldestAt: Date | undefined;
+
+    const register = (key: string, timestamp: Date | undefined, urgent: boolean) => {
+        followUpKeys.add(key);
+        if (urgent) urgentKeys.add(key);
+        if (timestamp && (!oldestAt || timestamp.getTime() < oldestAt.getTime())) {
+            oldestAt = timestamp;
+        }
+    };
+
+    tasks.forEach((task) => {
+        const taskKey = `task:${task.id}`;
+        const taskAge = task.status === 'assigned' && !task.acknowledgedAt ? getAgeMinutes(task.createdAt || task.timestamp) : undefined;
+        const isEscalated = task.signals.some((signal) => signal.id === 'escalation');
+
+        if (task.status === 'blocked') {
+            register(taskKey, task.blockedAt || task.updatedAt || task.timestamp, true);
+        }
+
+        if (isEscalated) {
+            register(taskKey, task.updatedAt || task.timestamp, true);
+        }
+
+        if (typeof taskAge === 'number' && taskAge >= FOLLOW_UP_WARNING_MINUTES) {
+            register(taskKey, task.createdAt || task.timestamp, taskAge >= FOLLOW_UP_ALERT_MINUTES);
+        }
+    });
+
+    exceptions.filter(isRuntimeExceptionOpen).forEach((exception) => {
+        const key = exception.taskId ? `task:${exception.taskId}` : `exception:${exception.id}`;
+        const label = buildRuntimeExceptionLabel(exception);
+        const urgent = isRuntimeExceptionCritical(exception) || label === 'Sin acuse';
+        register(key, exception.createdAt, urgent);
+    });
+
+    const staleStaff = staffPresence.filter((item) => item.state === 'inactive' && (item.taskCount > 0 || item.exceptionCount > 0)).length;
+    staffPresence
+        .filter((item) => item.state === 'inactive' && (item.taskCount > 0 || item.exceptionCount > 0))
+        .forEach((item) => {
+            register(`staff:${item.employeeId || item.id}`, undefined, item.exceptionCount > 0);
+        });
+
+    const total = followUpKeys.size;
+    const urgent = urgentKeys.size;
+    const oldestLabel = formatAgeCompact(oldestAt);
+
+    return {
+        total,
+        urgent,
+        staleStaff,
+        oldestLabel,
+        slaLabel: total > 0 ? (urgent > 0 ? `${urgent}/${total}` : `${total}`) : 'ok',
+        tone:
+            urgent > 0
+                ? 'border-rose-400/20 bg-rose-400/10 text-rose-100'
+                : total > 0
+                  ? 'border-amber-400/20 bg-amber-400/10 text-amber-100'
+                  : 'border-brand-400/20 bg-brand-400/10 text-brand-100',
+    };
+};
+
 const buildLiveActivity = (tasks: DashboardTask[], activityLog: BusinessData['activityLog']) => {
     const reportEvents = tasks.flatMap((task) =>
         task.reports.map((report) => ({
@@ -1313,6 +1393,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             pushMissing: staffPresence.filter((item) => item.pushLabel === 'Sin push').length,
         };
         const attentionSummary = buildAttentionSummary(runtimeExceptions, operationalIndicators, presenceSummary);
+        const followUpSummary = buildFollowUpSummary(operationalTasks, runtimeExceptions, staffPresence);
 
         const last7Days = new Date();
         last7Days.setDate(last7Days.getDate() - 6);
@@ -1365,6 +1446,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
             staffPresence,
             presenceSummary,
             attentionSummary,
+            followUpSummary,
             salesByDay,
             salesCompositionData,
             top5Products,
@@ -1421,17 +1503,17 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2">
-                    <span className="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
-                        Crit {dashboardData.attentionSummary.critical}
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${dashboardData.followUpSummary.tone}`}>
+                        SLA {dashboardData.followUpSummary.slaLabel}
                     </span>
                     <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
-                        Reportes {dashboardData.operationalIndicators.reported}
+                        Max {dashboardData.followUpSummary.oldestLabel || 'ok'}
                     </span>
                     <span className="inline-flex rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
-                        Sin acuse {dashboardData.attentionSummary.noAck}
+                        Esc {dashboardData.attentionSummary.escalated}
                     </span>
                     <span className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
-                        Staff off {dashboardData.attentionSummary.staffDown}
+                        Off {dashboardData.followUpSummary.staleStaff}
                     </span>
                     {dashboardData.presenceSummary.total > 0 && (
                         <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100">
@@ -1479,17 +1561,14 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                         </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">
-                            Crit {dashboardData.attentionSummary.critical}
-                        </span>
-                        <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">
-                            Sin acuse {dashboardData.attentionSummary.noAck}
-                        </span>
-                        <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
-                            Staff off {dashboardData.attentionSummary.staffDown}
+                        <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${dashboardData.followUpSummary.tone}`}>
+                            SLA {dashboardData.followUpSummary.slaLabel}
                         </span>
                         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">
-                            Esc {dashboardData.attentionSummary.escalated}
+                            Max {dashboardData.followUpSummary.oldestLabel || 'ok'}
+                        </span>
+                        <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-sky-100">
+                            Off {dashboardData.followUpSummary.staleStaff}
                         </span>
                     </div>
 

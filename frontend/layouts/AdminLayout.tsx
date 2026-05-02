@@ -69,10 +69,9 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
     const headerSignals = useMemo(
         () =>
             [
-                runtimeSummary.exceptionSignal,
-                taskSummary?.signals[0] || null,
-                runtimeSummary.pushSignal,
-                realtimeSummary.signal,
+                runtimeSummary.followUpSignal,
+                runtimeSummary.pushSignal?.tone !== 'live' ? runtimeSummary.pushSignal : null,
+                realtimeSummary.signal.tone !== 'live' ? realtimeSummary.signal : null,
                 runtimeSummary.staffSignal?.tone === 'warning' || runtimeSummary.staffSignal?.tone === 'offline'
                     ? runtimeSummary.staffSignal
                     : null,
@@ -80,7 +79,7 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                 (signal, index, array): signal is NonNullable<typeof signal> =>
                     Boolean(signal) && array.findIndex((item) => item?.id === signal?.id) === index,
             ),
-        [realtimeSummary.signal, runtimeSummary.exceptionSignal, runtimeSummary.pushSignal, runtimeSummary.staffSignal, taskSummary],
+        [realtimeSummary.signal, runtimeSummary.followUpSignal, runtimeSummary.pushSignal, runtimeSummary.staffSignal],
     );
     
     // Initial state logic for responsiveness
