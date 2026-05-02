@@ -888,6 +888,25 @@ const getResolutionPayload = (item: ExceptionItem): { nextTaskStatus?: TaskStatu
     return {};
 };
 
+const getFollowUpPayload = (item: ExceptionItem) => {
+    const isBlocked = item.taskStatus === 'blocked' || item.exceptionKind === 'task_blocked';
+    const isSla = item.exceptionKind === 'sla';
+    const summary = isSla
+        ? 'Seguimiento SLA'
+        : isBlocked
+          ? 'Seguimiento bloqueo'
+          : item.reportId
+            ? 'Seguimiento reporte'
+            : 'Seguimiento operativo';
+
+    return {
+        note: summary,
+        reason: [item.title, item.detail !== item.title ? item.detail : undefined, item.meta].filter(Boolean).join(' / ') || undefined,
+        employeeId: item.employeeId || null,
+        employeeName: item.employeeName || null,
+    };
+};
+
 const getAssignableRolesForException = (item: ExceptionItem): TaskRole[] => {
     if (item.taskRole) {
         return item.taskRole === 'Admin' ? ['Admin'] : [item.taskRole, 'Admin'];
@@ -1599,6 +1618,7 @@ const exceptionScopeToneMap: Record<ExceptionScope, string> = {
 const ExceptionRow: React.FC<{
     item: ExceptionItem;
     onOpen: (item: ExceptionItem) => void;
+    onFollowUp: (item: ExceptionItem) => void;
     onResolve: (item: ExceptionItem) => void;
     onStartReassign: (item: ExceptionItem) => void;
     onCancelReassign: () => void;
@@ -1607,13 +1627,16 @@ const ExceptionRow: React.FC<{
     assigneeOptions: AssigneeOption[];
     selectedAssigneeId?: string;
     isReassigning: boolean;
+    isFollowingUp: boolean;
     isResolving: boolean;
     isSubmittingReassign: boolean;
+    canFollowUp: boolean;
     canResolve: boolean;
     canReassign: boolean;
 }> = ({
     item,
     onOpen,
+    onFollowUp,
     onResolve,
     onStartReassign,
     onCancelReassign,
@@ -1622,8 +1645,10 @@ const ExceptionRow: React.FC<{
     assigneeOptions,
     selectedAssigneeId,
     isReassigning,
+    isFollowingUp,
     isResolving,
     isSubmittingReassign,
+    canFollowUp,
     canResolve,
     canReassign,
 }) => (
@@ -1646,6 +1671,15 @@ const ExceptionRow: React.FC<{
                 {item.meta && <p className="mt-2 text-[11px] font-semibold text-current/75">{item.meta}</p>}
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                    {canFollowUp && (
+                        <button
+                            onClick={() => onFollowUp(item)}
+                            disabled={isFollowingUp}
+                            className="inline-flex items-center justify-center rounded-2xl border border-current/15 bg-black/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-current transition hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            {isFollowingUp ? '...' : 'Seguir'}
+                        </button>
+                    )}
                     <button
                         onClick={() => onResolve(item)}
                         disabled={!canResolve || isResolving}
@@ -1707,6 +1741,7 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
         activityLog,
         currentRole,
         operationalExceptions,
+        followUpException,
         reassignTask,
         resolveException,
         staffPresence,
@@ -1717,7 +1752,7 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
     } = data;
     const [activeReassignId, setActiveReassignId] = useState<string | null>(null);
     const [selectedAssignees, setSelectedAssignees] = useState<Record<string, string>>({});
-    const [pendingAction, setPendingAction] = useState<{ itemId: string; kind: 'resolve' | 'reassign' } | null>(null);
+    const [pendingAction, setPendingAction] = useState<{ itemId: string; kind: 'follow_up' | 'resolve' | 'reassign' } | null>(null);
     const taskAssignments = ((data as BusinessData & { taskAssignments?: unknown }).taskAssignments ?? []) as unknown[];
     const exceptionRecords = useMemo(
         () => (Array.isArray(operationalExceptions) ? (operationalExceptions as OperationalException[]) : []),
@@ -1887,6 +1922,10 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
             }, {}),
         [employees, exceptionQueue, staffPresenceRoster],
     );
+    const assignmentTaskIds = useMemo(
+        () => new Set(queueTasks.filter((task) => task.source === 'assignment').map((task) => task.id)),
+        [queueTasks],
+    );
     const exceptionRecordByItemId = useMemo(
         () =>
             exceptionQueue.reduce<Record<string, OperationalException | null>>((accumulator, item) => {
@@ -1906,6 +1945,18 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
 
     const handleExceptionOpen = (item: ExceptionItem) => {
         setCurrentView(item.targetView);
+    };
+
+    const handleExceptionFollowUp = async (item: ExceptionItem) => {
+        if (!item.taskId || !assignmentTaskIds.has(item.taskId)) return;
+        const exceptionRecord = exceptionRecordByItemId[item.id] || buildExceptionStub(item);
+
+        setPendingAction({ itemId: item.id, kind: 'follow_up' });
+        try {
+            await followUpException(exceptionRecord, getFollowUpPayload(item));
+        } finally {
+            setPendingAction((current) => (current?.itemId === item.id && current.kind === 'follow_up' ? null : current));
+        }
     };
 
     const handleExceptionResolve = async (item: ExceptionItem) => {
@@ -2061,6 +2112,7 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
                                     key={item.id}
                                     item={item}
                                     onOpen={handleExceptionOpen}
+                                    onFollowUp={handleExceptionFollowUp}
                                     onResolve={handleExceptionResolve}
                                     onStartReassign={handleExceptionReassignStart}
                                     onCancelReassign={handleExceptionReassignCancel}
@@ -2071,8 +2123,10 @@ const ActionCenter: React.FC<{ data: BusinessData }> = ({ data }) => {
                                     assigneeOptions={assigneeOptionsByExceptionId[item.id] || []}
                                     selectedAssigneeId={selectedAssignees[item.id]}
                                     isReassigning={activeReassignId === item.id}
+                                    isFollowingUp={pendingAction?.itemId === item.id && pendingAction.kind === 'follow_up'}
                                     isResolving={pendingAction?.itemId === item.id && pendingAction.kind === 'resolve'}
                                     isSubmittingReassign={pendingAction?.itemId === item.id && pendingAction.kind === 'reassign'}
+                                    canFollowUp={Boolean(item.taskId && assignmentTaskIds.has(item.taskId))}
                                     canResolve={Boolean(item.taskId || item.reportId || exceptionRecordByItemId[item.id])}
                                     canReassign={Boolean(item.taskId && (assigneeOptionsByExceptionId[item.id] || []).length > 0)}
                                 />

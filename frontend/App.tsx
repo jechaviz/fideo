@@ -109,6 +109,10 @@ const App: React.FC = () => {
             session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
                 ? session.resolveOperationalException
                 : undefined,
+        onFollowUpRemoteException:
+            session.enabled && session.status === 'authenticated' && canPersistRemoteStateForProfile(session.profile)
+                ? session.followUpOperationalException
+                : undefined,
         onSignOut: handleSignOut,
     });
 

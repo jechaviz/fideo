@@ -17,6 +17,7 @@ import {
     MessageUndoState,
     MessageTemplate,
     OperationalException,
+    OperationalExceptionFollowUpInput,
     OperationalExceptionReassignInput,
     OperationalExceptionResolveInput,
     ParsedMessage,
@@ -156,6 +157,7 @@ interface RuntimeActionResponseBase {
 
 export type ResolveOperationalExceptionResult = RuntimeActionResponseBase;
 export type ReassignOperationalExceptionResult = RuntimeActionResponseBase;
+export type FollowUpOperationalExceptionResult = RuntimeActionResponseBase;
 
 type PocketBaseErrorLike = {
     status?: number;
@@ -1418,6 +1420,29 @@ export const reassignRemoteOperationalException = async (
             exceptionId: exception.id,
             exception: JSON.parse(JSON.stringify(exception)),
             reassignment: JSON.parse(JSON.stringify(reassignment)),
+        },
+    });
+
+    return normalizeRuntimeActionResponse(response);
+};
+
+export const followUpRemoteOperationalException = async (
+    workspaceId: string,
+    snapshot: PersistableBusinessState,
+    exception: OperationalException,
+    followUp: OperationalExceptionFollowUpInput,
+    expectedVersion: number,
+): Promise<FollowUpOperationalExceptionResult> => {
+    const pb = requirePocketBaseClient();
+    const response = await pb.send('/api/fideo/exceptions/follow-up', {
+        method: 'POST',
+        body: {
+            workspaceId,
+            expectedVersion,
+            snapshot,
+            exceptionId: exception.id,
+            exception: JSON.parse(JSON.stringify(exception)),
+            followUp: JSON.parse(JSON.stringify(followUp)),
         },
     });
 

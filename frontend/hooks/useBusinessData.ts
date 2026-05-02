@@ -4,6 +4,7 @@ import {
     ActionResult,
     BusinessState,
     OperationalException,
+    OperationalExceptionFollowUpInput,
     FixedAssetSaleInterpretation,
     FilterInterpretation,
     InventoryRecommendation,
@@ -47,7 +48,13 @@ import {
 } from '../services/pocketbase/state';
 import { loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
 import { reassignTaskAssignment, resolveCurrentEmployee, syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../utils/taskAssignments';
-import { normalizeTaskReportInput, resolveOperationalExceptionLocally, submitTaskReportLocally, syncTaskReportsWithTasks } from '../utils/taskReports';
+import {
+    followUpOperationalExceptionLocally,
+    normalizeTaskReportInput,
+    resolveOperationalExceptionLocally,
+    submitTaskReportLocally,
+    syncTaskReportsWithTasks,
+} from '../utils/taskReports';
 import * as Logic from '../utils/businessLogic';
 import { useCatalogActions } from './useCatalogActions';
 import { useInventoryActions } from './useInventoryActions';
@@ -114,6 +121,18 @@ interface UseBusinessDataOptions {
         snapshot: ReturnType<typeof buildPersistableSnapshot>,
         exception: OperationalException,
         resolution: { nextTaskStatus?: TaskStatus; resolutionNote?: string },
+        expectedVersion: number,
+    ) => Promise<{
+        snapshot?: Record<string, unknown>;
+        version?: number;
+        snapshotRecordId?: string;
+        updatedAt?: string;
+        actionLogId?: string;
+    } | null>;
+    onFollowUpRemoteException?: (
+        snapshot: ReturnType<typeof buildPersistableSnapshot>,
+        exception: OperationalException,
+        followUp: OperationalExceptionFollowUpInput,
         expectedVersion: number,
     ) => Promise<{
         snapshot?: Record<string, unknown>;
@@ -796,6 +815,47 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         [currentEmployee, options.authProfile, options.onResolveRemoteException, syncLocalRuntimeSlices],
     );
 
+    const followUpException = useCallback(
+        async (
+            exception: OperationalException,
+            followUp: OperationalExceptionFollowUpInput = {},
+        ) => {
+            const currentState = stateRef.current;
+            const actor = currentEmployee ? { employeeId: currentEmployee.id, employeeName: currentEmployee.name } : undefined;
+            const localResult = followUpOperationalExceptionLocally(currentState, exception, actor, followUp);
+            const localState = syncLocalRuntimeSlices(localResult.nextState);
+            setState(localState);
+
+            if (!options.onFollowUpRemoteException) {
+                return true;
+            }
+
+            try {
+                const result = await options.onFollowUpRemoteException(
+                    buildPersistableSnapshot(localState),
+                    exception,
+                    followUp,
+                    remoteVersionRef.current,
+                );
+
+                if (result?.snapshot && typeof result.version === 'number') {
+                    remoteVersionRef.current = result.version;
+                    setState((previousState) => hydrateBusinessState(result.snapshot, previousState, options.authProfile || null));
+                }
+            } catch (error) {
+                if (error instanceof PocketBaseSyncError && error.code === 'conflict') {
+                    console.error('No se pudo registrar el seguimiento en PocketBase por un conflicto de version.', error);
+                    return false;
+                }
+
+                console.error('No se pudo registrar el seguimiento en PocketBase. Seguimos con el flujo local.', error);
+            }
+
+            return true;
+        },
+        [currentEmployee, options.authProfile, options.onFollowUpRemoteException, syncLocalRuntimeSlices],
+    );
+
     const addMessage = useCallback((text: string, sender: string) => {
         setState((currentState) => ({
             ...currentState,
@@ -1213,6 +1273,7 @@ export const useBusinessData = (options: UseBusinessDataOptions = {}) => {
         submitTaskReport,
         reassignTask,
         resolveException,
+        followUpException,
         currentEmployee,
         authEnabled: Boolean(options.authEnabled),
         authProfile: options.authProfile || null,

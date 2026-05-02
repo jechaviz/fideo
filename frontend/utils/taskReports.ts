@@ -1,4 +1,14 @@
-import { BusinessState, OperationalException, TaskAssignment, TaskReport, TaskReportInput, TaskReportSeverity, TaskReportStatus, TaskStatus } from '../types';
+import {
+    BusinessState,
+    OperationalException,
+    OperationalExceptionFollowUpInput,
+    TaskAssignment,
+    TaskReport,
+    TaskReportInput,
+    TaskReportSeverity,
+    TaskReportStatus,
+    TaskStatus,
+} from '../types';
 import { updateTaskAssignmentStatus } from './taskAssignments';
 
 const readString = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -229,4 +239,76 @@ export const resolveOperationalExceptionLocally = (
     }
 
     return { nextState: state, report: null };
+};
+
+export const followUpOperationalExceptionLocally = (
+    state: BusinessState,
+    exception: OperationalException,
+    actor: { employeeId?: string | null; employeeName?: string | null } = {},
+    input: OperationalExceptionFollowUpInput = {},
+): { nextState: BusinessState; report: TaskReport | null; noteReport: TaskReport | null } => {
+    const now = new Date();
+    const taskId = exception.taskId || null;
+    const note = (input.note || input.reason || '').trim();
+    let escalatedReport: TaskReport | null = null;
+    let noteReport: TaskReport | null = null;
+    let taskForNote: TaskAssignment | null = taskId ? findTaskById(state, taskId) : null;
+
+    const nextReports = state.taskReports.map((report) => {
+        const isTargetReport = exception.reportId
+            ? report.id === exception.reportId
+            : taskId
+              ? report.taskId === taskId && report.status === 'open'
+              : false;
+        if (!isTargetReport) return report;
+
+        if (!escalatedReport) {
+            escalatedReport = {
+                ...report,
+                escalationStatus: 'sent',
+                escalatedAt: now,
+                employeeId: actor.employeeId ?? report.employeeId ?? null,
+                employeeName: actor.employeeName ?? report.employeeName ?? null,
+                detail: note || report.detail,
+            };
+            taskForNote = taskForNote || findTaskById(state, report.taskId);
+            return escalatedReport;
+        }
+
+        return report;
+    });
+
+    if (taskForNote) {
+        noteReport = {
+            id: `task_report_followup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            taskId: taskForNote.id,
+            saleId: taskForNote.saleId || null,
+            role: taskForNote.role,
+            employeeId: actor.employeeId ?? taskForNote.employeeId ?? input.employeeId ?? null,
+            employeeName: actor.employeeName ?? taskForNote.employeeName ?? input.employeeName ?? null,
+            customerId: taskForNote.customerId || null,
+            customerName: taskForNote.customerName || null,
+            taskTitle: taskForNote.title,
+            kind: 'note',
+            status: 'resolved',
+            severity: 'normal',
+            summary: note || 'Seguimiento enviado',
+            detail: taskForNote.employeeName ? `Seguimiento para ${taskForNote.employeeName}.` : undefined,
+            evidence: undefined,
+            escalationStatus: 'none',
+            createdAt: now,
+            resolvedAt: now,
+        };
+    }
+
+    return {
+        nextState: {
+            ...state,
+            taskReports: noteReport
+                ? [noteReport, ...nextReports].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+                : nextReports,
+        },
+        report: escalatedReport,
+        noteReport,
+    };
 };

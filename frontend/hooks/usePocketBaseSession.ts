@@ -7,7 +7,14 @@ import {
     signInWithPassword,
 } from '../services/pocketbase/auth';
 import { isPocketBaseEnabled, requirePocketBaseClient } from '../services/pocketbase/client';
-import { Message, OperationalException, OperationalExceptionReassignInput, OperationalExceptionResolveInput, TaskReportInput } from '../types';
+import {
+    Message,
+    OperationalException,
+    OperationalExceptionFollowUpInput,
+    OperationalExceptionReassignInput,
+    OperationalExceptionResolveInput,
+    TaskReportInput,
+} from '../types';
 import {
     approveRemoteWorkspaceInterpretation,
     ApproveInterpretationResult,
@@ -15,6 +22,8 @@ import {
     correctRemoteWorkspaceInterpretation,
     CorrectInterpretationResult,
     fetchRemoteWorkspaceRuntimeOverview,
+    FollowUpOperationalExceptionResult,
+    followUpRemoteOperationalException,
     interpretRemoteWorkspaceMessage,
     InterpretMessageResult,
     isPocketBaseRouteUnavailable,
@@ -241,6 +250,7 @@ export const usePocketBaseSession = () => {
     const remoteRuntimeOverviewRouteAvailableRef = useRef(true);
     const remoteResolveExceptionRouteAvailableRef = useRef(true);
     const remoteReassignExceptionRouteAvailableRef = useRef(true);
+    const remoteFollowUpExceptionRouteAvailableRef = useRef(true);
 
     useEffect(() => {
         profileRef.current = sessionState.profile;
@@ -264,6 +274,7 @@ export const usePocketBaseSession = () => {
         remoteRuntimeOverviewRouteAvailableRef.current = true;
         remoteResolveExceptionRouteAvailableRef.current = true;
         remoteReassignExceptionRouteAvailableRef.current = true;
+        remoteFollowUpExceptionRouteAvailableRef.current = true;
         workspaceEpochRef.current += 1;
         setSessionState({
             status,
@@ -297,6 +308,7 @@ export const usePocketBaseSession = () => {
             remoteRuntimeOverviewRouteAvailableRef.current = true;
             remoteResolveExceptionRouteAvailableRef.current = true;
             remoteReassignExceptionRouteAvailableRef.current = true;
+            remoteFollowUpExceptionRouteAvailableRef.current = true;
             workspaceEpochRef.current += 1;
             setSessionState({
                 status: 'authenticated',
@@ -1392,6 +1404,97 @@ export const usePocketBaseSession = () => {
         [applyRuntimeActionResult, enabled, loadWorkspace, refreshRuntimeOverview, setAuthenticatedError],
     );
 
+    const followUpOperationalExceptionNow = useCallback(
+        async (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            followUp: OperationalExceptionFollowUpInput,
+            expectedVersion: number,
+            epoch: number,
+        ): Promise<FollowUpOperationalExceptionResult | null> => {
+            if (epoch !== workspaceEpochRef.current) {
+                throw new PocketBaseSyncError(
+                    'Se descarto un seguimiento pendiente porque el workspace ya se habia recargado desde PocketBase.',
+                    {
+                        code: 'conflict',
+                        status: 409,
+                        retryable: false,
+                    },
+                );
+            }
+
+            const workspace = workspaceRef.current;
+            const workspaceId = workspace?.workspaceId;
+            if (!enabled || !workspaceId || !remoteFollowUpExceptionRouteAvailableRef.current) {
+                return null;
+            }
+
+            const versionToUse = Math.max(expectedVersion, workspace.version);
+
+            try {
+                const result = await followUpRemoteOperationalException(
+                    workspaceId,
+                    snapshot,
+                    exception,
+                    followUp,
+                    versionToUse,
+                );
+
+                applyRuntimeActionResult(workspaceId, result);
+                setAuthenticatedError(null);
+                await refreshRuntimeOverview(workspaceId);
+
+                return result;
+            } catch (error) {
+                if (isPocketBaseRouteUnavailable(error)) {
+                    remoteFollowUpExceptionRouteAvailableRef.current = false;
+                    return null;
+                }
+
+                const normalizedError = normalizePocketBaseError(error, 'No se pudo registrar el seguimiento de la excepcion en PocketBase.');
+
+                if (normalizedError.code === 'conflict') {
+                    const conflictMessage = 'El workspace remoto cambio antes de registrar el seguimiento. Recargamos la version mas reciente de PocketBase.';
+
+                    try {
+                        await loadWorkspace({ errorAfterLoad: conflictMessage });
+                    } catch (refreshError) {
+                        const normalizedRefreshError = normalizePocketBaseError(
+                            refreshError,
+                            'No se pudo recargar el workspace despues del conflicto de seguimiento.',
+                        );
+                        setAuthenticatedError(normalizedRefreshError.message);
+                        throw normalizedRefreshError;
+                    }
+
+                    throw new PocketBaseSyncError(conflictMessage, {
+                        code: normalizedError.code,
+                        status: normalizedError.status,
+                        retryable: false,
+                        conflictVersion: normalizedError.conflictVersion,
+                        snapshotRecordId: normalizedError.snapshotRecordId,
+                        cause: normalizedError,
+                    });
+                }
+
+                if (
+                    normalizedError.code === 'offline'
+                    || normalizedError.code === 'cancelled'
+                    || normalizedError.code === 'auth'
+                    || normalizedError.code === 'forbidden'
+                    || normalizedError.code === 'unknown'
+                ) {
+                    console.warn('El seguimiento remoto no estuvo disponible. Seguimos con el flujo local.', normalizedError);
+                    return null;
+                }
+
+                setAuthenticatedError(normalizedError.message);
+                throw normalizedError;
+            }
+        },
+        [applyRuntimeActionResult, enabled, loadWorkspace, refreshRuntimeOverview, setAuthenticatedError],
+    );
+
     const flushPendingPersist = useCallback((): Promise<PersistResult | null> => {
         const pendingSnapshot = pendingPersistRef.current;
         if (!pendingSnapshot) {
@@ -1809,6 +1912,21 @@ export const usePocketBaseSession = () => {
         [enqueuePersistTask, reassignOperationalExceptionNow],
     );
 
+    const followUpOperationalException = useCallback(
+        (
+            snapshot: PersistableBusinessState,
+            exception: OperationalException,
+            followUp: OperationalExceptionFollowUpInput,
+            expectedVersion: number,
+        ): Promise<FollowUpOperationalExceptionResult | null> => {
+            const epoch = workspaceEpochRef.current;
+            return enqueuePersistTask(() =>
+                followUpOperationalExceptionNow(snapshot, exception, followUp, expectedVersion, epoch),
+            );
+        },
+        [enqueuePersistTask, followUpOperationalExceptionNow],
+    );
+
     const remoteRuntime = useMemo(
         () =>
             readRemoteOperationalRuntime(sessionState.workspace?.snapshot, {
@@ -1839,6 +1957,7 @@ export const usePocketBaseSession = () => {
         submitTaskReport,
         resolveOperationalException,
         reassignOperationalException,
+        followUpOperationalException,
         refreshRuntimeOverview,
     };
 };

@@ -112,6 +112,14 @@ export interface OperationalExceptionReassignInput {
     reason?: string;
 }
 
+export interface OperationalExceptionFollowUpInput {
+    note?: string;
+    reason?: string;
+    employeeId?: string | null;
+    employeeName?: string | null;
+    nextTaskStatus?: TaskStatus;
+}
+
 export interface TaskAssignment {
     id: string;
     kind: TaskAssignmentKind;
