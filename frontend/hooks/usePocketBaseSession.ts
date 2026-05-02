@@ -612,13 +612,14 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
             if (versionToUse === workspace.version && areSnapshotsEqual(snapshot, stripOperationalRuntimeFromSnapshot(workspace.snapshot))) {
                 pendingPersistRef.current = null;
                 return buildSyntheticPersistResult(workspace.version, workspace.snapshotRecordId);
             }
 
             try {
-                const result = await persistRemoteWorkspaceSnapshot(workspaceId, snapshot, versionToUse);
+                const result = await persistRemoteWorkspaceSnapshot(workspaceId, snapshot, versionToUse, transportBaseSnapshot);
                 pendingPersistRef.current = null;
                 setSessionState((previous) => {
                     if (!previous.workspace || previous.workspace.workspaceId !== workspaceId) return previous;
@@ -713,6 +714,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await approveRemoteWorkspaceInterpretation(
@@ -721,6 +723,7 @@ export const usePocketBaseSession = () => {
                     messageId,
                     message,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 pendingPersistRef.current = null;
@@ -804,6 +807,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await interpretRemoteWorkspaceMessage(
@@ -812,6 +816,7 @@ export const usePocketBaseSession = () => {
                     messageId,
                     message,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 if (result.snapshot && typeof result.version === 'number') {
@@ -915,6 +920,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await correctRemoteWorkspaceInterpretation(
@@ -924,6 +930,7 @@ export const usePocketBaseSession = () => {
                     message,
                     interpretation,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 if (result.snapshot && typeof result.version === 'number') {
@@ -1027,6 +1034,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await revertRemoteWorkspaceInterpretation(
@@ -1036,6 +1044,7 @@ export const usePocketBaseSession = () => {
                     message,
                     versionToUse,
                     actionId,
+                    transportBaseSnapshot,
                 );
 
                 if (result.snapshot && typeof result.version === 'number') {
@@ -1138,6 +1147,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await submitRemoteWorkspaceTaskReport(
@@ -1146,6 +1156,7 @@ export const usePocketBaseSession = () => {
                     taskId,
                     report,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 if (result.snapshot && typeof result.version === 'number') {
@@ -1248,6 +1259,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await resolveRemoteOperationalException(
@@ -1256,6 +1268,7 @@ export const usePocketBaseSession = () => {
                     exception,
                     resolution,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 applyRuntimeActionResult(workspaceId, result);
@@ -1339,6 +1352,7 @@ export const usePocketBaseSession = () => {
             }
 
             const versionToUse = Math.max(expectedVersion, workspace.version);
+            const transportBaseSnapshot = stripOperationalRuntimeFromSnapshot(workspace.snapshot) as PersistableBusinessState;
 
             try {
                 const result = await reassignRemoteOperationalException(
@@ -1347,6 +1361,7 @@ export const usePocketBaseSession = () => {
                     exception,
                     reassignment,
                     versionToUse,
+                    transportBaseSnapshot,
                 );
 
                 applyRuntimeActionResult(workspaceId, result);

@@ -909,6 +909,33 @@ export const buildPersistableSnapshot = (state: BusinessState): PersistableBusin
     return JSON.parse(JSON.stringify(sanitizedState)) as PersistableBusinessState;
 };
 
+const REMOTE_TRANSPORT_OMIT_KEYS = ['productGroups', 'customers', 'suppliers'] as const;
+
+const areTransportValuesEqual = (
+    snapshot: PersistableBusinessState,
+    referenceSnapshot: PersistableBusinessState | null | undefined,
+    key: (typeof REMOTE_TRANSPORT_OMIT_KEYS)[number],
+) => {
+    try {
+        return JSON.stringify(snapshot[key] ?? null) === JSON.stringify(referenceSnapshot?.[key] ?? null);
+    } catch {
+        return false;
+    }
+};
+
+const compactRemoteTransportSnapshot = (
+    snapshot: PersistableBusinessState,
+    referenceSnapshot?: PersistableBusinessState | null,
+): PersistableBusinessState => {
+    const compactSnapshot = JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>;
+    REMOTE_TRANSPORT_OMIT_KEYS.forEach((key) => {
+        if (!referenceSnapshot || areTransportValuesEqual(snapshot, referenceSnapshot, key)) {
+            delete compactSnapshot[key];
+        }
+    });
+    return compactSnapshot as PersistableBusinessState;
+};
+
 export const buildSeedSnapshot = () => buildPersistableSnapshot(createDefaultBusinessState());
 
 export const normalizePocketBaseError = (error: unknown, fallbackMessage: string): PocketBaseSyncError => {
@@ -1122,6 +1149,7 @@ export const persistRemoteWorkspaceSnapshot = async (
     workspaceId: string,
     snapshot: PersistableBusinessState,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<PersistResult> => {
     const pb = requirePocketBaseClient();
     return pb.send('/api/fideo/state/persist', {
@@ -1129,7 +1157,7 @@ export const persistRemoteWorkspaceSnapshot = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
         },
     }) as Promise<PersistResult>;
 };
@@ -1140,6 +1168,7 @@ export const approveRemoteWorkspaceInterpretation = async (
     messageId: string,
     message: Message,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<ApproveInterpretationResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/messages/approve', {
@@ -1147,7 +1176,7 @@ export const approveRemoteWorkspaceInterpretation = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             messageId,
             message: JSON.parse(JSON.stringify(message)),
         },
@@ -1294,6 +1323,7 @@ export const interpretRemoteWorkspaceMessage = async (
     messageId: string,
     message: Message,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<InterpretMessageResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/messages/interpret', {
@@ -1301,7 +1331,7 @@ export const interpretRemoteWorkspaceMessage = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             messageId,
             message: JSON.parse(JSON.stringify(message)),
         },
@@ -1317,6 +1347,7 @@ export const correctRemoteWorkspaceInterpretation = async (
     message: Message,
     interpretation: ParsedMessage,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<CorrectInterpretationResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/messages/correct', {
@@ -1324,7 +1355,7 @@ export const correctRemoteWorkspaceInterpretation = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             messageId,
             message: JSON.parse(JSON.stringify(message)),
             interpretation: JSON.parse(JSON.stringify(interpretation)),
@@ -1341,6 +1372,7 @@ export const revertRemoteWorkspaceInterpretation = async (
     message: Message,
     expectedVersion: number,
     actionId?: string,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<RevertInterpretationResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/messages/undo', {
@@ -1348,7 +1380,7 @@ export const revertRemoteWorkspaceInterpretation = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             messageId,
             actionId,
             message: JSON.parse(JSON.stringify(message)),
@@ -1364,6 +1396,7 @@ export const submitRemoteWorkspaceTaskReport = async (
     taskId: string,
     report: TaskReportInput,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<SubmitTaskReportResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/tasks/report', {
@@ -1371,7 +1404,7 @@ export const submitRemoteWorkspaceTaskReport = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             taskId,
             report: JSON.parse(JSON.stringify(report)),
         },
@@ -1386,6 +1419,7 @@ export const resolveRemoteOperationalException = async (
     exception: OperationalException,
     resolution: OperationalExceptionResolveInput,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<ResolveOperationalExceptionResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/exceptions/resolve', {
@@ -1393,7 +1427,7 @@ export const resolveRemoteOperationalException = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             exceptionId: exception.id,
             exception: JSON.parse(JSON.stringify(exception)),
             resolution: JSON.parse(JSON.stringify(resolution)),
@@ -1409,6 +1443,7 @@ export const reassignRemoteOperationalException = async (
     exception: OperationalException,
     reassignment: OperationalExceptionReassignInput,
     expectedVersion: number,
+    referenceSnapshot?: PersistableBusinessState | null,
 ): Promise<ReassignOperationalExceptionResult> => {
     const pb = requirePocketBaseClient();
     const response = await pb.send('/api/fideo/exceptions/reassign', {
@@ -1416,7 +1451,7 @@ export const reassignRemoteOperationalException = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
+            snapshot: compactRemoteTransportSnapshot(snapshot, referenceSnapshot),
             exceptionId: exception.id,
             exception: JSON.parse(JSON.stringify(exception)),
             reassignment: JSON.parse(JSON.stringify(reassignment)),
@@ -1428,7 +1463,7 @@ export const reassignRemoteOperationalException = async (
 
 export const followUpRemoteOperationalException = async (
     workspaceId: string,
-    snapshot: PersistableBusinessState,
+    _snapshot: PersistableBusinessState,
     exception: OperationalException,
     followUp: OperationalExceptionFollowUpInput,
     expectedVersion: number,
@@ -1439,7 +1474,6 @@ export const followUpRemoteOperationalException = async (
         body: {
             workspaceId,
             expectedVersion,
-            snapshot,
             exceptionId: exception.id,
             exception: JSON.parse(JSON.stringify(exception)),
             followUp: JSON.parse(JSON.stringify(followUp)),
