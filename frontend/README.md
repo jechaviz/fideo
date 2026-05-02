@@ -6,10 +6,12 @@ App React/Vite del producto.
 
 - usa login real y workspace remoto cuando existe `VITE_POCKETBASE_URL`
 - hace `bootstrap` remoto al entrar y `persist` versionado sobre el mismo workspace
+- cuando una ruta remota necesita snapshot, el frontend manda una version compacta del estado; hoy omite `productGroups`, `customers` y `suppliers` solo si no cambiaron, para bajar payload sin romper persistencia remota
 - si hay conflicto `409`, recarga la ultima version remota antes de seguir
 - abre suscripcion sobre el snapshot activo y manda heartbeat a `presence/ping`
 - consume `runtimeOverview` para roster global y cola consolidada de excepciones
-- `ActionCenter` ya usa `follow-up`, `reassign` y `resolve` server-side
+- `ActionCenter` ya usa `follow-up`, `reassign` y `resolve` server-side sobre la misma excepcion origen
+- el loop remoto de excepciones ya esta estable: cada accion devuelve snapshot/runtime actualizados y mantiene alineados `exceptionInbox`, `taskAssignments` y `taskReports`
 - si PocketBase no esta disponible, mantiene fallback local donde aplica
 
 ## Comandos
@@ -68,4 +70,12 @@ FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 - `POST /api/fideo/tasks/report`
 - `POST /api/fideo/messages/*`
 
-La capa publica hacia React sigue siendo snapshot-first, pero el runtime remoto ya materializa `taskAssignments`, `taskReports` y slices de dominio reales en PocketBase.
+La capa publica hacia React sigue siendo snapshot-first, pero el transporte remoto ya no manda el snapshot completo cuando no hace falta. `persist`, `messages/*`, `tasks/report`, `reassign` y `resolve` salen con snapshot compacto solo cuando las slices pesadas siguen iguales al remoto; `follow-up` opera directo sobre la excepcion origen con el mismo versionado/runtime del resto del loop.
+
+## Smoke corto del loop
+
+Smoke manual esperado para validar consistencia basica:
+
+- `follow-up` sobre una excepcion abierta deja timeline y ownership consistentes
+- `reassign` refresca la cola remota sin duplicar la excepcion origen
+- `resolve` saca la excepcion de abiertos y deja `taskAssignments` / `taskReports` alineados al volver del runtime
