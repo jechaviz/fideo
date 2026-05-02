@@ -3,6 +3,8 @@ pocketbase
 pocketbase_*.zip
 pocketbase.stdout.log
 pocketbase.stderr.log
+pocketbase.out.log
+pocketbase.err.log
 pb_stdout.log
 pb_stderr.log
 CHANGELOG.md
