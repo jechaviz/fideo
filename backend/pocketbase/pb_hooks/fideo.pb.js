@@ -1966,6 +1966,105 @@ function fideoExceptionBuildTaskPush(app, workspaceId, task, title, message, kin
     };
 }
 
+function fideoExceptionBuildAudiencePush(app, workspaceId, audienceInput, title, message, kind, data) {
+    const normalizedAudienceInput = audienceInput && typeof audienceInput === 'object' ? audienceInput : {};
+    const normalizedData = data && typeof data === 'object' ? data : {};
+    const audience = fideoPushResolveAudience(app, workspaceId, Object.assign({}, normalizedAudienceInput, {
+        workspaceSlug: fideoPushGetWorkspaceSlug(app, workspaceId),
+    }));
+    const deliveryMode = audience.externalIds.length ? 'external_id' : audience.filters.length ? 'filters' : 'none';
+    const response = fideoPushSend({
+        title: fideoPushText(title, 'Fideo'),
+        message: fideoPushText(message, ''),
+        externalIds: audience.externalIds,
+        filters: audience.filters,
+        data: Object.assign({}, normalizedData, {
+            kind: fideoPushText(kind, 'operational_follow_up'),
+            workspaceId: workspaceId,
+            workspaceSlug: audience.workspaceSlug,
+        }),
+        url: FIDEO_PUSH_URL,
+    });
+
+    return {
+        kind: fideoPushText(kind, 'operational_follow_up'),
+        title: fideoPushText(title, 'Fideo'),
+        message: fideoPushText(message, ''),
+        deliveryMode,
+        externalIds: audience.externalIds,
+        filters: audience.filters,
+        matchedUsers: audience.matchedUsers,
+        tags: audience.tags,
+        skipped: !!response.skipped,
+        reason: fideoPushText(response.reason, ''),
+        ok: !!response.ok,
+        statusCode: Number(response.statusCode || 0),
+        responseId: fideoPushText(response.responseId, ''),
+    };
+}
+
+function fideoExceptionApplyFollowUpMeta(item, metadata) {
+    const normalizedItem = item && typeof item === 'object' ? Object.assign({}, item) : {};
+    const nextMeta = metadata && typeof metadata === 'object' ? Object.assign({}, metadata) : {};
+    const previousPayload = normalizedItem.payload && typeof normalizedItem.payload === 'object'
+        ? Object.assign({}, normalizedItem.payload)
+        : {};
+    const previousFollowUp = previousPayload.followUp && typeof previousPayload.followUp === 'object'
+        ? Object.assign({}, previousPayload.followUp)
+        : {};
+    const nextCount = Number(previousFollowUp.count || normalizedItem.followUpCount || 0) + 1;
+    const nextTarget = nextMeta.target === undefined || nextMeta.target === null || String(nextMeta.target).trim() === ''
+        ? 'responsible'
+        : String(nextMeta.target).trim();
+    const nextAt = nextMeta.at === undefined || nextMeta.at === null || String(nextMeta.at).trim() === ''
+        ? new Date().toISOString()
+        : String(nextMeta.at).trim();
+
+    const followUp = Object.assign({}, previousFollowUp, nextMeta, {
+        count: nextCount,
+        lastAt: nextAt,
+        lastTarget: nextTarget,
+    });
+
+    return Object.assign({}, normalizedItem, {
+        followUpCount: nextCount,
+        lastFollowUpAt: nextAt,
+        lastFollowUpTarget: nextTarget,
+        payload: Object.assign({}, previousPayload, {
+            followUp,
+        }),
+    });
+}
+
+const fideoGlobalScope = typeof globalThis !== 'undefined' ? globalThis : this;
+Object.assign(fideoGlobalScope, {
+    fideoPushText,
+    fideoPushObject,
+    fideoPushArray,
+    fideoPushUnique,
+    fideoPushNormalizeText,
+    fideoPushParseTime,
+    fideoPushFindEmployee,
+    fideoPushResolveAudience,
+    fideoPushSend,
+    fideoPushGetWorkspaceSlug,
+    fideoPushDispatchOperational,
+    fideoRuntimeBuildOverview,
+    fideoExceptionParseReference,
+    fideoExceptionFindSnapshotByWorkspace,
+    fideoExceptionBackfillCustomerRefs,
+    fideoExceptionClone,
+    fideoExceptionResolveEmployee,
+    fideoExceptionNormalizeTaskStatus,
+    fideoExceptionApplyTaskStatus,
+    fideoExceptionFindLatestOpenReportIndex,
+    fideoExceptionBuildTaskReport,
+    fideoExceptionSyncTouchedCollections,
+    fideoExceptionWriteActionLog,
+    fideoExceptionBuildAudiencePush,
+    fideoExceptionApplyFollowUpMeta,
+});
+
 routerAdd(
     'POST',
     '/api/fideo/bootstrap',
@@ -1977,21 +2076,24 @@ routerAdd(
             }
 
             const body = e.requestInfo().body || {};
-            console.log('Bootstrap Request Body:', JSON.stringify(body));
             const workspaceSlug = body.workspaceSlug || 'main';
             const workspaceName = body.workspaceName || 'Fideo Main';
 
             const buildProfile = (record) => {
-                const workspaceId = record.get('workspace') || '';
-                const latestPresence = fideoPresenceFindLatest(e.app, workspaceId, record.id);
-                const explicitPushExternalId = fideoPushText(record.get('pushExternalId'), '').trim();
-                const resolvedPushExternalId = explicitPushExternalId || fideoPushText(latestPresence && latestPresence.pushExternalId, '').trim();
+                const readText = (value, fallback) => (value === undefined || value === null || value === '' ? (fallback || '') : String(value));
+                const workspaceId = readText(record.get('workspace'), '');
+                const latestPresence =
+                    typeof fideoPresenceFindLatest === 'function'
+                        ? fideoPresenceFindLatest(e.app, workspaceId, record.id)
+                        : null;
+                const explicitPushExternalId = readText(record.get('pushExternalId'), '').trim();
+                const resolvedPushExternalId = explicitPushExternalId || readText(latestPresence && latestPresence.pushExternalId, '').trim();
 
                 return {
                     id: record.id,
-                    email: record.get('email') || '',
-                    name: record.get('name') || record.get('email') || 'Fideo User',
-                    role: record.get('role') || 'Admin',
+                    email: readText(record.get('email'), ''),
+                    name: readText(record.get('name'), readText(record.get('email'), 'Fideo User')) || 'Fideo User',
+                    role: readText(record.get('role'), 'Admin') || 'Admin',
                     workspaceId: workspaceId || null,
                     employeeId: record.get('employeeId') || null,
                     customerId: record.get('customerId') || null,
@@ -2965,21 +3067,26 @@ routerAdd(
             e.app.save(snapshotRecord);
         }
 
-        let responseSnapshot = Object.assign({}, toObject(body.seedSnapshot), toObject(snapshotRecord.get('snapshot')));
+        const storedSnapshot = toObject(snapshotRecord.get('snapshot'));
+        let responseSnapshot = Object.assign({}, toObject(body.seedSnapshot), storedSnapshot);
         const normalizedSlice = loadNormalizedSlice(workspace.id);
+        const hasStoredSnapshot = Object.keys(storedSnapshot).length > 0;
 
         if (hasNormalizedData(normalizedSlice)) {
             responseSnapshot = mergeNormalizedSlice(responseSnapshot, normalizedSlice);
             responseSnapshot = backfillCustomerRefsInSnapshot(responseSnapshot);
-            snapshotRecord.set('snapshot', responseSnapshot);
-            snapshotRecord.set('updatedBy', authRecord.id);
-            e.app.save(snapshotRecord);
-            syncNormalizedFromSnapshot(workspace.id, responseSnapshot);
         } else {
             responseSnapshot = backfillCustomerRefsInSnapshot(responseSnapshot);
-            snapshotRecord.set('snapshot', responseSnapshot);
-            snapshotRecord.set('updatedBy', authRecord.id);
-            e.app.save(snapshotRecord);
+            try {
+                if (!hasStoredSnapshot) {
+                    snapshotRecord.set('snapshot', responseSnapshot);
+                    snapshotRecord.set('updatedBy', authRecord.id);
+                    e.app.save(snapshotRecord);
+                }
+            } catch (saveError) {
+                console.log('Bootstrap snapshot save skipped:', saveError && saveError.message ? saveError.message : String(saveError));
+            }
+
             syncNormalizedFromSnapshot(workspace.id, responseSnapshot);
         }
 
@@ -2991,11 +3098,12 @@ routerAdd(
             scope: canAccessFullWorkspace(authRecord) ? 'full' : buildProfile(authRecord).role,
         });
 
-        const runtimeOverview = canAccessFullWorkspace(authRecord)
-            ? fideoRuntimeBuildOverview(e.app, workspace.id, responseSnapshot, {
-                workspaceSlug: workspace.get('slug'),
-            })
-            : null;
+        const runtimeOverview =
+            canAccessFullWorkspace(authRecord) && typeof fideoRuntimeBuildOverview === 'function'
+                ? fideoRuntimeBuildOverview(e.app, workspace.id, responseSnapshot, {
+                    workspaceSlug: workspace.get('slug'),
+                })
+                : null;
 
         return e.json(200, {
             profile: buildProfile(authRecord),
@@ -3144,15 +3252,19 @@ routerAdd(
         }
 
         const snapshot = snapshotRecord ? snapshotRecord.get('snapshot') : {};
-        const runtimeOverview = fideoRuntimeBuildOverview(e.app, workspaceId, snapshot, {
-            workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
-        });
+        const runtimeOverview =
+            typeof fideoRuntimeBuildOverview === 'function'
+                ? fideoRuntimeBuildOverview(e.app, workspaceId, snapshot, {
+                    workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
+                })
+                : null;
 
         return e.json(200, {
             workspaceId,
             workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
             snapshotRecordId: snapshotRecord ? snapshotRecord.id : null,
             version: snapshotRecord ? Number(snapshotRecord.get('version') || 0) : 0,
+            snapshot,
             runtimeOverview,
         });
     },
@@ -3971,6 +4083,7 @@ const fideoExceptionReassignHandler = (e) => {
     }
 
     const body = e.requestInfo().body || {};
+    const reassignment = fideoPushObject(body.reassignment);
     const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '').trim();
     const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
     const expectedVersion = Number(body.expectedVersion || 0);
@@ -3978,12 +4091,14 @@ const fideoExceptionReassignHandler = (e) => {
     const exceptionId = fideoPushText(body.exceptionId, '').trim();
     const directTaskId = fideoPushText(body.taskId, '').trim();
     const directReportId = fideoPushText(body.reportId, '').trim();
-    const incomingEmployeeId = fideoPushText(body.employeeId || body.assigneeId, '').trim();
-    const incomingEmployeeName = fideoPushText(body.employeeName || body.assigneeName, '').trim();
-    const incomingRole = fideoPushText(body.role || body.assigneeRole, '').trim();
-    const reason = fideoPushText(body.reason || body.note || body.summary, '').trim();
-    const resolveSourceReport = !(body.resolveSourceReport === false || body.resolveSourceReport === 'false' || body.resolveSourceReport === 0);
-    const createTimelineNote = !(body.createReport === false || body.createReport === 'false' || body.createReport === 0);
+    const incomingEmployeeId = fideoPushText(body.employeeId || body.assigneeId || reassignment.employeeId || reassignment.assigneeId, '').trim();
+    const incomingEmployeeName = fideoPushText(body.employeeName || body.assigneeName || reassignment.employeeName || reassignment.assigneeName, '').trim();
+    const incomingRole = fideoPushText(body.role || body.assigneeRole || reassignment.role || reassignment.assigneeRole, '').trim();
+    const reason = fideoPushText(body.reason || body.note || body.summary || reassignment.reason || reassignment.note || reassignment.summary, '').trim();
+    const resolveSourceReportFlag = body.resolveSourceReport !== undefined ? body.resolveSourceReport : reassignment.resolveSourceReport;
+    const createTimelineNoteFlag = body.createReport !== undefined ? body.createReport : reassignment.createReport;
+    const resolveSourceReport = !(resolveSourceReportFlag === false || resolveSourceReportFlag === 'false' || resolveSourceReportFlag === 0);
+    const createTimelineNote = !(createTimelineNoteFlag === false || createTimelineNoteFlag === 'false' || createTimelineNoteFlag === 0);
 
     if (!workspaceId || (authWorkspaceId && authWorkspaceId !== workspaceId)) {
         throw new ForbiddenError('No tienes acceso a este workspace para reasignar excepciones.');
@@ -4217,6 +4332,7 @@ const fideoExceptionResolveHandler = (e) => {
     }
 
     const body = e.requestInfo().body || {};
+    const resolution = fideoPushObject(body.resolution);
     const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '').trim();
     const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
     const expectedVersion = Number(body.expectedVersion || 0);
@@ -4226,9 +4342,9 @@ const fideoExceptionResolveHandler = (e) => {
     const directReportId = fideoPushText(body.reportId, '').trim();
     const directDrawerId = fideoPushText(body.drawerId, '').trim();
     const directActivityId = fideoPushText(body.activityId, '').trim();
-    const resolutionSummary = fideoPushText(body.summary || body.note || body.reason, '').trim();
-    const resolutionDetail = fideoPushText(body.detail, '').trim();
-    const requestedTaskStatus = fideoExceptionNormalizeTaskStatus(body.nextTaskStatus || body.taskStatus, '');
+    const resolutionSummary = fideoPushText(body.summary || body.note || body.reason || resolution.resolutionNote || resolution.summary || resolution.note || resolution.reason, '').trim();
+    const resolutionDetail = fideoPushText(body.detail || resolution.detail, '').trim();
+    const requestedTaskStatus = fideoExceptionNormalizeTaskStatus(body.nextTaskStatus || body.taskStatus || resolution.nextTaskStatus, '');
     const requestedDrawerStatus = fideoPushText(body.nextDrawerStatus || body.drawerStatus, '').trim();
 
     if (!workspaceId || (authWorkspaceId && authWorkspaceId !== workspaceId)) {
@@ -4295,7 +4411,7 @@ const fideoExceptionResolveHandler = (e) => {
     if (taskId) {
         const taskIndex = taskAssignments.findIndex((item) => fideoPushText(item && item.id, '').trim() === taskId);
         if (taskIndex >= 0) {
-            previousTask = fideoPushObject(taskAssignments[taskIndex]);
+            previousTask = asObject(taskAssignments[taskIndex]);
             let nextTaskStatus = requestedTaskStatus;
             if (!nextTaskStatus) {
                 if (reportIndex >= 0 && fideoPushText(taskReports[reportIndex] && taskReports[reportIndex].kind, '') === 'completion') {
@@ -4504,6 +4620,556 @@ const fideoExceptionResolveHandler = (e) => {
     });
 };
 
+const fideoExceptionFollowUpHandler = (e) => {
+    const authRecord = e.auth || e.requestInfo().auth;
+    if (!authRecord) {
+        throw new UnauthorizedError('Necesitas autenticarte para hacer seguimiento de excepciones en Fideo.');
+    }
+
+    const body = e.requestInfo().body || {};
+    const parseJsonLike = (value) => {
+        if (typeof value !== 'string') {
+            return value;
+        }
+
+        const trimmed = value.trim();
+        if (!trimmed) {
+            return value;
+        }
+
+        if (
+            (trimmed.charAt(0) === '{' && trimmed.charAt(trimmed.length - 1) === '}')
+            || (trimmed.charAt(0) === '[' && trimmed.charAt(trimmed.length - 1) === ']')
+        ) {
+            try {
+                return JSON.parse(trimmed);
+            } catch (_) {
+                return value;
+            }
+        }
+
+        return value;
+    };
+    const toArray = (value) => {
+        const normalized = parseJsonLike(value);
+        return Array.isArray(normalized) ? normalized : [];
+    };
+    const toObject = (value) => {
+        const normalized = parseJsonLike(value);
+        return normalized && typeof normalized === 'object' && !Array.isArray(normalized) ? normalized : {};
+    };
+    const toText = (value, fallback) => (value === undefined || value === null || value === '' ? (fallback || '') : String(value));
+    const toIsoString = (value) => {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        try {
+            return new Date(value).toISOString();
+        } catch (_) {
+            return '';
+        }
+    };
+    const cloneValue = (value, fallback) => JSON.parse(JSON.stringify(value === undefined ? fallback : value));
+    const normalizeText = (value) =>
+        toText(value, '')
+            .toLowerCase()
+            .trim()
+            .replace(/[\u00e1\u00e0\u00e4\u00e2]/g, 'a')
+            .replace(/[\u00e9\u00e8\u00eb\u00ea]/g, 'e')
+            .replace(/[\u00ed\u00ec\u00ef\u00ee]/g, 'i')
+            .replace(/[\u00f3\u00f2\u00f6\u00f4]/g, 'o')
+            .replace(/[\u00fa\u00f9\u00fc\u00fb]/g, 'u')
+            .replace(/\u00f1/g, 'n');
+    const toBoolean = (value, defaultValue) => {
+        if (value === undefined || value === null || value === '') return defaultValue;
+        return !(value === false || value === 'false' || value === 0 || value === '0');
+    };
+    const isInternalRole = (role) => ['Admin', 'Empacador', 'Repartidor', 'Cajero'].indexOf(toText(role, 'Admin')) >= 0;
+    const canManageFollowUp = () => !!authRecord.get('canSwitchRoles') || isInternalRole(authRecord.get('role'));
+    const findSnapshotByWorkspace = (targetWorkspaceId) => {
+        try {
+            return e.app.findFirstRecordByData('fideo_state_snapshots', 'workspace', targetWorkspaceId);
+        } catch (_) {
+            return null;
+        }
+    };
+    const parseReference = (exceptionId) => {
+        const normalized = toText(exceptionId, '').trim();
+        if (!normalized) return {};
+        if (normalized.indexOf('task_report:') === 0) return { kind: 'task_report', reportId: normalized.substring('task_report:'.length) };
+        if (normalized.indexOf('task_blocked:') === 0) return { kind: 'task_blocked', taskId: normalized.substring('task_blocked:'.length) };
+        if (normalized.indexOf('task_ack_overdue:') === 0) return { kind: 'task_ack_overdue', taskId: normalized.substring('task_ack_overdue:'.length) };
+        if (normalized.indexOf('cash_negative:') === 0) return { kind: 'cash_negative', drawerId: normalized.substring('cash_negative:'.length) };
+        if (normalized.indexOf('cash_idle:') === 0) return { kind: 'cash_idle', drawerId: normalized.substring('cash_idle:'.length) };
+        if (normalized.indexOf('cash_without_cashier:') === 0) return { kind: 'cash_without_cashier', drawerId: normalized.substring('cash_without_cashier:'.length) };
+        if (normalized.indexOf('cash_close_difference:') === 0) return { kind: 'cash_close_difference', activityId: normalized.substring('cash_close_difference:'.length) };
+        if (normalized.indexOf('staff_offline:') === 0) return { kind: 'staff_offline', staffId: normalized.substring('staff_offline:'.length) };
+        return { kind: normalized };
+    };
+    const backfillCustomerRefsInSnapshot = (sourceSnapshot) => {
+        const normalized = Object.assign({}, toObject(sourceSnapshot));
+        const customers = toArray(normalized.customers);
+        const uniqueCustomersByName = {};
+        const duplicateNames = {};
+
+        customers.forEach((customer) => {
+            const name = toText(customer && customer.name, '');
+            if (!name) return;
+            if (uniqueCustomersByName[name]) {
+                duplicateNames[name] = true;
+                return;
+            }
+            uniqueCustomersByName[name] = customer;
+        });
+
+        Object.keys(duplicateNames).forEach((name) => {
+            delete uniqueCustomersByName[name];
+        });
+
+        normalized.sales = toArray(normalized.sales).map((item) => {
+            const customerId = toText(item && item.customerId, '');
+            if (customerId) return item;
+            const customer = uniqueCustomersByName[toText(item && item.customer, '')];
+            if (!customer) return item;
+            return Object.assign({}, item, { customerId: toText(customer.id, '') });
+        });
+
+        normalized.crateLoans = toArray(normalized.crateLoans).map((item) => {
+            const customerId = toText(item && item.customerId, '');
+            if (customerId) return item;
+            const customer = uniqueCustomersByName[toText(item && item.customer, '')];
+            if (!customer) return item;
+            return Object.assign({}, item, { customerId: toText(customer.id, '') });
+        });
+
+        return normalized;
+    };
+    const resolveEmployee = (snapshotState, employeeId, employeeName, fallbackRole) => {
+        const employees = toArray(snapshotState && snapshotState.employees);
+        const normalizedEmployeeId = toText(employeeId, '').trim();
+        const normalizedEmployeeName = normalizeText(employeeName);
+        let employee = null;
+
+        if (normalizedEmployeeId) {
+            employee = employees.find((item) => toText(item && item.id, '').trim() === normalizedEmployeeId) || null;
+        }
+
+        if (!employee && normalizedEmployeeName) {
+            employee = employees.find((item) => normalizeText(item && item.name) === normalizedEmployeeName) || null;
+        }
+
+        return {
+            employeeId: normalizedEmployeeId || toText(employee && employee.id, '').trim(),
+            employeeName: toText(employeeName, toText(employee && employee.name, '')).trim(),
+            role: toText(employee && employee.role, fallbackRole || 'Admin') || 'Admin',
+        };
+    };
+    const applyFollowUpMeta = (item, metadata) => {
+        const normalizedItem = Object.assign({}, toObject(item));
+        const nextMeta = Object.assign({}, toObject(metadata));
+        const previousPayload = Object.assign({}, toObject(normalizedItem.payload));
+        const previousFollowUp = Object.assign({}, toObject(previousPayload.followUp));
+        const nextTarget = toText(nextMeta.target, normalizedItem.lastFollowUpTarget || 'responsible').trim() || 'responsible';
+        const nextAt = toText(nextMeta.at, new Date().toISOString()).trim();
+        const nextCount = Number(previousFollowUp.count || normalizedItem.followUpCount || 0) + 1;
+
+        return Object.assign({}, normalizedItem, {
+            updatedAt: nextAt,
+            followUpCount: nextCount,
+            lastFollowUpAt: nextAt,
+            lastFollowUpTarget: nextTarget,
+            payload: Object.assign({}, previousPayload, {
+                followUp: Object.assign({}, previousFollowUp, nextMeta, {
+                    count: nextCount,
+                    lastAt: nextAt,
+                    lastTarget: nextTarget,
+                    target: nextTarget,
+                }),
+            }),
+        });
+    };
+    const buildTaskReport = (task, overrides) => {
+        const normalizedTask = toObject(task);
+        const normalizedOverrides = toObject(overrides);
+        return {
+            id: toText(normalizedOverrides.id, 'task_report_followup_' + Date.now() + '_' + Math.round(Math.random() * 100000)),
+            taskId: toText(normalizedOverrides.taskId, toText(normalizedTask.id, '')),
+            saleId: toText(normalizedOverrides.saleId, toText(normalizedTask.saleId, '')) || null,
+            role: toText(normalizedOverrides.role, toText(normalizedTask.role, 'Admin')) || 'Admin',
+            employeeId: toText(normalizedOverrides.employeeId, toText(normalizedTask.employeeId, '')) || null,
+            employeeName: toText(normalizedOverrides.employeeName, toText(normalizedTask.employeeName, '')) || null,
+            customerId: toText(normalizedOverrides.customerId, toText(normalizedTask.customerId, '')) || null,
+            customerName: toText(normalizedOverrides.customerName, toText(normalizedTask.customerName, '')) || null,
+            taskTitle: toText(normalizedOverrides.taskTitle, toText(normalizedTask.title, 'Tarea operativa')),
+            kind: toText(normalizedOverrides.kind, 'note') || 'note',
+            status: toText(normalizedOverrides.status, 'resolved') || 'resolved',
+            severity: toText(normalizedOverrides.severity, 'normal') || 'normal',
+            summary: toText(normalizedOverrides.summary, 'Seguimiento enviado'),
+            detail: toText(normalizedOverrides.detail, ''),
+            evidence: toText(normalizedOverrides.evidence, ''),
+            escalationStatus: toText(normalizedOverrides.escalationStatus, 'none') || 'none',
+            createdAt: toIsoString(normalizedOverrides.createdAt || normalizedOverrides.nowIso || new Date().toISOString()),
+            resolvedAt: toText(normalizedOverrides.status, 'resolved') === 'resolved'
+                ? toIsoString(normalizedOverrides.resolvedAt || normalizedOverrides.nowIso || new Date().toISOString())
+                : '',
+            escalatedAt: toIsoString(normalizedOverrides.escalatedAt),
+        };
+    };
+    const findLatestOpenReportIndex = (reports, taskId, kinds) => {
+        const normalizedKinds = toArray(kinds).map((value) => toText(value, ''));
+        let fallbackIndex = -1;
+        for (let index = 0; index < reports.length; index += 1) {
+            const report = toObject(reports[index]);
+            if (toText(report.taskId, '').trim() !== toText(taskId, '').trim()) continue;
+            if (toText(report.status, 'open') === 'resolved' || toText(report.status, 'open') === 'closed') continue;
+            if (fallbackIndex < 0) fallbackIndex = index;
+            if (!normalizedKinds.length || normalizedKinds.indexOf(toText(report.kind, '')) >= 0) {
+                return index;
+            }
+        }
+        return fallbackIndex;
+    };
+
+    const rawException = toObject(body.exception);
+    const followUp = toObject(body.followUp);
+    const authWorkspaceId = toText(authRecord.get('workspace'), '').trim();
+    const workspaceId = toText(body.workspaceId, authWorkspaceId).trim();
+    const expectedVersion = Number(body.expectedVersion || 0);
+    const incomingSnapshot = toObject(body.snapshot);
+    const exceptionId = toText(body.exceptionId, toText(rawException.id, '')).trim();
+    const directTaskId = toText(body.taskId, toText(rawException.taskId, '')).trim();
+    const directReportId = toText(body.reportId, toText(rawException.reportId, '')).trim();
+    const directDrawerId = toText(body.drawerId, toText(rawException.drawerId, '')).trim();
+    const directActivityId = toText(body.activityId, toText(rawException.activityId, '')).trim();
+    const incomingEmployeeId = toText(
+        body.employeeId || body.assigneeId || body.responsibleEmployeeId || followUp.employeeId || rawException.employeeId,
+        '',
+    ).trim();
+    const incomingEmployeeName = toText(
+        body.employeeName || body.assigneeName || body.responsibleEmployeeName || followUp.employeeName || rawException.employeeName,
+        '',
+    ).trim();
+    const incomingRole = toText(body.role || body.assigneeRole || body.responsibleRole || rawException.role || followUp.role, '').trim();
+    const requestedTarget = normalizeText(body.target || body.audience || body.followUpTarget || body.mode || followUp.target || rawException.target);
+    const followUpSummary = toText(body.summary || followUp.note || followUp.reason || rawException.summary, '').trim();
+    const followUpDetail = toText(body.detail || followUp.detail || rawException.detail || followUp.reason, '').trim();
+    const createTimelineNote = toBoolean(body.createReport !== undefined ? body.createReport : followUp.createReport, true);
+    const markEscalated = toBoolean(body.markEscalated !== undefined ? body.markEscalated : followUp.markEscalated, true);
+
+    if (!workspaceId || (authWorkspaceId && authWorkspaceId !== workspaceId)) {
+        throw new ForbiddenError('No tienes acceso a este workspace para dar seguimiento a excepciones.');
+    }
+
+    if (!canManageFollowUp()) {
+        throw new ForbiddenError('Tu perfil no puede hacer seguimiento de excepciones operativas.');
+    }
+
+    const reference = parseReference(exceptionId);
+    const referenceKind = toText(reference.kind || rawException.kind, '').trim();
+    let snapshotRecord = findSnapshotByWorkspace(workspaceId);
+    if (!snapshotRecord) {
+        const collection = e.app.findCollectionByNameOrId('fideo_state_snapshots');
+        snapshotRecord = new Record(collection);
+        snapshotRecord.set('workspace', workspaceId);
+        snapshotRecord.set('version', 1);
+    }
+
+    const currentVersion = Number(snapshotRecord.get('version') || 0);
+    if (expectedVersion && currentVersion && expectedVersion < currentVersion) {
+        return e.json(409, {
+            message: 'El snapshot remoto ya cambio. Recarga antes de enviar seguimiento.',
+            version: currentVersion,
+            snapshotRecordId: snapshotRecord.id,
+        });
+    }
+
+    const previousSnapshot = backfillCustomerRefsInSnapshot(cloneValue(snapshotRecord.get('snapshot'), {}));
+    const workingSnapshot = backfillCustomerRefsInSnapshot(
+        Object.keys(incomingSnapshot).length > 0 ? cloneValue(incomingSnapshot, {}) : cloneValue(previousSnapshot, {}),
+    );
+    const taskAssignments = cloneValue(toArray(workingSnapshot.taskAssignments), []);
+    const taskReports = cloneValue(toArray(workingSnapshot.taskReports), []);
+    const cashDrawers = cloneValue(toArray(workingSnapshot.cashDrawers), []);
+    const cashDrawerActivities = cloneValue(toArray(workingSnapshot.cashDrawerActivities), []);
+    const activityLog = cloneValue(toArray(workingSnapshot.activityLog), []);
+    const nowIso = new Date().toISOString();
+
+    let reportIndex = -1;
+    if (directReportId) {
+        reportIndex = taskReports.findIndex((item) => toText(item && item.id, '').trim() === directReportId);
+    } else if (reference.reportId) {
+        reportIndex = taskReports.findIndex((item) => toText(item && item.id, '').trim() === toText(reference.reportId, '').trim());
+    }
+
+    let taskId =
+        directTaskId
+        || (reportIndex >= 0 ? toText(taskReports[reportIndex] && taskReports[reportIndex].taskId, '').trim() : '')
+        || toText(reference.taskId, '').trim();
+    if (!taskId && rawException.taskId) {
+        taskId = toText(rawException.taskId, '').trim();
+    }
+
+    if (reportIndex < 0 && taskId) {
+        const preferredKinds = referenceKind === 'task_blocked' ? ['blocker', 'incident'] : [];
+        reportIndex = findLatestOpenReportIndex(taskReports, taskId, preferredKinds);
+    }
+
+    let taskIndex = -1;
+    if (taskId) {
+        taskIndex = taskAssignments.findIndex((item) => toText(item && item.id, '').trim() === taskId);
+    }
+
+    let previousTask = null;
+    let updatedTask = null;
+    let previousReport = null;
+    let updatedReport = null;
+    let previousDrawer = null;
+    let updatedDrawer = null;
+
+    let resolvedRole = incomingRole || 'Admin';
+    let resolvedEmployeeId = incomingEmployeeId;
+    let resolvedEmployeeName = incomingEmployeeName;
+
+    if (taskIndex >= 0) {
+        previousTask = toObject(taskAssignments[taskIndex]);
+        const resolvedEmployee = resolveEmployee(
+            workingSnapshot,
+            incomingEmployeeId || toText(previousTask.employeeId, '').trim(),
+            incomingEmployeeName || toText(previousTask.employeeName, '').trim(),
+            incomingRole || toText(previousTask.role, 'Admin'),
+        );
+        resolvedRole = toText(incomingRole, toText(previousTask.role, resolvedEmployee.role || 'Admin')).trim() || 'Admin';
+        resolvedEmployeeId = toText(resolvedEmployee.employeeId, resolvedEmployeeId).trim();
+        resolvedEmployeeName = toText(resolvedEmployee.employeeName, resolvedEmployeeName).trim();
+        updatedTask = applyFollowUpMeta(previousTask, {
+            at: nowIso,
+            by: authRecord.id,
+            actorName: toText(authRecord.get('name'), authRecord.get('email')),
+            target: requestedTarget || 'responsible',
+            employeeId: resolvedEmployeeId || null,
+            employeeName: resolvedEmployeeName || null,
+            role: resolvedRole,
+            summary: followUpSummary || null,
+            detail: followUpDetail || null,
+            exceptionId: exceptionId || null,
+        });
+        updatedTask.role = toText(updatedTask.role, resolvedRole) || resolvedRole;
+        if (resolvedEmployeeId || previousTask.employeeId !== undefined) updatedTask.employeeId = resolvedEmployeeId || null;
+        if (resolvedEmployeeName || previousTask.employeeName !== undefined) updatedTask.employeeName = resolvedEmployeeName || null;
+        taskAssignments[taskIndex] = updatedTask;
+    }
+
+    if (reportIndex >= 0) {
+        previousReport = toObject(taskReports[reportIndex]);
+        const resolvedEmployee = resolveEmployee(
+            workingSnapshot,
+            incomingEmployeeId || toText(previousReport.employeeId, '').trim(),
+            incomingEmployeeName || toText(previousReport.employeeName, '').trim(),
+            incomingRole || toText(previousReport.role, resolvedRole || 'Admin'),
+        );
+        resolvedRole = toText(incomingRole, toText(previousReport.role, resolvedEmployee.role || resolvedRole || 'Admin')).trim() || 'Admin';
+        resolvedEmployeeId = toText(resolvedEmployee.employeeId, resolvedEmployeeId).trim();
+        resolvedEmployeeName = toText(resolvedEmployee.employeeName, resolvedEmployeeName).trim();
+        updatedReport = applyFollowUpMeta(previousReport, {
+            at: nowIso,
+            by: authRecord.id,
+            actorName: toText(authRecord.get('name'), authRecord.get('email')),
+            target: requestedTarget || 'responsible',
+            employeeId: resolvedEmployeeId || null,
+            employeeName: resolvedEmployeeName || null,
+            role: resolvedRole,
+            summary: followUpSummary || null,
+            detail: followUpDetail || null,
+            exceptionId: exceptionId || null,
+        });
+        updatedReport.role = toText(updatedReport.role, resolvedRole) || resolvedRole;
+        if (resolvedEmployeeId || previousReport.employeeId !== undefined) updatedReport.employeeId = resolvedEmployeeId || null;
+        if (resolvedEmployeeName || previousReport.employeeName !== undefined) updatedReport.employeeName = resolvedEmployeeName || null;
+        if (
+            markEscalated
+            && toText(updatedReport.status, 'open') !== 'resolved'
+            && toText(updatedReport.status, 'open') !== 'closed'
+        ) {
+            updatedReport.escalationStatus = 'sent';
+            updatedReport.escalatedAt = nowIso;
+        }
+        taskReports[reportIndex] = updatedReport;
+    }
+
+    const resolvedDrawerId = directDrawerId || toText(reference.drawerId || rawException.drawerId, '').trim();
+    const resolvedActivityId = directActivityId || toText(reference.activityId || rawException.activityId, '').trim();
+    if (resolvedDrawerId || resolvedActivityId) {
+        let drawerId = resolvedDrawerId;
+        if (!drawerId && resolvedActivityId) {
+            const relatedActivity = cashDrawerActivities.find((item) => toText(item && item.id, '').trim() === resolvedActivityId);
+            if (relatedActivity) {
+                drawerId = toText(relatedActivity.drawerId, '').trim();
+            }
+        }
+
+        if (drawerId) {
+            const drawerIndex = cashDrawers.findIndex((item) => toText(item && item.id, '').trim() === drawerId);
+            if (drawerIndex >= 0) {
+                previousDrawer = toObject(cashDrawers[drawerIndex]);
+                updatedDrawer = applyFollowUpMeta(previousDrawer, {
+                    at: nowIso,
+                    by: authRecord.id,
+                    actorName: toText(authRecord.get('name'), authRecord.get('email')),
+                    target: requestedTarget || 'admin',
+                    role: 'Cajero',
+                    summary: followUpSummary || null,
+                    detail: followUpDetail || null,
+                    exceptionId: exceptionId || null,
+                    activityId: resolvedActivityId || null,
+                });
+                cashDrawers[drawerIndex] = updatedDrawer;
+            }
+        }
+    }
+
+    const targetAdmins =
+        requestedTarget === 'admin'
+        || requestedTarget === 'dispatch'
+        || referenceKind.indexOf('cash_') === 0
+        || referenceKind === 'staff_offline'
+        || ((!resolvedEmployeeId && !resolvedEmployeeName) && !updatedDrawer);
+    const normalizedFollowUpTarget = targetAdmins ? 'admin' : 'responsible';
+    const targetRole = updatedTask
+        ? toText(updatedTask.role, resolvedRole)
+        : updatedReport
+            ? toText(updatedReport.role, resolvedRole)
+            : (incomingRole || (updatedDrawer ? 'Cajero' : 'Admin'));
+    const targetEmployeeId =
+        resolvedEmployeeId
+        || toText(updatedTask && updatedTask.employeeId, toText(updatedReport && updatedReport.employeeId, ''));
+    const targetEmployeeName =
+        resolvedEmployeeName
+        || toText(updatedTask && updatedTask.employeeName, toText(updatedReport && updatedReport.employeeName, ''));
+    const audienceLabel = targetAdmins ? 'Admin' : (targetEmployeeName || targetEmployeeId || targetRole || 'Responsable');
+    const taskTitle = toText(updatedTask && updatedTask.title, toText(updatedReport && updatedReport.taskTitle, 'Tarea operativa'));
+    const customerName = toText(updatedTask && updatedTask.customerName, toText(updatedReport && updatedReport.customerName, ''));
+    const drawerName = toText(updatedDrawer && updatedDrawer.name, toText(previousDrawer && previousDrawer.name, 'Caja'));
+
+    if (updatedTask) {
+        updatedTask.lastFollowUpTarget = normalizedFollowUpTarget;
+        updatedTask.payload = Object.assign({}, toObject(updatedTask.payload), {
+            followUp: Object.assign({}, toObject(toObject(updatedTask.payload).followUp), {
+                target: normalizedFollowUpTarget,
+                lastTarget: normalizedFollowUpTarget,
+            }),
+        });
+        taskAssignments[taskIndex] = updatedTask;
+    }
+    if (updatedReport) {
+        updatedReport.lastFollowUpTarget = normalizedFollowUpTarget;
+        updatedReport.payload = Object.assign({}, toObject(updatedReport.payload), {
+            followUp: Object.assign({}, toObject(toObject(updatedReport.payload).followUp), {
+                target: normalizedFollowUpTarget,
+                lastTarget: normalizedFollowUpTarget,
+            }),
+        });
+        taskReports[reportIndex] = updatedReport;
+    }
+    if (updatedDrawer) {
+        updatedDrawer.lastFollowUpTarget = normalizedFollowUpTarget;
+        updatedDrawer.payload = Object.assign({}, toObject(updatedDrawer.payload), {
+            followUp: Object.assign({}, toObject(toObject(updatedDrawer.payload).followUp), {
+                target: normalizedFollowUpTarget,
+                lastTarget: normalizedFollowUpTarget,
+            }),
+        });
+        const updatedDrawerIndex = cashDrawers.findIndex((item) => toText(item && item.id, '').trim() === toText(updatedDrawer.id, '').trim());
+        if (updatedDrawerIndex >= 0) {
+            cashDrawers[updatedDrawerIndex] = updatedDrawer;
+        }
+    }
+
+    const defaultMessage =
+        followUpDetail
+        || followUpSummary
+        || (taskTitle
+            ? taskTitle + (customerName ? ' - ' + customerName : '') + ' sigue pendiente.'
+            : updatedDrawer
+                ? drawerName + ' sigue requiriendo atencion.'
+                : 'Seguimiento operativo enviado.');
+
+    let noteReport = null;
+    if (createTimelineNote && (updatedTask || previousTask || updatedReport || previousReport || taskId)) {
+        const taskForNote = updatedTask || previousTask || {
+            id: taskId || toText(updatedReport && updatedReport.taskId, toText(previousReport && previousReport.taskId, '')),
+            saleId: toText(updatedReport && updatedReport.saleId, toText(previousReport && previousReport.saleId, '')),
+            role: toText(updatedReport && updatedReport.role, toText(previousReport && previousReport.role, targetRole || 'Admin')),
+            title: taskTitle,
+            customerId: toText(updatedReport && updatedReport.customerId, toText(previousReport && previousReport.customerId, '')),
+            customerName: customerName,
+            employeeId: targetEmployeeId || null,
+            employeeName: targetEmployeeName || null,
+        };
+        noteReport = buildTaskReport(taskForNote, {
+            nowIso,
+            kind: 'note',
+            status: 'resolved',
+            severity: targetAdmins ? 'high' : 'normal',
+            escalationStatus: 'none',
+            summary: followUpSummary || ('Seguimiento enviado a ' + audienceLabel),
+            detail: defaultMessage,
+            employeeId: targetEmployeeId || null,
+            employeeName: targetEmployeeName || null,
+            role: targetRole || 'Admin',
+        });
+        taskReports.unshift(noteReport);
+    }
+
+    if (!updatedTask && !updatedReport && !updatedDrawer && !noteReport) {
+        throw new BadRequestError('No encontre una tarea, reporte o caja compatible para dar seguimiento a esta excepcion.');
+    }
+
+    const activityDetails = {
+        Objetivo: audienceLabel,
+    };
+    if (exceptionId) activityDetails.Excepcion = exceptionId;
+    if (taskId) activityDetails.TaskID = taskId;
+    if (taskTitle) activityDetails.Tarea = taskTitle;
+    if (updatedReport || previousReport) activityDetails.Reporte = toText(updatedReport && updatedReport.id, toText(previousReport && previousReport.id, ''));
+    if (updatedDrawer || previousDrawer) activityDetails.Caja = drawerName;
+    if (followUpSummary) activityDetails.Resumen = followUpSummary;
+    if (followUpDetail) activityDetails.Detalle = followUpDetail;
+    activityLog.unshift({
+        id: 'log_exception_follow_up_' + Date.now() + '_' + Math.round(Math.random() * 100000),
+        type: updatedDrawer ? 'CAJA_OPERACION' : 'ASIGNACION_ENTREGA',
+        timestamp: nowIso,
+        description: followUpSummary || 'Seguimiento operativo',
+        details: activityDetails,
+    });
+
+    const nextSnapshot = backfillCustomerRefsInSnapshot(Object.assign({}, workingSnapshot, {
+        cashDrawers: cashDrawers,
+        cashDrawerActivities: cashDrawerActivities,
+        activityLog: activityLog,
+        taskAssignments: taskAssignments,
+        taskReports: taskReports,
+    }));
+
+    snapshotRecord.set('snapshot', nextSnapshot);
+    snapshotRecord.set('version', currentVersion > 0 ? currentVersion + 1 : 1);
+    snapshotRecord.set('updatedBy', authRecord.id);
+    e.app.save(snapshotRecord);
+
+    return e.json(200, {
+        version: snapshotRecord.get('version'),
+        snapshotRecordId: snapshotRecord.id,
+        updatedAt: nowIso,
+        snapshot: nextSnapshot,
+        taskAssignment: updatedTask,
+        report: updatedReport,
+        cashDrawer: updatedDrawer,
+        noteReport: noteReport,
+        followUpTarget: normalizedFollowUpTarget,
+        actionLogId: null,
+        pushNotifications: [],
+        notification: null,
+    });
+};
+
 routerAdd(
     'POST',
     '/api/fideo/exceptions/reassign',
@@ -4536,6 +5202,34 @@ routerAdd(
     'POST',
     '/api/fideo/reports/resolve',
     fideoExceptionResolveHandler,
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/exceptions/follow-up',
+    fideoExceptionFollowUpHandler,
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/tasks/follow-up',
+    fideoExceptionFollowUpHandler,
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/reports/follow-up',
+    fideoExceptionFollowUpHandler,
+    $apis.requireAuth('fideo_users'),
+);
+
+routerAdd(
+    'POST',
+    '/api/fideo/cash/follow-up',
+    fideoExceptionFollowUpHandler,
     $apis.requireAuth('fideo_users'),
 );
 
