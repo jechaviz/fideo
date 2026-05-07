@@ -3,6 +3,7 @@ import { BusinessData } from '../hooks/useBusinessData';
 import { Sale } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, Line, ComposedChart } from 'recharts';
 import { SparklesIcon } from './icons/Icons';
+import { SafeMarkdown } from '../utils/safeRendering';
 
 type OperationalTaskStatus = 'assigned' | 'acknowledged' | 'in_progress' | 'blocked' | 'done';
 type OperationalTaskStage = 'packing' | 'assignment' | 'route' | 'other';
@@ -1167,14 +1168,14 @@ const reportIconMap: Record<TaskReportKind, string> = {
 };
 
 const KpiCard: React.FC<{ title: string; value: string; subtext?: string; icon: string; accent: string }> = ({ title, value, subtext, icon, accent }) => (
-    <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
-        <div className="flex items-start justify-between gap-4">
-            <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">{title}</p>
-                <p className="mt-3 text-3xl font-black tracking-tight text-white">{value}</p>
-                {subtext && <p className="mt-2 text-sm text-slate-400">{subtext}</p>}
+    <div className="fideo-card rounded-[1.45rem] p-4">
+        <div className="relative flex items-start justify-between gap-4">
+            <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{title}</p>
+                <p className="mt-2 truncate text-[1.65rem] font-black leading-tight tracking-tight text-white">{value}</p>
+                {subtext && <p className="mt-1.5 text-sm leading-5 text-slate-400">{subtext}</p>}
             </div>
-            <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${accent}`}>
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${accent}`}>
                 <i className={`fa-solid ${icon} text-lg`}></i>
             </div>
         </div>
@@ -1182,12 +1183,15 @@ const KpiCard: React.FC<{ title: string; value: string; subtext?: string; icon: 
 );
 
 const ChartContainer: React.FC<{ title: string; eyebrow: string; children: React.ReactNode }> = ({ title, eyebrow, children }) => (
-    <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
-        <div className="mb-5">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">{eyebrow}</p>
-            <h2 className="mt-2 text-xl font-black tracking-tight text-white">{title}</h2>
+    <div className="fideo-card rounded-[1.55rem] p-4 md:p-5">
+        <div className="relative mb-4 flex items-end justify-between gap-3">
+            <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{eyebrow}</p>
+                <h2 className="mt-1.5 text-lg font-black tracking-tight text-white md:text-xl">{title}</h2>
+            </div>
+            <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.65)]"></span>
         </div>
-        <div className="h-72">
+        <div className="relative h-64">
             {children}
         </div>
     </div>
@@ -1195,28 +1199,28 @@ const ChartContainer: React.FC<{ title: string; eyebrow: string; children: React
 
 const InteligenciaFideo: React.FC<{ insights: string; isLoading: boolean }> = ({ insights, isLoading }) => {
     return (
-        <div className="rounded-[2rem] border border-brand-400/20 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.18),transparent_45%),rgba(15,23,42,0.88)] p-5 shadow-glow">
-            <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-400 text-slate-950">
+        <div className="fideo-card rounded-[1.55rem] border-brand-400/20 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.18),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.88),rgba(2,6,23,0.78))] p-4 shadow-glow md:p-5">
+            <div className="relative mb-4 flex items-center gap-3">
+                <div className="fideo-soft-glow flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-400 text-slate-950">
                     <SparklesIcon />
                 </div>
                 <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-brand-200/70">Motor Fideo</p>
-                    <h2 className="mt-1 text-xl font-black tracking-tight text-white">Inteligencia comercial</h2>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-brand-200/70">Motor Fideo</p>
+                    <h2 className="mt-1 text-lg font-black tracking-tight text-white md:text-xl">Inteligencia comercial</h2>
                 </div>
             </div>
 
             {isLoading ? (
-                <div className="flex h-64 items-center justify-center text-slate-300">
+                <div className="relative flex h-56 items-center justify-center text-slate-300">
                     <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-3">
                         <div className="h-5 w-5 rounded-full border-2 border-brand-200 border-t-transparent animate-spin"></div>
                         <span className="text-sm font-semibold">Analizando actividad...</span>
                     </div>
                 </div>
             ) : insights ? (
-                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-slate-200 prose-headings:text-white prose-strong:text-white prose-li:text-slate-200" dangerouslySetInnerHTML={{ __html: insights.replace(/\* (.*)/g, '<li class="ml-4">$1</li>') }} />
+                <SafeMarkdown text={insights} className="prose prose-sm max-w-none whitespace-pre-wrap text-slate-200 prose-headings:text-white prose-strong:text-white prose-li:text-slate-200" />
             ) : (
-                <div className="flex h-64 flex-col items-center justify-center text-center text-slate-300">
+                <div className="relative flex h-56 flex-col items-center justify-center text-center text-slate-300">
                     <p className="max-w-xs text-base font-semibold text-white">Activa la lectura diaria para detectar oportunidades de venta, margen e inventario.</p>
                     <p className="mt-3 max-w-sm text-sm text-slate-400">Fideo sintetiza lo mas importante del dia con foco en decisiones rapidas.</p>
                 </div>
@@ -1467,42 +1471,66 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
     };
 
     return (
-        <div className="space-y-6">
-            <section className="rounded-[2.4rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.16),transparent_35%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8">
-                <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-                    <div className="max-w-3xl">
-                        <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-300">Control diario</p>
-                        <h1 className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">La operacion del dia en una sola lectura.</h1>
-                        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">Ventas, inventario y cola operativa en el mismo primer pantallazo.</p>
+        <div className="fideo-enter space-y-5">
+            <section className="relative overflow-hidden rounded-[1.9rem] border border-white/[0.08] bg-[linear-gradient(135deg,rgba(15,23,42,0.86),rgba(2,6,23,0.78)),radial-gradient(circle_at_92%_6%,rgba(163,230,53,0.18),transparent_32%),radial-gradient(circle_at_8%_94%,rgba(45,212,191,0.10),transparent_30%)] p-5 shadow-panel md:p-6">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-300/60 to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-brand-400/[0.07] to-transparent" />
+                <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] lg:items-center 2xl:grid-cols-[minmax(0,1fr)_minmax(330px,420px)]">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-brand-300">Control diario</p>
+                        <h1 className="mt-2 max-w-3xl text-3xl font-black leading-[1.05] tracking-tight text-white md:text-4xl">
+                            La operacion del dia en una sola lectura.
+                        </h1>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Ventas, inventario y cola operativa en el mismo primer pantallazo.</p>
+                        <div className="mt-4 grid max-w-2xl grid-cols-2 gap-2 sm:grid-cols-4">
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">SLA</p>
+                                <p className="mt-1 text-sm font-black text-white">{dashboardData.followUpSummary.slaLabel}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Max</p>
+                                <p className="mt-1 text-sm font-black text-white">{dashboardData.followUpSummary.oldestLabel || 'ok'}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Esc</p>
+                                <p className="mt-1 text-sm font-black text-white">{dashboardData.attentionSummary.escalated}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Push</p>
+                                <p className="mt-1 text-sm font-black text-white">
+                                    {dashboardData.presenceSummary.total > 0 ? `${dashboardData.presenceSummary.pushBound}/${dashboardData.presenceSummary.total}` : 'ok'}
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 lg:min-w-[360px]">
-                        <button onClick={generateInsights} disabled={isLoading} className="inline-flex items-center justify-center gap-3 rounded-2xl bg-brand-400 px-5 py-4 text-sm font-black text-slate-950 transition hover:bg-brand-300 disabled:cursor-not-allowed disabled:opacity-70">
+                    <div className="rounded-[1.55rem] border border-white/[0.08] bg-slate-950/42 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <button onClick={generateInsights} disabled={isLoading} className="fideo-soft-glow group inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-brand-400 px-5 py-3.5 text-sm font-black text-slate-950 transition hover:-translate-y-0.5 hover:bg-brand-300 disabled:cursor-not-allowed disabled:opacity-70">
                             {isLoading ? <div className="h-5 w-5 rounded-full border-2 border-slate-900 border-t-transparent animate-spin"></div> : <SparklesIcon />}
                             <span>{isLoading ? 'Analizando...' : 'Analizar ahora'}</span>
                         </button>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Pendientes</p>
-                                <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.assigned}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2.5">
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.045] px-3.5 py-3">
+                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Pendientes</p>
+                                <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.assigned}</p>
                             </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Acuses</p>
-                                <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.acknowledged}</p>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.045] px-3.5 py-3">
+                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Acuses</p>
+                                <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.acknowledged}</p>
                             </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Bloqueos</p>
-                                <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.blocked}</p>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.045] px-3.5 py-3">
+                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Bloqueos</p>
+                                <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.blocked}</p>
                             </div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">En curso</p>
-                                <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.in_progress}</p>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.045] px-3.5 py-3">
+                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">En curso</p>
+                                <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.in_progress}</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div className="relative mt-4 flex flex-wrap gap-2">
                     <span className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${dashboardData.followUpSummary.tone}`}>
                         SLA {dashboardData.followUpSummary.slaLabel}
                     </span>
@@ -1523,34 +1551,34 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </div>
             </section>
 
-            <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <KpiCard title="Ventas de hoy" value={dashboardData.ventasHoy.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })} subtext="Facturacion registrada en el dia." icon="fa-sack-dollar" accent="border-brand-400/40 bg-brand-400/10 text-brand-200" />
                 <KpiCard title="Margen bruto" value={`${dashboardData.margenBrutoHoy.toFixed(1)}%`} subtext="Rentabilidad promedio del dia." icon="fa-percent" accent="border-sky-400/40 bg-sky-400/10 text-sky-200" />
                 <KpiCard title="Ticket promedio" value={dashboardData.ticketPromedio.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })} subtext="Valor por salida comercial." icon="fa-file-invoice-dollar" accent="border-amber-400/40 bg-amber-400/10 text-amber-200" />
-                <KpiCard title="Tareas abiertas" value={dashboardData.taskSignals.open.toString()} subtext="Empaque, asignacion y ruta sin cerrar." icon="fa-box-check" accent="border-violet-400/40 bg-violet-400/10 text-violet-200" />
+                <KpiCard title="Tareas abiertas" value={dashboardData.taskSignals.open.toString()} subtext="Empaque, asignacion y ruta sin cerrar." icon="fa-box-check" accent="border-teal-400/40 bg-teal-400/10 text-teal-200" />
             </section>
 
             <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                <div className="glass-panel-dark rounded-[1.6rem] border border-white/10 px-4 py-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Empaque</p>
-                    <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.packing}</p>
+                <div className="fideo-card rounded-[1.25rem] px-4 py-3.5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Empaque</p>
+                    <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.packing}</p>
                 </div>
-                <div className="glass-panel-dark rounded-[1.6rem] border border-white/10 px-4 py-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Asignacion</p>
-                    <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.assignment}</p>
+                <div className="fideo-card rounded-[1.25rem] px-4 py-3.5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Asignacion</p>
+                    <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.assignment}</p>
                 </div>
-                <div className="glass-panel-dark rounded-[1.6rem] border border-white/10 px-4 py-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Ruta</p>
-                    <p className="mt-2 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.route}</p>
+                <div className="fideo-card rounded-[1.25rem] px-4 py-3.5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Ruta</p>
+                    <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.taskSignals.byStage.route}</p>
                 </div>
-                <div className="glass-panel-dark rounded-[1.6rem] border border-white/10 px-4 py-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Ventas hoy</p>
-                    <p className="mt-2 text-2xl font-black text-white">{dashboardData.ventasRegistradas}</p>
+                <div className="fideo-card rounded-[1.25rem] px-4 py-3.5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Ventas hoy</p>
+                    <p className="mt-1.5 text-2xl font-black text-white">{dashboardData.ventasRegistradas}</p>
                 </div>
             </section>
 
-            <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+                <div className="fideo-card rounded-[1.55rem] p-4 md:p-5">
                     <div className="mb-5 flex items-center justify-between gap-3">
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Excepciones</p>
@@ -1596,7 +1624,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                     </div>
                 </div>
 
-                <div className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+                <div className="fideo-card rounded-[1.55rem] p-4 md:p-5">
                     <div className="mb-5 flex items-center justify-between gap-3">
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Staff</p>
@@ -1677,7 +1705,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </div>
             </section>
 
-            <section className="glass-panel-dark rounded-[2rem] border border-white/10 p-5">
+            <section className="fideo-card rounded-[1.55rem] p-4 md:p-5">
                 <div className="mb-5 flex items-center justify-between gap-3">
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Realtime</p>
@@ -1712,7 +1740,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 )}
             </section>
 
-            <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
                 <div className="xl:col-span-2">
                     <ChartContainer title="Ventas y ganancia" eyebrow="Ultimos 7 dias">
                         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -1741,7 +1769,7 @@ const Dashboard: React.FC<{ data: BusinessData }> = ({ data }) => {
                 </ChartContainer>
             </section>
 
-            <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
                 <ChartContainer title="Productos mas rentables" eyebrow="Top 5 de hoy">
                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                         <BarChart data={dashboardData.top5Products} layout="vertical" margin={{ left: 16 }}>

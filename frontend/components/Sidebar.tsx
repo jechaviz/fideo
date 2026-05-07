@@ -128,17 +128,18 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
     };
 
     return (
-        <aside className={`${isCollapsed ? 'w-24' : 'w-80'} relative flex h-full flex-col overflow-hidden border-r border-white/10 bg-slate-950/88 text-slate-200 shadow-panel backdrop-blur-2xl transition-all duration-300 ease-in-out`}>
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,rgba(163,230,53,0.18),transparent_55%)]" />
+        <aside className={`${isCollapsed ? 'w-[5.25rem]' : 'w-[17.5rem]'} relative flex h-full flex-col overflow-hidden border-r border-white/[0.08] bg-[#040916]/92 text-slate-200 shadow-panel backdrop-blur-2xl transition-all duration-300 ease-in-out`}>
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-44 bg-[linear-gradient(180deg,rgba(163,230,53,0.12),transparent),radial-gradient(circle_at_top,rgba(45,212,191,0.12),transparent_58%)]" />
 
-            <div className={`relative flex min-h-[96px] items-start border-b border-white/10 ${isCollapsed ? 'justify-center px-4 py-5' : 'justify-between px-6 py-6'} transition-all duration-300`}>
-                <div className={`flex min-w-0 ${isCollapsed ? 'flex-col items-center gap-3' : 'items-center gap-4'}`}>
-                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[1.25rem] bg-brand-400 text-slate-950 shadow-glow">
+            <div className={`relative flex min-h-[82px] items-start border-b border-white/[0.08] ${isCollapsed ? 'justify-center px-3 py-4' : 'justify-between px-4 py-4'} transition-all duration-300`}>
+                <div className={`flex min-w-0 ${isCollapsed ? 'flex-col items-center gap-2' : 'items-center gap-3'}`}>
+                    <div className="fideo-soft-glow flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[1.15rem] bg-brand-400 text-slate-950">
                         <i className="fa-solid fa-apple-whole text-xl"></i>
                     </div>
                     {!isCollapsed && (
                         <div className="min-w-0">
-                            <p className="truncate text-xl font-black tracking-tight text-white">Fideo</p>
+                            <p className="truncate text-lg font-black tracking-tight text-white">Fideo</p>
+                            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Operacion viva</p>
                         </div>
                     )}
                 </div>
@@ -147,19 +148,19 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                 </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-5">
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-4">
                 {navConfig.map((section) => (
-                    <div key={section.title} className="mb-5">
+                    <div key={section.title} className="mb-3.5">
                         {!isCollapsed ? (
                             <button
                                 onClick={() => toggleSection(section.title)}
-                                className="mb-2 flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.28em] text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+                                className="mb-1.5 flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.22em] text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
                             >
                                 <span>{section.title}</span>
                                 {openSections[section.title] ? <ChevronDownIcon /> : <ChevronRightIcon />}
                             </button>
                         ) : (
-                            <div className="mx-auto my-3 h-px w-10 bg-white/10" title={section.title}></div>
+                            <div className="mx-auto my-2.5 h-px w-8 bg-white/10" title={section.title}></div>
                         )}
 
                         {(openSections[section.title] || isCollapsed) && (
@@ -169,13 +170,13 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                                         <button
                                             onClick={() => handleViewChange(item.id)}
                                             title={isCollapsed ? item.label : ''}
-                                            className={`group relative flex w-full items-center rounded-[1.35rem] px-4 py-3 transition-all duration-200 ${
+                                            className={`group relative flex w-full items-center rounded-[1.15rem] px-3.5 py-2.5 transition-all duration-200 ${
                                                 currentView === item.id
-                                                    ? 'bg-brand-400 text-slate-950 shadow-glow'
-                                                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                                                    ? 'bg-brand-400 text-slate-950 shadow-[0_18px_42px_rgba(132,204,22,0.18)]'
+                                                    : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
                                             } ${isCollapsed ? 'justify-center' : 'text-left'}`}
                                         >
-                                            <span className={`text-center text-lg ${isCollapsed ? '' : 'mr-3 w-6'}`}>{item.icon}</span>
+                                            <span className={`text-center text-base ${isCollapsed ? '' : 'mr-3 w-5'}`}>{item.icon}</span>
                                             {!isCollapsed && (
                                                 <div className="min-w-0 flex-1">
                                                     <span className="block truncate text-sm font-bold">{item.label}</span>
@@ -183,7 +184,7 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                                             )}
 
                                             {isCollapsed && (
-                                                <div className="pointer-events-none absolute left-16 z-50 whitespace-nowrap rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100">
+                                                <div className="pointer-events-none absolute left-14 z-50 whitespace-nowrap rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100">
                                                     {item.label}
                                                 </div>
                                             )}
@@ -196,14 +197,14 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                 ))}
             </nav>
 
-            <div className="relative mt-auto border-t border-white/10 p-4">
+            <div className="relative mt-auto border-t border-white/[0.08] p-3.5">
                 {!isCollapsed && (
-                    <div className="mb-4 rounded-[1.8rem] border border-white/10 bg-white/5 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">
+                    <div className="mb-3 rounded-[1.35rem] border border-white/[0.08] bg-white/[0.04] p-3.5">
+                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">
                             {identity ? 'Perfil' : 'Rol'}
                         </p>
                         <div className="mt-3 flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-sm font-black text-brand-300 shadow-inner shadow-black/40">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-sm font-black text-brand-300 shadow-inner shadow-black/40">
                                 {identity?.shortLabel || currentRole.charAt(0)}
                             </div>
                             <div className="min-w-0">
@@ -223,14 +224,14 @@ const SidebarContent: React.FC<Pick<SidebarProps, 'currentView' | 'setCurrentVie
                     </div>
                 )}
 
-                <div className={`flex rounded-[1.6rem] border border-white/10 bg-slate-900/75 p-3 ${isCollapsed ? 'flex-col items-center gap-3' : 'items-center justify-between gap-3'}`}>
-                    <button onClick={toggleTheme} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle theme" title="Cambiar tema">
+                <div className={`flex rounded-[1.25rem] border border-white/[0.08] bg-slate-900/70 p-2.5 ${isCollapsed ? 'flex-col items-center gap-2.5' : 'items-center justify-between gap-2.5'}`}>
+                    <button onClick={toggleTheme} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle theme" title="Cambiar tema">
                         {theme === 'light' ? <MoonIcon /> : <SunIcon />}
                     </button>
 
                     <button
                         onClick={toggleCollapse}
-                        className="hidden h-11 items-center justify-center rounded-2xl bg-white/5 px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white md:flex"
+                        className="hidden h-10 items-center justify-center rounded-xl bg-white/5 px-3 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white md:flex"
                         title={isCollapsed ? 'Expandir menu' : 'Colapsar menu'}
                     >
                         {isCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}

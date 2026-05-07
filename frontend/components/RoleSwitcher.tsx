@@ -765,7 +765,7 @@ const RoleSwitcher: React.FC<{
         canSwitchRoles,
     } = data;
     const selectClass =
-        'min-w-[150px] rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-brand-400/50 focus:ring-2 focus:ring-brand-400/20';
+        'min-w-[145px] rounded-xl border border-white/10 bg-slate-900/82 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-brand-400/50 focus:ring-2 focus:ring-brand-400/20';
     const availableRoles = canSwitchRoles ? ROLES : [currentRole];
     const portalReadOnly = isPortalOnlyProfile(authProfile);
     const shellIdentity = identity;
@@ -785,9 +785,9 @@ const RoleSwitcher: React.FC<{
     };
 
     return (
-        <div className="glass-panel-dark flex flex-wrap items-center gap-3 rounded-[1.6rem] px-3 py-3">
+        <div className="glass-panel-dark flex flex-wrap items-center justify-end gap-2.5 rounded-[1.45rem] px-3 py-2.5">
             {authEnabled && authProfile && shellIdentity && (
-                <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                <div className="hidden min-w-0 items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 2xl:flex">
                     <span className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-[11px] font-black text-brand-300 shadow-inner shadow-black/30">
                         {shellIdentity.shortLabel}
                     </span>
@@ -889,7 +889,7 @@ const RoleSwitcher: React.FC<{
             {authEnabled && signOut && (
                 <button
                     onClick={signOut}
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
                 >
                     <i className="fa-solid fa-right-from-bracket text-brand-300"></i>
                     Salir

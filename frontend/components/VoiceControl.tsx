@@ -149,7 +149,7 @@ const VoiceControl: React.FC<VoiceControlProps> = ({ addMessage }) => {
         <>
             {feedbackMessage && (
                 <div 
-                    className="fixed bottom-28 right-8 bg-gray-800 dark:bg-gray-900 bg-opacity-80 text-white text-sm px-4 py-2 rounded-lg shadow-lg transition-all duration-300 z-50"
+                    className="glass-panel-dark fixed bottom-24 right-5 z-50 rounded-2xl px-4 py-2 text-sm font-semibold text-white shadow-panel transition-all duration-300 md:right-6"
                     role="status"
                     aria-live="assertive"
                 >
@@ -158,8 +158,8 @@ const VoiceControl: React.FC<VoiceControlProps> = ({ addMessage }) => {
             )}
             <button
                 onClick={handleToggleListening}
-                className={`fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-300 transform hover:scale-110 z-50
-                ${isListening ? 'bg-red-500 animate-pulse' : 'bg-green-600 hover:bg-green-700'}`}
+                className={`fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-2xl border text-white shadow-panel transition duration-300 hover:-translate-y-0.5 md:bottom-6 md:right-6
+                ${isListening ? 'border-rose-300/40 bg-rose-500/90 animate-pulse' : 'border-brand-300/30 bg-brand-400 text-slate-950 fideo-soft-glow hover:bg-brand-300'}`}
                 aria-label={isListening ? 'Detener grabación' : 'Iniciar grabación de voz'}
             >
                 <MicrophoneIcon />

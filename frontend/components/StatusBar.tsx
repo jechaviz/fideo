@@ -35,9 +35,9 @@ const StatusBar: React.FC<{
     }
 
     return (
-        <div className="glass-panel-dark overflow-hidden rounded-[1.6rem] px-4 py-3">
-            <div className="flex items-center gap-4">
-                <div className={`flex flex-shrink-0 items-center gap-3 ${recentActivities.length ? 'border-r border-white/10 pr-4' : ''}`}>
+        <div className="glass-panel-dark overflow-hidden rounded-[1.35rem] px-3.5 py-2.5">
+            <div className="flex items-center gap-3">
+                <div className={`flex flex-shrink-0 items-center gap-2.5 ${recentActivities.length ? 'border-r border-white/10 pr-3.5' : ''}`}>
                     <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_14px_rgba(163,230,53,0.8)]"></span>
                     <div className="flex flex-wrap items-center gap-2">
                         {realtimeSummary && <ShellSignalBadge signal={realtimeSummary.signal} compact />}
@@ -48,9 +48,9 @@ const StatusBar: React.FC<{
                 </div>
                 {recentActivities.length > 0 && (
                     <div className="min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-6 whitespace-nowrap animate-marquee">
+                        <div className="flex items-center gap-4 whitespace-nowrap animate-marquee">
                             {[...recentActivities, ...recentActivities].map((activity, index) => (
-                                <div key={`${activity.id}-${index}`} className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+                                <div key={`${activity.id}-${index}`} className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5">
                                     <span className="text-base">{IconMap[activity.type] || <SaleIcon />}</span>
                                     <p className="text-xs font-semibold text-slate-200">
                                         {activity.description}

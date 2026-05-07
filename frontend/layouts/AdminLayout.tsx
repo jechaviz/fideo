@@ -137,8 +137,15 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
     };
 
     return (
-        <div className="relative flex h-screen overflow-hidden bg-slate-950 text-slate-100">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.16),transparent_24%),radial-gradient(circle_at_left,rgba(56,189,248,0.12),transparent_20%)]" />
+        <div className="fideo-shell relative flex h-screen overflow-hidden bg-[#030712] text-slate-100">
+            <div className="fideo-ambient pointer-events-none absolute inset-0" />
+            <div className="noise-overlay pointer-events-none absolute inset-0" />
+            <a
+                href="#main-content"
+                className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-2xl focus:bg-brand-400 focus:px-4 focus:py-3 focus:text-sm focus:font-black focus:text-slate-950"
+            >
+                Saltar al contenido
+            </a>
             <Sidebar 
                 currentView={currentView} 
                 setCurrentView={setCurrentView}
@@ -154,44 +161,46 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                 realtimeSummary={realtimeSummary}
             />
             <main className="relative flex-1 flex min-w-0 flex-col h-full overflow-hidden">
-                <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/72 backdrop-blur-2xl">
-                    <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 md:px-6 lg:px-8">
-                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                            <div className="flex min-w-0 items-center gap-3">
-                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10">
+                <header className="sticky top-0 z-20 border-b border-white/[0.07] bg-[#030712]/78 backdrop-blur-2xl">
+                    <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-4 py-3 md:px-5 lg:px-7">
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                            <div className="min-w-0 rounded-[1.45rem] border border-white/[0.07] bg-white/[0.035] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:px-4">
+                                <div className="flex min-w-0 items-start gap-3">
+                                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10">
                                     <Bars3Icon />
-                                </button>
-                                <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <h1 className="truncate text-2xl font-extrabold tracking-tight text-white md:text-3xl">
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-brand-200">
+                                                <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_16px_rgba(163,230,53,0.7)]" />
+                                                {ROLE_META[currentRole]}
+                                            </span>
+                                            {shellIdentity && (
+                                                <span
+                                                    title={shellIdentity.secondaryLabel || shellIdentity.primaryLabel}
+                                                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1 text-xs font-semibold text-slate-200"
+                                                >
+                                                    <span className={`h-2 w-2 rounded-full ${shellIdentity.pushExternalId ? 'bg-brand-300 shadow-[0_0_10px_rgba(163,230,53,0.6)]' : 'bg-sky-300/90'}`} />
+                                                    <span className="max-w-[220px] truncate">{shellIdentity.primaryLabel}</span>
+                                                    {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
+                                                    {shellIdentity.pushExternalId && (
+                                                        <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-brand-200">
+                                                            Push
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            )}
+                                            {headerSignals.map((signal) => (
+                                                <ShellSignalBadge key={signal.id} signal={signal} />
+                                            ))}
+                                        </div>
+                                        <h1 className="mt-2 text-2xl font-black leading-tight tracking-tight text-white md:text-[1.7rem]">
                                             {VIEW_TITLES[currentView] || 'Fideo'}
                                         </h1>
-                                        <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-brand-200">
-                                            <span className="h-2 w-2 rounded-full bg-brand-400 shadow-[0_0_16px_rgba(163,230,53,0.7)]" />
-                                            {ROLE_META[currentRole]}
-                                        </span>
-                                        {shellIdentity && (
-                                            <span
-                                                title={shellIdentity.secondaryLabel || shellIdentity.primaryLabel}
-                                                className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200"
-                                            >
-                                                <span className={`h-2 w-2 rounded-full ${shellIdentity.pushExternalId ? 'bg-brand-300 shadow-[0_0_10px_rgba(163,230,53,0.6)]' : 'bg-sky-300/90'}`} />
-                                                <span className="max-w-[220px] truncate">{shellIdentity.primaryLabel}</span>
-                                                {shellIdentity.employeeId && <span className="text-slate-500">{shellIdentity.employeeId}</span>}
-                                                {shellIdentity.pushExternalId && (
-                                                    <span className="rounded-full border border-brand-400/20 bg-brand-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.2em] text-brand-200">
-                                                        Push
-                                                    </span>
-                                                )}
-                                            </span>
-                                        )}
-                                        {headerSignals.map((signal) => (
-                                            <ShellSignalBadge key={signal.id} signal={signal} />
-                                        ))}
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex-shrink-0">
+                            <div className="min-w-0 lg:max-w-[420px] 2xl:max-w-[640px]">
                                 <RoleSwitcher
                                     data={data}
                                     push={push}
@@ -202,19 +211,14 @@ const AdminLayout: React.FC<{ data: BusinessData; push: OneSignalPushController 
                                 />
                             </div>
                         </div>
-                        <div className="hidden overflow-hidden xl:block">
+                        <div className="hidden overflow-hidden 2xl:block">
                              <StatusBar activities={data.activityLog} taskSummary={taskSummary} realtimeSummary={realtimeSummary} />
                         </div>
                     </div>
                 </header>
                 <div className="flex-grow overflow-y-auto scroll-smooth">
-                    <div className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 lg:px-8">
-                        <div className="mb-6 xl:hidden">
-                            <StatusBar activities={data.activityLog} taskSummary={taskSummary} realtimeSummary={realtimeSummary} />
-                        </div>
-                        <div className="glass-panel-dark rounded-[2rem] p-4 md:p-5 lg:p-6">
-                            <Suspense fallback={<ViewLoadingState />}>{renderRoleSpecificView()}</Suspense>
-                        </div>
+                    <div id="main-content" className="mx-auto w-full max-w-[1500px] px-4 py-5 md:px-5 lg:px-7">
+                        <Suspense fallback={<ViewLoadingState />}>{renderRoleSpecificView()}</Suspense>
                     </div>
                 </div>
             </main>
