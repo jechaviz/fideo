@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { CreditStatus, Customer, FruitState, Payment, Quality, Sale } from '../types';
 import { findCustomerForSale, loanBelongsToCustomer, saleBelongsToCustomer } from '../utils/customerIdentity';
+import { SafeMarkdown } from '../utils/safeRendering';
 import {
     ArrowUturnLeftIcon,
     CheckCircleIcon,
@@ -383,16 +384,13 @@ const CustomerCommandCenter: React.FC<{ data: BusinessData; customerId: string; 
                         </div>
 
                         {aiCustomerSummary ? (
-                            <div
-                                className="rounded-[1.6rem] border border-white/10 bg-white/5 p-5 text-sm leading-7 text-slate-200"
-                                dangerouslySetInnerHTML={{
-                                    __html: aiCustomerSummary.error
-                                        ? `<p class="text-rose-300">${aiCustomerSummary.error}</p>`
-                                        : aiCustomerSummary.content
-                                              .replace(/### (.*)/g, '<h3 class="mt-6 text-lg font-black text-white">$1</h3>')
-                                              .replace(/\* (.*)/g, '<li class="ml-5">$1</li>'),
-                                }}
-                            />
+                            <div className="rounded-[1.6rem] border border-white/10 bg-white/5 p-5 text-sm leading-7 text-slate-200">
+                                {aiCustomerSummary.error ? (
+                                    <p className="text-rose-300">{aiCustomerSummary.error}</p>
+                                ) : (
+                                    <SafeMarkdown text={aiCustomerSummary.content} />
+                                )}
+                            </div>
                         ) : !isGeneratingSummary ? (
                             <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-white/[0.03] px-6 py-12 text-center">
                                 <p className="text-lg font-semibold text-white">Listo para construir una lectura accionable.</p>

@@ -43,8 +43,8 @@ VITE_POCKETBASE_URL=http://127.0.0.1:8090
 Opcional para IA, web push y SLA vivo:
 
 ```env
-VITE_GEMINI_API_KEY=tu_api_key_opcional_para_fallback_cliente
-GEMINI_API_KEY=tu_api_key_para_backend
+VITE_GEMINI_API_KEY=tu_api_key_publica_restringida_para_fallback_cliente
+GEMINI_API_KEY=tu_api_key_privada_para_backend_pocketbase
 FIDEO_GEMINI_MODEL=gemini-2.5-flash
 VITE_ONESIGNAL_ENABLED=false
 VITE_ONESIGNAL_APP_ID=tu_app_id_web
@@ -57,6 +57,8 @@ ONESIGNAL_REST_API_KEY=tu_rest_api_key
 FIDEO_APP_URL=https://tu-host-de-fideo/
 FIDEO_TASK_ACK_ESCALATION_MINUTES=20
 ```
+
+`GEMINI_API_KEY` es privada y solo la usa PocketBase; el bundle de Vite solo puede leer claves con prefijo `VITE_`. Si usas `VITE_GEMINI_API_KEY`, restringela desde Google Cloud porque queda visible en el navegador.
 
 ## Contrato PocketBase que consume el frontend
 

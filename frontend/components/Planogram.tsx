@@ -1,11 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { BusinessData } from '../hooks/useBusinessData';
 import { InventoryBatch, ProductGroup, CrateType } from '../types';
+import { sanitizeSvgMarkup } from '../utils/safeRendering';
 import { XMarkIcon } from './icons/Icons';
 
 const IconDisplay: React.FC<{ icon: string; className?: string }> = React.memo(({ icon, className = '' }) => {
     if (icon && icon.trim().startsWith('<svg')) {
-        return <div className={`h-full w-full ${className}`} dangerouslySetInnerHTML={{ __html: icon }} />;
+        const sanitizedIcon = sanitizeSvgMarkup(icon);
+        if (sanitizedIcon) {
+            return <div className={`h-full w-full ${className}`} dangerouslySetInnerHTML={{ __html: sanitizedIcon }} />;
+        }
     }
     return <span className={`flex items-center justify-center font-bold ${className}`}>{icon || '[]'}</span>;
 });

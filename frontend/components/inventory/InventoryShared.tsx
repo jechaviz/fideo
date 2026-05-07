@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryBatch, CrateType, FruitState, Quality, Warehouse } from '../../types';
+import { sanitizeSvgMarkup } from '../../utils/safeRendering';
 import { SparklesIcon, WarehouseTransferIcon, ChevronUpIcon, ChevronDownIcon, ChevronRightIcon } from '../icons/Icons';
 
 export type IconEntityType = 'category' | 'productGroup' | 'variety' | 'quality' | 'state' | 'warehouse';
@@ -13,7 +14,10 @@ const fieldClass = 'w-full rounded-2xl border border-white/10 bg-slate-950/70 px
 
 export const IconDisplay: React.FC<{ icon: string; className?: string }> = React.memo(({ icon, className = '' }) => {
     if (icon && icon.trim().startsWith('<svg')) {
-        return <div className={`inline-block h-6 w-6 ${className}`} dangerouslySetInnerHTML={{ __html: icon }} />;
+        const sanitizedIcon = sanitizeSvgMarkup(icon);
+        if (sanitizedIcon) {
+            return <div className={`inline-block h-6 w-6 ${className}`} dangerouslySetInnerHTML={{ __html: sanitizedIcon }} />;
+        }
     }
     return <span className={`inline-flex items-center justify-center text-lg font-bold ${className}`}>{icon || '[]'}</span>;
 });

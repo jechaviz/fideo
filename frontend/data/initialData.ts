@@ -216,9 +216,9 @@ export const INITIAL_INTERPRETED_MESSAGES: Message[] = [
 
 
 export const INITIAL_FIXED_ASSETS: FixedAsset[] = [
-    { id: 'fa1', name: 'Camión Isuzu', category: 'Vehículos', status: 'Operativo', purchaseDate: new Date('2022-00-15'), cost: 850000, metadata: { 'Placas': 'ABC-123', 'Capacidad': '3.5 Toneladas' }, photoUrl: 'https://www.isuzunorte.com.mx/images/modelos/elf-600/camion-elf-600-bus.png' },
+    { id: 'fa1', name: 'Camión Isuzu', category: 'Vehículos', status: 'Operativo', purchaseDate: new Date('2022-01-15'), cost: 850000, metadata: { 'Placas': 'ABC-123', 'Capacidad': '3.5 Toneladas' }, photoUrl: 'https://www.isuzunorte.com.mx/images/modelos/elf-600/camion-elf-600-bus.png' },
     { id: 'fa2', name: 'Diablo de Carga #1', category: 'Equipo de Carga', status: 'Operativo', purchaseDate: new Date('2023-04-20'), cost: 1500, metadata: {} },
-    { id: 'fa3', name: 'Cajas (Inventario)', category: 'Contenedores', status: 'Operativo', purchaseDate: new Date('2023-00-01'), cost: 20000, metadata: { 'Nota': 'El inventario y valor real se gestiona en la sección de cajas.' } },
+    { id: 'fa3', name: 'Cajas (Inventario)', category: 'Contenedores', status: 'Operativo', purchaseDate: new Date('2023-01-01'), cost: 20000, metadata: { 'Nota': 'El inventario y valor real se gestiona en la sección de cajas.' } },
     { id: 'fa4', name: 'Báscula Grande', category: 'Básculas', status: 'Dañado', purchaseDate: new Date('2021-10-10'), cost: 8000, metadata: { 'Capacidad': '500kg' } },
 ];
 export const INITIAL_EXPENSES: Expense[] = [

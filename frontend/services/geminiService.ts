@@ -2,7 +2,6 @@ import { CrateLoan, CrateType, Customer, InterpretationType, ParsedMessage, Paym
 
 type GeminiRuntimeEnv = {
   VITE_GEMINI_API_KEY?: string;
-  GEMINI_API_KEY?: string;
 };
 
 type GeminiClient = {
@@ -12,10 +11,10 @@ type GeminiClient = {
 };
 
 const env = (import.meta as ImportMeta & { env?: GeminiRuntimeEnv }).env;
-const API_KEY = env.VITE_GEMINI_API_KEY ?? env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.API_KEY;
+const API_KEY = env.VITE_GEMINI_API_KEY?.trim() || '';
 
 if (!API_KEY) {
-  console.warn('API_KEY environment variable not set. Gemini API calls will be disabled.');
+  console.warn('VITE_GEMINI_API_KEY environment variable not set. Client-side Gemini fallback will be disabled.');
 }
 
 let aiPromise: Promise<GeminiClient | null> | null = null;
