@@ -3127,6 +3127,88 @@ routerAdd(
     'POST',
     '/api/fideo/presence/ping',
     (e) => {
+        const text = (value, fallback) => (value === undefined || value === null || value === '' ? (fallback || '') : String(value));
+        const object = (value) => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                return value;
+            }
+            if (value !== undefined && value !== null && text(value, '').trim()) {
+                try {
+                    const parsed = JSON.parse(String(value));
+                    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch (_) {
+                    return {};
+                }
+            }
+            return {};
+        };
+        const escapeFilterLiteral = (value) => text(value, '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const normalizeStatus = (value) => {
+            const normalized = text(value, '').trim().toLowerCase();
+            return ['background', 'idle', 'offline'].indexOf(normalized) >= 0 ? normalized : 'active';
+        };
+        const presenceHash = (value) => {
+            const raw = text(value, '');
+            let hash = 0;
+            for (let index = 0; index < raw.length; index += 1) {
+                hash = Math.imul(31, hash) + raw.charCodeAt(index) | 0;
+            }
+            return (hash >>> 0).toString(36);
+        };
+        const buildSessionKey = (userId, payload, headers) => {
+            const normalizedPayload = object(payload);
+            const normalizedHeaders = headers || {};
+            const rawKey = [
+                text(normalizedPayload.sessionId, '').trim(),
+                text(normalizedPayload.deviceId, '').trim(),
+                text(normalizedPayload.installationId, '').trim(),
+                text(normalizedPayload.pushExternalId, '').trim(),
+                text(normalizedHeaders['user-agent'], '').trim(),
+            ].filter((value) => !!value).join('|');
+
+            return presenceHash((text(userId, '') || 'anon') + '|' + (rawKey || 'default'));
+        };
+        const listUserLogs = (app, workspaceId, actorId, limit) => {
+            const normalizedWorkspaceId = text(workspaceId, '').trim();
+            const normalizedActorId = text(actorId, '').trim();
+            if (!normalizedWorkspaceId || !normalizedActorId) {
+                return [];
+            }
+
+            try {
+                return app.findRecordsByFilter(
+                    'fideo_action_logs',
+                    "workspace = '" + escapeFilterLiteral(normalizedWorkspaceId)
+                        + "' && actor = '" + escapeFilterLiteral(normalizedActorId) + "'",
+                    '',
+                    Number(limit || 50),
+                    0,
+                );
+            } catch (_) {
+                return [];
+            }
+        };
+        const extractPresenceState = (record, fallbackLastSeenAt) => {
+            if (!record) {
+                return null;
+            }
+
+            const payload = object(record.get('payload'));
+            const state = {
+                lastSeenAt: text(payload.lastSeenAt, fallbackLastSeenAt || ''),
+                status: normalizeStatus(payload.status),
+            };
+
+            ['sessionKey', 'sessionId', 'deviceId', 'deviceName', 'installationId', 'platform', 'appVersion', 'pushExternalId'].forEach((key) => {
+                const value = text(payload[key], '').trim();
+                if (value) {
+                    state[key] = value;
+                }
+            });
+
+            return state;
+        };
+
         const authRecord = e.auth || e.requestInfo().auth;
         if (!authRecord) {
             throw new UnauthorizedError('Necesitas autenticarte para reportar presencia en Fideo.');
@@ -3134,8 +3216,8 @@ routerAdd(
 
         const requestInfo = e.requestInfo();
         const body = requestInfo.body || {};
-        const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '');
-        const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
+        const authWorkspaceId = text(authRecord.get('workspace'), '');
+        const workspaceId = text(body.workspaceId, authWorkspaceId).trim();
 
         if (!workspaceId) {
             throw new BadRequestError('Tu usuario no tiene workspace asignado para registrar presencia.');
@@ -3153,8 +3235,8 @@ routerAdd(
 
         const headers = requestInfo.headers || {};
         const nowIso = new Date().toISOString();
-        const incomingPushExternalId = fideoPushText(body.pushExternalId, '').trim();
-        const currentPushExternalId = fideoPushText(authRecord.get('pushExternalId'), '').trim();
+        const incomingPushExternalId = text(body.pushExternalId, '').trim();
+        const currentPushExternalId = text(authRecord.get('pushExternalId'), '').trim();
 
         if (incomingPushExternalId && incomingPushExternalId !== currentPushExternalId) {
             authRecord.set('pushExternalId', incomingPushExternalId);
@@ -3162,19 +3244,19 @@ routerAdd(
         }
 
         const effectivePushExternalId = incomingPushExternalId || currentPushExternalId;
-        const sessionKey = fideoPresenceBuildSessionKey(authRecord.id, body, headers);
+        const sessionKey = buildSessionKey(authRecord.id, body, headers);
         const actionName = 'presence_ping:' + sessionKey;
-        const meta = fideoPushObject(body.meta);
+        const meta = object(body.meta);
         const presencePayload = {
             lastSeenAt: nowIso,
             sessionKey,
-            status: fideoPresenceNormalizeStatus(body.status),
-            sessionId: fideoPushText(body.sessionId, '').trim(),
-            deviceId: fideoPushText(body.deviceId, '').trim(),
-            deviceName: fideoPushText(body.deviceName, '').trim(),
-            installationId: fideoPushText(body.installationId, '').trim(),
-            platform: fideoPushText(body.platform, fideoPushText(headers['x-platform'], '')).trim(),
-            appVersion: fideoPushText(body.appVersion, fideoPushText(headers['x-app-version'], '')).trim(),
+            status: normalizeStatus(body.status),
+            sessionId: text(body.sessionId, '').trim(),
+            deviceId: text(body.deviceId, '').trim(),
+            deviceName: text(body.deviceName, '').trim(),
+            installationId: text(body.installationId, '').trim(),
+            platform: text(body.platform, text(headers['x-platform'], '')).trim(),
+            appVersion: text(body.appVersion, text(headers['x-app-version'], '')).trim(),
             pushExternalId: effectivePushExternalId,
         };
 
@@ -3182,8 +3264,8 @@ routerAdd(
             presencePayload.meta = meta;
         }
 
-        const existingRecord = fideoPresenceListUserLogs(e.app, workspaceId, authRecord.id, 1000).find(
-            (record) => fideoPushText(record.get('action'), '') === actionName,
+        const existingRecord = listUserLogs(e.app, workspaceId, authRecord.id, 1000).find(
+            (record) => text(record.get('action'), '') === actionName,
         );
         const collection = e.app.findCollectionByNameOrId('fideo_action_logs');
         const presenceRecord = existingRecord || new Record(collection);
@@ -3197,7 +3279,7 @@ routerAdd(
         presenceRecord.set('payload', presencePayload);
         e.app.save(presenceRecord);
 
-        const latestPresence = fideoPresenceExtractState(presenceRecord);
+        const latestPresence = extractPresenceState(presenceRecord, nowIso);
 
         return e.json(200, {
             ok: true,
@@ -3214,16 +3296,112 @@ routerAdd(
     'POST',
     '/api/fideo/runtime/overview',
     (e) => {
+        const text = (value, fallback) => (value === undefined || value === null || value === '' ? (fallback || '') : String(value));
+        const array = (value) => {
+            if (Array.isArray(value)) {
+                return value;
+            }
+            if (value !== undefined && value !== null && text(value, '').trim()) {
+                try {
+                    const parsed = JSON.parse(String(value));
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (_) {
+                    return [];
+                }
+            }
+            return [];
+        };
+        const object = (value) => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                return value;
+            }
+            if (value !== undefined && value !== null && text(value, '').trim()) {
+                try {
+                    const parsed = JSON.parse(String(value));
+                    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch (_) {
+                    return {};
+                }
+            }
+            return {};
+        };
+        const isInternalRole = (role) => ['Admin', 'Empacador', 'Repartidor', 'Cajero'].indexOf(text(role, '')) >= 0;
+        const buildFallbackRuntimeOverview = (sourceSnapshot, sourceWorkspaceId, sourceWorkspaceSlug) => {
+            const snapshot = object(sourceSnapshot);
+            const employees = array(snapshot.employees)
+                .map((item) => object(item))
+                .filter((item) => isInternalRole(item.role));
+            const roster = employees.map((employee) => ({
+                id: 'employee:' + text(employee.id, text(employee.name, 'staff')),
+                employeeId: text(employee.id, '') || null,
+                userId: null,
+                name: text(employee.name, 'Staff'),
+                role: text(employee.role, 'Admin'),
+                canSwitchRoles: false,
+                email: null,
+                pushExternalId: null,
+                workspaceUser: false,
+                presenceStatus: 'offline',
+                online: false,
+                lastSeenAt: null,
+                lastSeenMinutes: null,
+                recentSessionCount: 0,
+                recentSessions: [],
+                deviceNames: [],
+                taskLoad: {
+                    openCount: 0,
+                    assignedCount: 0,
+                    acknowledgedCount: 0,
+                    inProgressCount: 0,
+                    blockedCount: 0,
+                    ackPendingCount: 0,
+                },
+            }));
+
+            return {
+                generatedAt: new Date().toISOString(),
+                workspaceId: text(sourceWorkspaceId, ''),
+                workspaceSlug: text(sourceWorkspaceSlug, 'main'),
+                staffPresence: {
+                    summary: {
+                        total: roster.length,
+                        active: 0,
+                        background: 0,
+                        idle: 0,
+                        offline: roster.length,
+                        withOpenTasks: 0,
+                        withExceptions: 0,
+                    },
+                    roster,
+                },
+                operationalExceptions: {
+                    summary: {
+                        total: 0,
+                        critical: 0,
+                        high: 0,
+                        medium: 0,
+                        low: 0,
+                        byDomain: {
+                            operations: 0,
+                            cash: 0,
+                            staff: 0,
+                        },
+                    },
+                    items: [],
+                },
+            };
+        };
+
         const authRecord = e.auth || e.requestInfo().auth;
         if (!authRecord) {
             throw new UnauthorizedError('Necesitas autenticarte para cargar la operacion de Fideo.');
         }
 
         const body = e.requestInfo().body || {};
-        const authWorkspaceId = fideoPushText(authRecord.get('workspace'), '').trim();
-        const workspaceId = fideoPushText(body.workspaceId, authWorkspaceId).trim();
-        const role = fideoPushText(authRecord.get('role'), 'Admin');
-        const canAccessOverview = !!authRecord.get('canSwitchRoles') || fideoRuntimeIsInternalRole(role);
+        const authWorkspaceId = text(authRecord.get('workspace'), '').trim();
+        const workspaceId = text(body.workspaceId, authWorkspaceId).trim();
+        const role = text(authRecord.get('role'), 'Admin');
+        const canAccessOverview = !!authRecord.get('canSwitchRoles') || isInternalRole(role);
 
         if (!workspaceId) {
             throw new BadRequestError('Tu usuario no tiene workspace asignado para esta vista operativa.');
@@ -3252,16 +3430,28 @@ routerAdd(
         }
 
         const snapshot = snapshotRecord ? snapshotRecord.get('snapshot') : {};
-        const runtimeOverview =
-            typeof fideoRuntimeBuildOverview === 'function'
-                ? fideoRuntimeBuildOverview(e.app, workspaceId, snapshot, {
-                    workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
-                })
+        const workspaceSlug = text(workspace.get('slug'), 'main');
+        let runtimeOverview = null;
+        const runtimeBuilder =
+            typeof globalThis !== 'undefined' && typeof globalThis.fideoRuntimeBuildOverview === 'function'
+                ? globalThis.fideoRuntimeBuildOverview
                 : null;
+
+        if (runtimeBuilder) {
+            try {
+                runtimeOverview = runtimeBuilder(e.app, workspaceId, snapshot, { workspaceSlug });
+            } catch (runtimeError) {
+                console.log('[fideo.pb] runtime overview fallback:', runtimeError && runtimeError.message ? runtimeError.message : String(runtimeError));
+            }
+        }
+
+        if (!runtimeOverview) {
+            runtimeOverview = buildFallbackRuntimeOverview(snapshot, workspaceId, workspaceSlug);
+        }
 
         return e.json(200, {
             workspaceId,
-            workspaceSlug: fideoPushText(workspace.get('slug'), 'main'),
+            workspaceSlug,
             snapshotRecordId: snapshotRecord ? snapshotRecord.id : null,
             version: snapshotRecord ? Number(snapshotRecord.get('version') || 0) : 0,
             snapshot,
@@ -6427,12 +6617,12 @@ routerAdd(
                     id: 'log_credit_reject_' + Date.now(),
                     type: 'CREDIT_REJECTED',
                     timestamp: new Date().toISOString(),
-                    description: 'Venta a crÃ©dito rechazada para ' + toText(customerInfo.name, ''),
+                    description: 'Venta a crédito rechazada para ' + toText(customerInfo.name, ''),
                     details: { Motivo: 'Cliente configurado para solo contado.' },
                 };
                 return createActionResult(
                     { ...currentState, activityLog: [newLog].concat(toArray(currentState.activityLog)) },
-                    { text: 'Venta a crÃ©dito rechazada. ' + toText(customerInfo.name, '') + ' es cliente de solo contado.', isError: true },
+                    { text: 'Venta a crédito rechazada. ' + toText(customerInfo.name, '') + ' es cliente de solo contado.', isError: true },
                 );
             }
 
@@ -6526,7 +6716,7 @@ routerAdd(
             const now = new Date();
             const nowIso = now.toISOString();
             const deliveryDeadlineIso = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
-            const paymentMethod = toText(customerInfo.creditStatus, '') === 'Contado Solamente' ? 'Efectivo' : 'CrÃ©dito';
+            const paymentMethod = toText(customerInfo.creditStatus, '') === 'Contado Solamente' ? 'Efectivo' : 'Crédito';
 
             const newSale = {
                 id: 's_' + Date.now(),
@@ -6619,7 +6809,7 @@ routerAdd(
                     };
                 } else {
                     notification = {
-                        text: 'Venta en efectivo a ' + toText(newSale.customer, '') + ' no se pudo registrar en caja porque estÃ¡ cerrada.',
+                        text: 'Venta en efectivo a ' + toText(newSale.customer, '') + ' no se pudo registrar en caja porque está cerrada.',
                         isError: true,
                     };
                 }
@@ -6665,7 +6855,7 @@ routerAdd(
                 destination: 'Cliente',
                 status: 'Completado',
                 paymentStatus: 'En Deuda',
-                paymentMethod: 'CrÃ©dito',
+                paymentMethod: 'Crédito',
                 timestamp: nowIso,
                 deliveryDeadline: nowIso,
             };
@@ -6726,7 +6916,7 @@ routerAdd(
                 totalCost: totalCost,
                 status: 'Pendiente',
                 orderDate: nowIso,
-                paymentMethod: 'CrÃ©dito',
+                paymentMethod: 'Crédito',
             };
             const newLog = {
                 id: 'log_po_' + Date.now(),
@@ -6825,7 +7015,7 @@ routerAdd(
                 remainingToMove -= decrementAmount;
 
                 const toState = toText(data.toState, '');
-                const newLocation = toState === 'Verde' ? 'CÃ¡mara FrÃ­a' : (toState === 'Entrado' ? 'MaduraciÃ³n' : 'Piso de Venta');
+                const newLocation = toState === 'Verde' ? 'Cámara Fría' : (toState === 'Entrado' ? 'Maduración' : 'Piso de Venta');
                 let destinationBatch = toArray(updatedInventory).find(
                     (item) =>
                         toText(item.varietyId, '') === toText(productInfo.variety.id, '') &&
@@ -6989,7 +7179,7 @@ routerAdd(
                 id: 'log_' + Date.now(),
                 type: 'PRESTAMO_CAJA',
                 timestamp: now.toISOString(),
-                description: 'PrÃ©stamo de cajas a ' + toText(data.customer, ''),
+                description: 'Préstamo de cajas a ' + toText(data.customer, ''),
                 details: { Cantidad: toNumber(data.quantity, 0), Descripcion: toText(crateType.name, '') },
             };
             return createActionResult({
@@ -7001,7 +7191,7 @@ routerAdd(
         const addActivityAction = (currentState, interpretation) => {
             const data = toObject(interpretation.data);
             const nowIso = new Date().toISOString();
-            const newActivity = { id: 'e_' + Date.now(), employee: toText(data.employee, ''), activity: 'Empleado llegÃ³', timestamp: nowIso };
+            const newActivity = { id: 'e_' + Date.now(), employee: toText(data.employee, ''), activity: 'Empleado llegó', timestamp: nowIso };
             const newLog = {
                 id: 'log_' + Date.now(),
                 type: 'LLEGADA_EMPLEADO',
