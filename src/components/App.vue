@@ -106,6 +106,16 @@
       @block-task="actions.blockTask"
       @complete-task="actions.completeTask"
     />
+
+    <RuntimeGateBoard
+      :gates="runtimeGates"
+      :pocketbase-routes="pocketbaseRoutes"
+      @bootstrap-pocketbase="actions.bootstrapPocketBase"
+      @persist-snapshot="actions.persistSnapshot"
+      @presence-ping="actions.presencePing"
+      @plan-realtime="actions.planRealtime"
+      @plan-ai="actions.planAi"
+    />
   </main>
 </template>
 
@@ -122,6 +132,7 @@ export default {
       metrics: kernel.metrics,
       pocketbaseRoutes: kernel.pocketbaseRoutes,
       receipts: kernel.receipts,
+      runtimeGates: kernel.runtimeGates,
       state: kernel.state,
     };
   },
@@ -139,6 +150,7 @@ export default {
     const MessageBoard = resolveComponent('MessageBoard');
     const MessageAiOpsBoard = resolveComponent('MessageAiOpsBoard');
     const PortalAssetBoard = resolveComponent('PortalAssetBoard');
+    const RuntimeGateBoard = resolveComponent('RuntimeGateBoard');
 
     return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
       h(ShellHeader, {
@@ -238,6 +250,15 @@ export default {
         onStartTask: this.actions.startTask,
         onBlockTask: this.actions.blockTask,
         onCompleteTask: this.actions.completeTask,
+      }),
+      h(RuntimeGateBoard, {
+        gates: this.runtimeGates,
+        pocketbaseRoutes: this.pocketbaseRoutes,
+        onBootstrapPocketbase: this.actions.bootstrapPocketBase,
+        onPersistSnapshot: this.actions.persistSnapshot,
+        onPresencePing: this.actions.presencePing,
+        onPlanRealtime: this.actions.planRealtime,
+        onPlanAi: this.actions.planAi,
       }),
     ]);
   },

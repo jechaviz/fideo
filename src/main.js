@@ -13,6 +13,7 @@ const componentUrls = {
   MessageBoard: './src/components/MessageBoard.vue',
   MetricStrip: './src/components/MetricStrip.vue',
   PortalAssetBoard: './src/components/PortalAssetBoard.vue',
+  RuntimeGateBoard: './src/components/RuntimeGateBoard.vue',
   ShellHeader: './src/components/ShellHeader.vue',
   SupplierOpsBoard: './src/components/SupplierOpsBoard.vue',
 };
@@ -39,6 +40,9 @@ const boot = async () => {
   const kernel = createKernel({
     vue: window.Vue,
     config: {
+      pocketbaseBaseUrl: '',
+      oneSignalAppId: '',
+      allowOneSignalLive: false,
       veeperBaseUrl: 'http://127.0.0.1:8097',
       codexGoalPath: 'C:/git/codex/codex-goal',
     },

@@ -58,6 +58,8 @@ Ported and verified:
 - `frontend/components/MessageFeed.tsx`, `Promotions.tsx`, `MessageConfig.tsx`, `AITraining.tsx`
   insight/correction/campaign subset ->
   `src/domain/messages/*` plus `src/components/MessageAiOpsBoard.vue`
+- `frontend/hooks/usePocketBaseSession.ts`, `useOneSignalPush.ts` runtime gate subset ->
+  `src/infrastructure/runtimeGates.js` plus `src/components/RuntimeGateBoard.vue`
 
 ## Pending Domains
 
@@ -67,8 +69,8 @@ Ported and verified:
 - Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.
 - Full Gemini live execution and provider-backed correction receipts.
-- OneSignal live SDK binding behind explicit deployment gate.
-- PocketBase bootstrap, realtime restore and full normalized slices.
+- OneSignal live SDK execution after deployment credentials.
+- PocketBase authenticated realtime restore against live backend.
 - Veeper live receipt loop once provider credentials are present.
 - codex-goal live engine execution once local path exists.
 

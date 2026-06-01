@@ -40,6 +40,7 @@ import { purchaseOrderPipeline, supplierCostMatrix, supplierStats } from '../src
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
+import { gateSummary, runtimeGateMatrix } from '../src/infrastructure/runtimeGates.js';
 
 const state = createInitialState();
 const snapshot = buildPersistableSnapshot(state);
@@ -273,6 +274,15 @@ const gateway = createPocketBaseGateway();
 assert.equal(gateway.routes().length, 19);
 const dryInspect = await gateway.inspect();
 assert.equal(dryInspect.routes, 19);
+const dryRealtime = await gateway.realtimePlan('fideo-demo');
+assert.equal(dryRealtime.status, 'dry-run');
+assert.equal(dryRealtime.realtime, 'disabled');
+const gates = runtimeGateMatrix({
+  veeperBaseUrl: 'http://127.0.0.1:8097',
+  codexGoalPath: 'C:/git/codex/codex-goal',
+});
+assert.equal(gates.length, 4);
+assert.equal(gateSummary(gates).gated, 1);
 
 const portalState = createInitialState();
 assert.equal(fixedAssetSummary(portalState).total, 2);

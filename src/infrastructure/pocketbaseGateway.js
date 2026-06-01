@@ -71,6 +71,17 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
       if (dry) return Promise.resolve(dry);
       return client.get(`${routePath('runtime_overview')}?workspaceId=${encodeURIComponent(workspaceId)}`);
     },
+    realtimePlan(workspaceId, snapshotRecordId = '') {
+      const dry = requireBaseUrl();
+      if (dry) return Promise.resolve({ ...dry, realtime: 'disabled' });
+      return Promise.resolve({
+        kind: 'pocketbase_realtime',
+        status: 'planned',
+        message: 'Realtime subscribe listo para el adaptador PocketBase.',
+        workspaceId,
+        snapshotRecordId,
+      });
+    },
     persist(workspaceId, snapshot, expectedVersion, referenceSnapshot = null) {
       return postSnapshotAction(routePath('state_persist'), {
         workspaceId,

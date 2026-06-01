@@ -145,6 +145,9 @@ try {
     'Activos',
     'Planograma',
     'Portales',
+    'Gates runtime',
+    'PocketBase realtime',
+    'OneSignal live',
   ];
   const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));
   if (!value || !hasRequiredText || !value.hasActionCenter) {

@@ -7,5 +7,13 @@ export const createAiGateway = ({ codexGoalPath }) => ({
       path: codexGoalPath,
     };
   },
+  async planInsightRun(workspaceId, intent) {
+    return {
+      kind: 'ai_engine_plan',
+      status: 'dry-run',
+      message: `codex-goal planificado para ${intent}.`,
+      path: codexGoalPath,
+      workspaceId,
+    };
+  },
 });
-

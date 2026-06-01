@@ -25,6 +25,7 @@ import { campaignDrafts } from '../domain/messages/messageInsights.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
 import { planPushBinding } from '../domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice } from '../domain/sales/salesActions.js';
+import { buildPersistableSnapshot } from '../domain/snapshotTransport.js';
 import {
   createPurchaseOrder,
   receivePurchaseOrder,
@@ -34,6 +35,7 @@ import {
 } from '../domain/suppliers/supplierActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
 import { createPocketBaseGateway } from '../infrastructure/pocketbaseGateway.js';
+import { runtimeGateMatrix } from '../infrastructure/runtimeGates.js';
 import { createVeeperGateway } from '../infrastructure/veeperGateway.js';
 
 const createReceipts = (vue) => vue.ref([]);
@@ -70,9 +72,10 @@ export const createKernel = ({ vue, config }) => {
   const receipts = createReceipts(vue);
 
   const veeper = createVeeperGateway({ baseUrl: config.veeperBaseUrl });
-  const pocketbase = createPocketBaseGateway();
+  const pocketbase = createPocketBaseGateway({ baseUrl: config.pocketbaseBaseUrl || '' });
   const pocketbaseRoutes = pocketbase.routes();
   const ai = createAiGateway({ codexGoalPath: config.codexGoalPath });
+  const runtimeGates = runtimeGateMatrix(config);
 
   const metrics = vue.computed(() => deriveMetrics(state));
   const exceptionQueue = vue.computed(() => buildExceptionQueue(state));
@@ -320,6 +323,30 @@ export const createKernel = ({ vue, config }) => {
         nextTaskStatus: 'blocked',
       }, actorForTask(taskId)));
     },
+    bootstrapPocketBase: async () => {
+      pushReceipt(receipts, await pocketbase.bootstrap(buildPersistableSnapshot(state)));
+    },
+    persistSnapshot: async () => {
+      pushReceipt(receipts, await pocketbase.persist(
+        state.workspace.id,
+        buildPersistableSnapshot(state),
+        state.workspace.version,
+      ));
+    },
+    presencePing: async () => {
+      pushReceipt(receipts, await pocketbase.presencePing(state.workspace.id, {
+        userId: 'local-admin',
+        employeeId: 'emp-admin',
+        status: 'online',
+        at: new Date().toISOString(),
+      }));
+    },
+    planRealtime: async () => {
+      pushReceipt(receipts, await pocketbase.realtimePlan(state.workspace.id));
+    },
+    planAi: async () => {
+      pushReceipt(receipts, await ai.planInsightRun(state.workspace.id, 'fideo-insights'));
+    },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([
         pocketbase.inspect(),
@@ -342,6 +369,7 @@ export const createKernel = ({ vue, config }) => {
     metrics,
     pocketbaseRoutes,
     receipts,
+    runtimeGates,
     state,
   };
 };
