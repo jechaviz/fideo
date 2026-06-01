@@ -142,6 +142,7 @@ try {
     'Cobranza viva',
     'ABASTO COORDINADO',
     'Pipeline compras',
+    'Recibos compra',
     'Insights IA',
     'Correccion remota',
     'Campanas segmentadas',

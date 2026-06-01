@@ -12,6 +12,8 @@
 <script>
 import {
   purchaseOrderPipeline,
+  purchaseReceiptRows,
+  purchaseReceiptSummary,
   supplierCostMatrix,
   supplierRows,
   supplierStats,
@@ -30,7 +32,16 @@ export default {
   props: {
     state: { type: Object, required: true },
   },
-  emits: ['create-demo-order', 'order-purchase-order', 'receive-order', 'reprice-order', 'raise-supplier-cost'],
+  emits: [
+    'create-demo-order',
+    'order-purchase-order',
+    'receive-order',
+    'reprice-order',
+    'raise-supplier-cost',
+    'rename-supplier',
+    'refresh-supplier-contact',
+    'record-purchase-receipt',
+  ],
   computed: {
     stats() {
       return supplierStats(this.state);
@@ -43,6 +54,12 @@ export default {
     },
     pipeline() {
       return purchaseOrderPipeline(this.state);
+    },
+    receiptSummary() {
+      return purchaseReceiptSummary(this.state);
+    },
+    receipts() {
+      return purchaseReceiptRows(this.state).slice(0, 5);
     },
   },
   methods: {
@@ -71,10 +88,24 @@ export default {
         ]),
         h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.suppliers.map((supplier) =>
           h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: supplier.id }, [
-            h('strong', { class: 'text-white' }, supplier.name),
-            h('span', { class: 'block text-slate-300' },
-              `${supplier.supplyCount} SKU(s) - ${money(supplier.avgLandedCost)}`),
-            h('span', { class: 'block text-xs text-slate-500' }, supplier.contact || 'Sin contacto'),
+            h('div', { class: 'flex items-start justify-between gap-3' }, [
+              h('div', [
+                h('strong', { class: 'text-white' }, supplier.name),
+                h('span', { class: 'block text-slate-300' },
+                  `${supplier.supplyCount} SKU(s) - ${money(supplier.avgLandedCost)}`),
+                h('span', { class: 'block text-xs text-slate-500' }, supplier.contact || 'Sin contacto'),
+              ]),
+              h('div', { class: 'flex shrink-0 flex-wrap justify-end gap-2' }, [
+                h('button', {
+                  class: 'focus-ring rounded-lg bg-amber-300 px-2 py-1 text-xs font-black text-slate-950',
+                  onClick: () => this.$emit('rename-supplier', supplier),
+                }, 'Editar'),
+                h('button', {
+                  class: 'focus-ring rounded-lg border border-white/10 px-2 py-1 text-xs font-black text-slate-200',
+                  onClick: () => this.$emit('refresh-supplier-contact', supplier),
+                }, 'Contacto'),
+              ]),
+            ]),
           ]))),
       ]);
     },
@@ -138,6 +169,39 @@ export default {
           : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin ordenes.'),
       ]);
     },
+    renderReceiptPanel() {
+      return h('article', { class: 'surface p-4' }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Recibos compra'),
+            h('span', { class: 'text-sm text-slate-400' }, `${this.receiptSummary.remoteReceipts} remotos`),
+          ]),
+          h('button', {
+            class: 'focus-ring rounded-lg bg-emerald-300 px-3 py-2 text-xs font-black text-slate-950',
+            onClick: () => this.$emit('record-purchase-receipt'),
+          }, 'Acuse'),
+        ]),
+        h('div', { class: 'mt-3 grid gap-2 sm:grid-cols-3' }, [
+          this.metric('Recibos', this.receiptSummary.receipts),
+          this.metric('Remotos', this.receiptSummary.remoteReceipts),
+          this.metric('Monto', money(this.receiptSummary.receivedAmount)),
+        ]),
+        this.receipts.length
+          ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.receipts.map((row) =>
+            h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: row.id }, [
+              h('div', { class: 'flex items-start justify-between gap-3' }, [
+                h('div', [
+                  h('strong', { class: 'text-white' }, row.supplier?.name || 'Proveedor'),
+                  h('span', { class: 'block text-slate-300' }, `${row.provider} - ${row.status}`),
+                  h('span', { class: 'block text-xs text-slate-500' },
+                    `${row.quantity} uds - ${money(row.amount)}`),
+                ]),
+                h('span', { class: 'pill text-xs' }, row.purchaseOrderId.slice(0, 12)),
+              ]),
+            ])))
+          : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin recibos registrados.'),
+      ]);
+    },
   },
   render() {
     return h('section', { class: 'mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]' }, [
@@ -154,6 +218,7 @@ export default {
             this.metric('Recibido', money(this.pipeline.receivedCost)),
           ]),
         ]),
+        this.renderReceiptPanel(),
         h('div', { class: 'grid gap-4 lg:grid-cols-3' }, [
           this.renderPipelineColumn('Pendiente', this.pipeline.Pendiente),
           this.renderPipelineColumn('Ordenado', this.pipeline.Ordenado),

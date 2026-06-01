@@ -41,9 +41,11 @@ import { assignDelivery, completeSale, markOrderAsPacked, setPrice } from '../do
 import { buildPersistableSnapshot } from '../domain/snapshotTransport.js';
 import {
   createPurchaseOrder,
+  recordPurchaseProviderReceipt,
   receivePurchaseOrder,
   repricePurchaseOrder,
   setPurchaseOrderStatus,
+  updateSupplier,
   updateSupplierSupply,
 } from '../domain/suppliers/supplierActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
@@ -244,6 +246,33 @@ export const createKernel = ({ vue, config }) => {
       pushReceipt(receipts, updateSupplierSupply(state, row.supplierId, row.varietyId, {
         baseCost: Number(row.baseCost || 0) + 5,
       }));
+    },
+    renameSupplier: (supplier) => {
+      pushReceipt(receipts, updateSupplier(state, supplier.id, {
+        name: nextAvailableName(state.suppliers.map((item) => item.name), `${supplier.name} MX`),
+      }));
+    },
+    refreshSupplierContact: (supplier) => {
+      pushReceipt(receipts, updateSupplier(state, supplier.id, {
+        contact: `WhatsApp ${supplier.name}`,
+      }));
+    },
+    recordPurchaseReceipt: () => {
+      const order = state.purchaseOrders.find((item) => item.status !== 'Recibido') || state.purchaseOrders[0];
+      const result = recordPurchaseProviderReceipt(state, {
+        purchaseOrderId: order?.id,
+        provider: 'pocketbase',
+        status: 'acknowledged',
+      });
+      pushReceipt(receipts, result);
+      if (result.status === 'ok') {
+        pushReceipt(receipts, {
+          kind: 'purchase_remote_receipt',
+          status: 'dry-run',
+          message: 'Acuse remoto de compra listo para PocketBase.',
+          orderId: result.orderId,
+        });
+      }
     },
     createDemoOrder: () => {
       const supplier = state.suppliers[0];

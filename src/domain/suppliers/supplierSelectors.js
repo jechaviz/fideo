@@ -76,3 +76,21 @@ export const purchaseOrderPipeline = (state) => {
     openCount: byStatus.Pendiente.length + byStatus.Ordenado.length,
   };
 };
+
+export const purchaseReceiptRows = (state) =>
+  (state.purchaseReceipts || []).map((receipt) => ({
+    ...receipt,
+    supplier: state.suppliers.find((supplier) => supplier.id === receipt.supplierId) || null,
+    order: state.purchaseOrders.find((order) => order.id === receipt.purchaseOrderId) || null,
+  })).toSorted((left, right) => String(right.at || '').localeCompare(String(left.at || '')));
+
+export const purchaseReceiptSummary = (state) => {
+  const rows = purchaseReceiptRows(state);
+  const remoteRows = rows.filter((row) => row.provider !== 'local');
+  return {
+    receipts: rows.length,
+    remoteReceipts: remoteRows.length,
+    receivedAmount: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    remoteAmount: remoteRows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+  };
+};

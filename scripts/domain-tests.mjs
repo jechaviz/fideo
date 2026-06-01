@@ -57,12 +57,20 @@ import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import {
   createPurchaseOrder,
+  recordPurchaseProviderReceipt,
   receivePurchaseOrder,
   repricePurchaseOrder,
   setPurchaseOrderStatus,
+  updateSupplier,
   updateSupplierSupply,
 } from '../src/domain/suppliers/supplierActions.js';
-import { purchaseOrderPipeline, supplierCostMatrix, supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
+import {
+  purchaseOrderPipeline,
+  purchaseReceiptRows,
+  purchaseReceiptSummary,
+  supplierCostMatrix,
+  supplierStats,
+} from '../src/domain/suppliers/supplierSelectors.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
@@ -243,6 +251,8 @@ assert.equal(returnLost.status, 'skipped');
 
 const suppliers = supplierStats(commerceState);
 assert.equal(suppliers.supplierCount, 2);
+const supplierEdit = updateSupplier(commerceState, 'sup-huerta', { contact: 'WhatsApp compras' });
+assert.equal(supplierEdit.status, 'ok');
 const order = createPurchaseOrder(commerceState, {
   supplierId: 'sup-huerta',
   varietyId: 'var-mango-ataulfo',
@@ -254,6 +264,14 @@ assert.equal(order.status, 'ok');
 const received = receivePurchaseOrder(commerceState, order.order.id);
 assert.equal(received.status, 'ok');
 assert.equal(commerceState.purchaseOrders.find((item) => item.id === order.order.id).status, 'Recibido');
+assert.equal(purchaseReceiptRows(commerceState)[0].provider, 'local');
+const remotePurchaseReceipt = recordPurchaseProviderReceipt(commerceState, {
+  purchaseOrderId: order.order.id,
+  provider: 'pocketbase',
+  status: 'acknowledged',
+});
+assert.equal(remotePurchaseReceipt.status, 'ok');
+assert.equal(purchaseReceiptSummary(commerceState).remoteReceipts, 1);
 assert.equal(supplierCostMatrix(commerceState).length >= 1, true);
 const supplyUpdate = updateSupplierSupply(commerceState, 'sup-huerta', 'var-mango-ataulfo', { baseCost: 270 });
 assert.equal(supplyUpdate.status, 'ok');

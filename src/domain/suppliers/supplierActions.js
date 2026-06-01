@@ -120,6 +120,18 @@ export const receivePurchaseOrder = (state, orderId, warehouseId = 'wh-main') =>
     category: 'Compra',
     relatedPurchaseOrderId: order.id,
   });
+  state.purchaseReceipts ||= [];
+  state.purchaseReceipts.unshift({
+    id: makeId('purchase_receipt'),
+    purchaseOrderId: order.id,
+    supplierId: order.supplierId,
+    provider: 'local',
+    status: 'received',
+    quantity: order.quantity,
+    amount: order.totalCost,
+    message: 'Entrada local a inventario.',
+    at: nowIso(),
+  });
   pushLog(state, 'ORDEN_COMPRA_CRUD', 'Orden recibida en inventario', {
     Orden: order.id,
     Cantidad: order.quantity,
@@ -156,4 +168,30 @@ export const repricePurchaseOrder = (state, orderId) => {
     Costo: order.totalCost,
   });
   return receipt('purchase_order_reprice', 'ok', 'Orden recalculada.', { orderId, totalCost: order.totalCost });
+};
+
+export const recordPurchaseProviderReceipt = (state, input) => {
+  const order = state.purchaseOrders.find((item) => item.id === input.purchaseOrderId) || state.purchaseOrders[0];
+  const provider = String(input.provider || '').trim();
+  if (!order || !provider) return receipt('purchase_provider_receipt', 'skipped', 'Orden o proveedor incompleto.');
+  state.purchaseReceipts ||= [];
+  state.purchaseReceipts.unshift({
+    id: makeId('purchase_provider_receipt'),
+    purchaseOrderId: order.id,
+    supplierId: order.supplierId,
+    provider,
+    status: input.status || 'acknowledged',
+    quantity: Number(input.quantity ?? order.quantity ?? 0),
+    amount: Number(input.amount ?? order.totalCost ?? 0),
+    message: input.message || `${provider} acuse de compra registrado.`,
+    at: nowIso(),
+  });
+  pushLog(state, 'ORDEN_COMPRA_CRUD', `Acuse proveedor ${provider}`, {
+    Orden: order.id,
+    Monto: order.totalCost,
+  });
+  return receipt('purchase_provider_receipt', 'ok', `Acuse ${provider} registrado.`, {
+    orderId: order.id,
+    provider,
+  });
 };

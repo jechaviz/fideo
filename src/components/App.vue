@@ -93,6 +93,9 @@
       @receive-order="actions.receiveOrder"
       @reprice-order="actions.repricePurchaseOrder"
       @raise-supplier-cost="actions.raiseSupplierCost"
+      @rename-supplier="actions.renameSupplier"
+      @refresh-supplier-contact="actions.refreshSupplierContact"
+      @record-purchase-receipt="actions.recordPurchaseReceipt"
     />
 
     <MessageBoard
@@ -259,6 +262,9 @@ export default {
         onReceiveOrder: this.actions.receiveOrder,
         onRepriceOrder: this.actions.repricePurchaseOrder,
         onRaiseSupplierCost: this.actions.raiseSupplierCost,
+        onRenameSupplier: this.actions.renameSupplier,
+        onRefreshSupplierContact: this.actions.refreshSupplierContact,
+        onRecordPurchaseReceipt: this.actions.recordPurchaseReceipt,
       }),
       h(MessageBoard, {
         state: this.state,

@@ -65,10 +65,11 @@ Ported and verified:
   `src/domain/catalog/*` plus `src/components/CatalogAdminBoard.vue`
 - `frontend/components/Promotions.tsx`, `services/onesignal/client.ts` provider receipt subset ->
   `src/domain/messages/*`, `src/infrastructure/veeperGateway.js` plus `MessageAiOpsBoard.vue`
+- `frontend/components/Suppliers.tsx`, `views/SupplierView.tsx` editing/remote receipt subset ->
+  `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
 
 ## Pending Domains
 
-- Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.
 - Full Gemini live execution and provider-backed correction receipts.

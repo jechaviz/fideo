@@ -297,6 +297,7 @@ export const createInitialState = () => ({
       paymentMethod: 'Credito',
     },
   ],
+  purchaseReceipts: [],
   cashDrawers: [
     { id: 'drawer-main', name: 'Caja Principal', status: 'Abierta', balance: 5000, lastOpened: nowIso() },
   ],
