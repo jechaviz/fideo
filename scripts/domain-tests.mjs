@@ -10,7 +10,8 @@ import { deliveryAttentionItems, deliveryColumns, delivererPortal, routeGroups }
 import { submitTaskReport } from '../src/domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement, signedCashMovementAmount } from '../src/domain/finance/financeActions.js';
 import { cashActivityRows, debtRows, financeSummary } from '../src/domain/finance/financeSelectors.js';
-import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from '../src/domain/inventory/inventoryActions.js';
+import { adjustInventory, changeQuality, moveBatchLocation, moveInventory, transferBatchWarehouse } from '../src/domain/inventory/inventoryActions.js';
+import { inventoryFilterOptions, inventoryTableRows, warehouseInventoryMatrix } from '../src/domain/inventory/selectors.js';
 import { addMessage, approveInterpretation, correctInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../src/domain/messages/messageActions.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
@@ -93,6 +94,12 @@ assert.equal(adjust.difference, 8);
 const location = moveBatchLocation(inventoryState, 'inv-1', 'Camara Fria', 5);
 assert.equal(location.status, 'ok');
 assert.equal(inventoryState.inventory.some((batch) => batch.location === 'Camara Fria' && batch.quantity === 5), true);
+const transferWarehouse = transferBatchWarehouse(inventoryState, 'inv-1', 'wh-floor', 2);
+assert.equal(transferWarehouse.status, 'ok');
+assert.equal(inventoryState.inventory.some((batch) => batch.warehouseId === 'wh-floor' && batch.quantity === 2), true);
+assert.equal(inventoryFilterOptions(inventoryState).states.includes('Maduro'), true);
+assert.equal(warehouseInventoryMatrix(inventoryState).some((warehouse) => warehouse.quantity > 0), true);
+assert.equal(inventoryTableRows(inventoryState, { warehouseId: 'wh-floor' }).length >= 1, true);
 
 const salesState = createInitialState();
 syncOperationalTaskAssignments(salesState);

@@ -132,6 +132,8 @@ try {
     'Campanas',
     'ENTREGA VIVA',
     'Atencion ruta',
+    'TABLA INVENTARIO',
+    'Lotes operables',
     'CAJA OPERATIVA',
     'Timeline caja',
     'Cobranza viva',

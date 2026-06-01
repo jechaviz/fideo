@@ -4,11 +4,17 @@ import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerAc
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement } from '../domain/finance/financeActions.js';
-import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
+import {
+  adjustInventory,
+  changeQuality,
+  moveBatchLocation,
+  moveInventory,
+  transferBatchWarehouse,
+} from '../domain/inventory/inventoryActions.js';
 import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
 import { planPushBinding } from '../domain/push/pushIdentity.js';
-import { assignDelivery, completeSale, markOrderAsPacked } from '../domain/sales/salesActions.js';
+import { assignDelivery, completeSale, markOrderAsPacked, setPrice } from '../domain/sales/salesActions.js';
 import {
   createPurchaseOrder,
   receivePurchaseOrder,
@@ -106,6 +112,21 @@ export const createKernel = ({ vue, config }) => {
       }
       const result = changeQuality(state, criteriaFromBatch(batch), 'Merma', Math.min(4, batch.quantity));
       pushReceipt(receipts, result);
+    },
+    moveBatchLocation: (batchId, location) => {
+      const batch = state.inventory.find((item) => item.id === batchId);
+      pushReceipt(receipts, moveBatchLocation(state, batchId, location, Math.min(6, Number(batch?.quantity || 0))));
+    },
+    transferWarehouse: (batchId, targetWarehouseId) => {
+      const batch = state.inventory.find((item) => item.id === batchId);
+      pushReceipt(receipts, transferBatchWarehouse(state, batchId, targetWarehouseId, Math.min(4, Number(batch?.quantity || 0))));
+    },
+    adjustBatch: (batch) => {
+      pushReceipt(receipts, adjustInventory(state, criteriaFromBatch(batch), Number(batch.quantity || 0) + 3));
+    },
+    raiseBatchPrice: (batch) => {
+      pushReceipt(receipts, setPrice(state, batch.varietyId, batch.size, batch.quality, batch.state,
+        Number(batch.unitPrice || 0) + 10));
     },
     packSale: (saleId) => {
       pushReceipt(receipts, markOrderAsPacked(state, saleId));

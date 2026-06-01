@@ -8,6 +8,7 @@ const componentUrls = {
   DomainBoard: './src/components/DomainBoard.vue',
   FinanceOpsBoard: './src/components/FinanceOpsBoard.vue',
   IntegrationHealth: './src/components/IntegrationHealth.vue',
+  InventoryOpsBoard: './src/components/InventoryOpsBoard.vue',
   MessageBoard: './src/components/MessageBoard.vue',
   MetricStrip: './src/components/MetricStrip.vue',
   PortalAssetBoard: './src/components/PortalAssetBoard.vue',

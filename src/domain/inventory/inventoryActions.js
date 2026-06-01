@@ -139,6 +139,37 @@ export const moveBatchLocation = (state, batchId, newLocation, quantityToMove) =
   return receipt('inventory_location_move', 'ok', `Movido a ${newLocation}.`, { batchId, quantity });
 };
 
+export const transferBatchWarehouse = (state, batchId, targetWarehouseId, quantityToMove) => {
+  const quantity = normalizeQuantity(quantityToMove);
+  const inventory = cloneInventory(state);
+  const batch = inventory.find((item) => item.id === batchId);
+  const warehouse = state.warehouses.find((item) => item.id === targetWarehouseId);
+  if (!batch) return receipt('inventory_warehouse_transfer', 'skipped', 'Lote no encontrado.');
+  if (!warehouse) return receipt('inventory_warehouse_transfer', 'skipped', 'Bodega destino no encontrada.');
+  if (batch.warehouseId === targetWarehouseId) {
+    return receipt('inventory_warehouse_transfer', 'skipped', 'El lote ya esta en esa bodega.');
+  }
+  if (quantity <= 0) return receipt('inventory_warehouse_transfer', 'failed', 'Cantidad invalida.');
+  if (quantity > batch.quantity) return receipt('inventory_warehouse_transfer', 'failed', `Cantidad excede stock (${batch.quantity}).`);
+
+  batch.quantity -= quantity;
+  upsertBatch(inventory, {
+    ...batch,
+    warehouseId: targetWarehouseId,
+    location: locationForState(batch.state),
+  }, quantity);
+  updateInventory(state, inventory);
+  pushLog(state, 'TRANSFERENCIA_BODEGA', `Transferencia de ${productNameFor(state, batch.varietyId)}`, {
+    A: warehouse.name,
+    Cantidad: quantity,
+  });
+  return receipt('inventory_warehouse_transfer', 'ok', `Transferido a ${warehouse.name}.`, {
+    batchId,
+    targetWarehouseId,
+    quantity,
+  });
+};
+
 export const changeQuality = (state, from, toQuality, quantityToMove) => {
   const quantity = normalizeQuantity(quantityToMove);
   if (quantity <= 0) return receipt('inventory_quality_change', 'failed', 'Cantidad invalida.');

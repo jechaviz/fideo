@@ -53,10 +53,12 @@ Ported and verified:
   `src/domain/finance/*`, `src/domain/assets/assetActions.js` plus `src/components/FinanceOpsBoard.vue`
 - `frontend/components/Suppliers.tsx` and `views/SupplierView.tsx` supplier coverage/order pipeline subset ->
   `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
+- `frontend/components/Inventory.tsx` and `components/inventory/InventoryTable.tsx` table/warehouse subset ->
+  `src/domain/inventory/*` plus `src/components/InventoryOpsBoard.vue`
 
 ## Pending Domains
 
-- Inventory table parity and advanced warehouse editing.
+- Advanced warehouse CRUD/icon editing.
 - Generated AI insights and full message campaigns.
 - Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.

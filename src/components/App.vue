@@ -42,6 +42,14 @@
       @incident-task="actions.incidentTask"
     />
 
+    <InventoryOpsBoard
+      :state="state"
+      @move-location="actions.moveBatchLocation"
+      @transfer-warehouse="actions.transferWarehouse"
+      @adjust-batch="actions.adjustBatch"
+      @raise-price="actions.raiseBatchPrice"
+    />
+
     <CommerceBoard
       :state="state"
       @return-crate="actions.returnCrate"
@@ -116,6 +124,7 @@ export default {
     const IntegrationHealth = resolveComponent('IntegrationHealth');
     const DomainBoard = resolveComponent('DomainBoard');
     const DeliveryOpsBoard = resolveComponent('DeliveryOpsBoard');
+    const InventoryOpsBoard = resolveComponent('InventoryOpsBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
     const FinanceOpsBoard = resolveComponent('FinanceOpsBoard');
     const SupplierOpsBoard = resolveComponent('SupplierOpsBoard');
@@ -162,6 +171,13 @@ export default {
         onCompleteTask: this.actions.completeTask,
         onNoteTask: this.actions.noteTask,
         onIncidentTask: this.actions.incidentTask,
+      }),
+      h(InventoryOpsBoard, {
+        state: this.state,
+        onMoveLocation: this.actions.moveBatchLocation,
+        onTransferWarehouse: this.actions.transferWarehouse,
+        onAdjustBatch: this.actions.adjustBatch,
+        onRaisePrice: this.actions.raiseBatchPrice,
       }),
       h(CommerceBoard, {
         state: this.state,
