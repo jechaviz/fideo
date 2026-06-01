@@ -39,3 +39,40 @@ export const purchaseOrderRows = (state) =>
     supplier: state.suppliers.find((item) => item.id === order.supplierId),
     product: productInfoFor(state, order.varietyId),
   })).sort((left, right) => new Date(right.orderDate || 0) - new Date(left.orderDate || 0));
+
+export const supplierCostMatrix = (state) =>
+  supplierRows(state).flatMap((supplier) =>
+    supplier.coverage.map((supply) => {
+      const packagingAvg = supply.packagingOptions.length
+        ? supply.packagingOptions.reduce((sum, option) => sum + Number(option.cost || 0), 0) / supply.packagingOptions.length
+        : 0;
+      return {
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        varietyId: supply.varietyId,
+        productName: supply.product ? `${supply.product.group.name} ${supply.product.variety.name}` : 'Producto',
+        baseCost: Number(supply.baseCost || 0),
+        freightCost: Number(supply.freightCost || 0),
+        packagingAvg,
+        landedCost: Number(supply.baseCost || 0) + Number(supply.freightCost || 0) + packagingAvg,
+        sizes: supply.availableSizes,
+        packagingOptions: supply.packagingOptions,
+      };
+    }))
+    .toSorted((left, right) => left.landedCost - right.landedCost);
+
+export const purchaseOrderPipeline = (state) => {
+  const rows = purchaseOrderRows(state);
+  const byStatus = {
+    Pendiente: rows.filter((order) => order.status === 'Pendiente'),
+    Ordenado: rows.filter((order) => order.status === 'Ordenado'),
+    Recibido: rows.filter((order) => order.status === 'Recibido'),
+  };
+  return {
+    ...byStatus,
+    totalOpenCost: [...byStatus.Pendiente, ...byStatus.Ordenado]
+      .reduce((sum, order) => sum + Number(order.totalCost || 0), 0),
+    receivedCost: byStatus.Recibido.reduce((sum, order) => sum + Number(order.totalCost || 0), 0),
+    openCount: byStatus.Pendiente.length + byStatus.Ordenado.length,
+  };
+};

@@ -61,6 +61,15 @@
       @add-expense="actions.addExpense"
     />
 
+    <SupplierOpsBoard
+      :state="state"
+      @create-demo-order="actions.createDemoOrder"
+      @order-purchase-order="actions.orderPurchaseOrder"
+      @receive-order="actions.receiveOrder"
+      @reprice-order="actions.repricePurchaseOrder"
+      @raise-supplier-cost="actions.raiseSupplierCost"
+    />
+
     <MessageBoard
       :state="state"
       @add-message="actions.addDemoMessage"
@@ -109,6 +118,7 @@ export default {
     const DeliveryOpsBoard = resolveComponent('DeliveryOpsBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
     const FinanceOpsBoard = resolveComponent('FinanceOpsBoard');
+    const SupplierOpsBoard = resolveComponent('SupplierOpsBoard');
     const MessageBoard = resolveComponent('MessageBoard');
     const PortalAssetBoard = resolveComponent('PortalAssetBoard');
 
@@ -169,6 +179,14 @@ export default {
         onCashWithdraw: this.actions.cashWithdraw,
         onSellCrateAsset: this.actions.sellCrateAsset,
         onAddExpense: this.actions.addExpense,
+      }),
+      h(SupplierOpsBoard, {
+        state: this.state,
+        onCreateDemoOrder: this.actions.createDemoOrder,
+        onOrderPurchaseOrder: this.actions.orderPurchaseOrder,
+        onReceiveOrder: this.actions.receiveOrder,
+        onRepriceOrder: this.actions.repricePurchaseOrder,
+        onRaiseSupplierCost: this.actions.raiseSupplierCost,
       }),
       h(MessageBoard, {
         state: this.state,

@@ -12,6 +12,7 @@ const componentUrls = {
   MetricStrip: './src/components/MetricStrip.vue',
   PortalAssetBoard: './src/components/PortalAssetBoard.vue',
   ShellHeader: './src/components/ShellHeader.vue',
+  SupplierOpsBoard: './src/components/SupplierOpsBoard.vue',
 };
 
 const loadComponents = async () => {

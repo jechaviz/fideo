@@ -9,7 +9,13 @@ import { addMessage, approveInterpretation, interpretMessage, revertInterpretati
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
 import { planPushBinding } from '../domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked } from '../domain/sales/salesActions.js';
-import { createPurchaseOrder, receivePurchaseOrder } from '../domain/suppliers/supplierActions.js';
+import {
+  createPurchaseOrder,
+  receivePurchaseOrder,
+  repricePurchaseOrder,
+  setPurchaseOrderStatus,
+  updateSupplierSupply,
+} from '../domain/suppliers/supplierActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
 import { createPocketBaseGateway } from '../infrastructure/pocketbaseGateway.js';
 import { createVeeperGateway } from '../infrastructure/veeperGateway.js';
@@ -119,6 +125,17 @@ export const createKernel = ({ vue, config }) => {
     },
     receiveOrder: (orderId) => {
       pushReceipt(receipts, receivePurchaseOrder(state, orderId));
+    },
+    orderPurchaseOrder: (orderId) => {
+      pushReceipt(receipts, setPurchaseOrderStatus(state, orderId, 'Ordenado'));
+    },
+    repricePurchaseOrder: (orderId) => {
+      pushReceipt(receipts, repricePurchaseOrder(state, orderId));
+    },
+    raiseSupplierCost: (row) => {
+      pushReceipt(receipts, updateSupplierSupply(state, row.supplierId, row.varietyId, {
+        baseCost: Number(row.baseCost || 0) + 5,
+      }));
     },
     createDemoOrder: () => {
       const supplier = state.suppliers[0];

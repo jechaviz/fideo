@@ -135,6 +135,8 @@ try {
     'CAJA OPERATIVA',
     'Timeline caja',
     'Cobranza viva',
+    'ABASTO COORDINADO',
+    'Pipeline compras',
     'Activos',
     'Planograma',
     'Portales',

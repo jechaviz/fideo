@@ -51,12 +51,14 @@ Ported and verified:
   `src/domain/delivery/*` plus `src/components/DeliveryOpsBoard.vue`
 - `frontend/components/Finances.tsx` cash attention, drawer timeline and asset-sale subset ->
   `src/domain/finance/*`, `src/domain/assets/assetActions.js` plus `src/components/FinanceOpsBoard.vue`
+- `frontend/components/Suppliers.tsx` and `views/SupplierView.tsx` supplier coverage/order pipeline subset ->
+  `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
 
 ## Pending Domains
 
 - Inventory table parity and advanced warehouse editing.
 - Generated AI insights and full message campaigns.
-- Full purchase-order lifecycle.
+- Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.
 - Full Gemini/codex-goal message interpretation parity and remote correction receipts.

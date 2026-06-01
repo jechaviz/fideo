@@ -18,8 +18,14 @@ import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
 import { customerPortal, packerPortal, supplierPortal } from '../src/domain/portals/portalSelectors.js';
 import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
-import { createPurchaseOrder, receivePurchaseOrder } from '../src/domain/suppliers/supplierActions.js';
-import { supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
+import {
+  createPurchaseOrder,
+  receivePurchaseOrder,
+  repricePurchaseOrder,
+  setPurchaseOrderStatus,
+  updateSupplierSupply,
+} from '../src/domain/suppliers/supplierActions.js';
+import { purchaseOrderPipeline, supplierCostMatrix, supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
@@ -171,6 +177,22 @@ assert.equal(order.status, 'ok');
 const received = receivePurchaseOrder(commerceState, order.order.id);
 assert.equal(received.status, 'ok');
 assert.equal(commerceState.purchaseOrders.find((item) => item.id === order.order.id).status, 'Recibido');
+assert.equal(supplierCostMatrix(commerceState).length >= 1, true);
+const supplyUpdate = updateSupplierSupply(commerceState, 'sup-huerta', 'var-mango-ataulfo', { baseCost: 270 });
+assert.equal(supplyUpdate.status, 'ok');
+const pendingOrder = createPurchaseOrder(commerceState, {
+  supplierId: 'sup-huerta',
+  varietyId: 'var-mango-ataulfo',
+  size: 'Mediano',
+  packaging: 'Caja',
+  quantity: 5,
+});
+assert.equal(pendingOrder.order.status, 'Pendiente');
+const orderedPo = setPurchaseOrderStatus(commerceState, pendingOrder.order.id, 'Ordenado');
+assert.equal(orderedPo.status, 'ok');
+const repricedPo = repricePurchaseOrder(commerceState, pendingOrder.order.id);
+assert.equal(repricedPo.status, 'ok');
+assert.equal(purchaseOrderPipeline(commerceState).openCount >= 1, true);
 
 const closed = closeCashDrawer(commerceState, 'drawer-main', commerceState.cashDrawers[0].balance + 50, 'conteo');
 assert.equal(closed.difference, 50);

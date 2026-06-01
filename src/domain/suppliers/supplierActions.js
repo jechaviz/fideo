@@ -46,6 +46,19 @@ export const removeSupplierSupply = (state, supplierId, varietyId) => {
   return receipt('supplier_supply_remove', 'ok', 'Producto removido de proveedor.', { supplierId, varietyId });
 };
 
+export const updateSupplierSupply = (state, supplierId, varietyId, updates) => {
+  const supplier = findSupplier(state, supplierId);
+  const supply = supplier?.supplies.find((item) => item.varietyId === varietyId);
+  if (!supplier || !supply) return receipt('supplier_supply_update', 'skipped', 'Producto de proveedor no encontrado.');
+  Object.assign(supply, {
+    ...updates,
+    baseCost: updates.baseCost === undefined ? supply.baseCost : Number(updates.baseCost || 0),
+    freightCost: updates.freightCost === undefined ? supply.freightCost : Number(updates.freightCost || 0),
+  });
+  pushLog(state, 'PROVEEDOR_CRUD', `Costo de proveedor actualizado: ${supplier.name}`);
+  return receipt('supplier_supply_update', 'ok', 'Producto de proveedor actualizado.', { supplierId, varietyId });
+};
+
 export const createPurchaseOrder = (state, input) => {
   const supplier = findSupplier(state, input.supplierId);
   const supply = supplier?.supplies.find((item) => item.varietyId === input.varietyId);
@@ -112,4 +125,35 @@ export const receivePurchaseOrder = (state, orderId, warehouseId = 'wh-main') =>
     Cantidad: order.quantity,
   });
   return receipt('purchase_order_receive', 'ok', 'Orden recibida en inventario.', { orderId });
+};
+
+export const setPurchaseOrderStatus = (state, orderId, status) => {
+  const order = state.purchaseOrders.find((item) => item.id === orderId);
+  if (!order) return receipt('purchase_order_status', 'skipped', 'Orden no encontrada.');
+  if (!['Pendiente', 'Ordenado', 'Recibido'].includes(status)) {
+    return receipt('purchase_order_status', 'failed', 'Estado de orden invalido.');
+  }
+  if (status === 'Recibido') return receivePurchaseOrder(state, orderId);
+  order.status = status;
+  if (status === 'Ordenado' && !order.expectedArrivalDate) {
+    const eta = new Date();
+    eta.setDate(eta.getDate() + 1);
+    order.expectedArrivalDate = eta.toISOString();
+  }
+  pushLog(state, 'ORDEN_COMPRA_CRUD', `Orden marcada como ${status}`, { Orden: orderId });
+  return receipt('purchase_order_status', 'ok', `Orden actualizada: ${status}`, { orderId, orderStatus: status });
+};
+
+export const repricePurchaseOrder = (state, orderId) => {
+  const order = state.purchaseOrders.find((item) => item.id === orderId);
+  const supplier = order ? findSupplier(state, order.supplierId) : null;
+  const supply = supplier?.supplies.find((item) => item.varietyId === order.varietyId);
+  if (!order || !supplier || !supply) return receipt('purchase_order_reprice', 'skipped', 'Orden no encontrada.');
+  order.totalCost = (supply.baseCost + supply.freightCost + packagingCost(supply, order.packaging)) *
+    Number(order.quantity || 0);
+  pushLog(state, 'ORDEN_COMPRA_CRUD', 'Orden recalculada con costo aterrizado', {
+    Orden: order.id,
+    Costo: order.totalCost,
+  });
+  return receipt('purchase_order_reprice', 'ok', 'Orden recalculada.', { orderId, totalCost: order.totalCost });
 };
