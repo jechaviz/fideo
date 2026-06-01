@@ -39,18 +39,25 @@ Ported and verified:
 - `frontend/components/MessageFeed.tsx`, `MessageConfig.tsx`, `Promotions.tsx`
   and `useOneSignalPush.ts` safe local subset ->
   `src/domain/messages/*`, `src/domain/push/*` plus `src/components/MessageBoard.vue`
+- `frontend/hooks/usePocketBaseSession.ts` route parity manifest ->
+  `src/infrastructure/pocketbaseRoutes.js` plus `src/infrastructure/pocketbaseGateway.js`
+- `frontend/components/Assets.tsx` fixed-asset and crate-asset subset ->
+  `src/domain/assets/*` plus `src/components/PortalAssetBoard.vue`
+- `frontend/components/Planogram.tsx` warehouse stack subset ->
+  `src/domain/planogram/planogramSelectors.js` plus `src/components/PortalAssetBoard.vue`
+- `frontend/views/CustomerView.tsx`, `PackerView.tsx`, `SupplierView.tsx` portal subset ->
+  `src/domain/portals/portalSelectors.js` plus `src/components/PortalAssetBoard.vue`
 
 ## Pending Domains
 
-- Inventory table parity, planogram, assets and fixed assets.
-- Customer portal, generated AI insights and full message campaigns.
-- Supplier portal and full purchase-order lifecycle.
-- Delivery board parity, packer portal and deliverer portal.
+- Inventory table parity and advanced warehouse editing.
+- Generated AI insights and full message campaigns.
+- Full purchase-order lifecycle.
+- Delivery board parity and deliverer portal.
 - Finance activity history, advanced cash attention and fixed-asset sales.
 - Full Gemini/codex-goal message interpretation parity and remote correction receipts.
 - OneSignal live SDK binding behind explicit deployment gate.
 - PocketBase bootstrap, realtime restore and full normalized slices.
-- Backend route parity for every PocketBase hook route.
 - Veeper live receipt loop once provider credentials are present.
 - codex-goal live engine execution once local path exists.
 

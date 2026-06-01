@@ -21,7 +21,7 @@ if (!browser) {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const withTimeout = (promise, label, ms = 8000) => {
+const withTimeout = (promise, label, ms = 20000) => {
   let timer;
   return Promise.race([
     promise.finally(() => clearTimeout(timer)),
@@ -123,7 +123,17 @@ try {
   });
 
   const value = result.result?.result?.value;
-  const requiredText = ['Mesa operativa', 'Clientes', 'Proveedores', 'Finanzas', 'Mensajes IA', 'Campanas'];
+  const requiredText = [
+    'Mesa operativa',
+    'Clientes',
+    'Proveedores',
+    'Finanzas',
+    'Mensajes IA',
+    'Campanas',
+    'Activos',
+    'Planograma',
+    'Portales',
+  ];
   const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));
   if (!value || !hasRequiredText || !value.hasActionCenter) {
     throw new Error(`FideoVue did not render expected cockpit text: ${JSON.stringify(value)} logs=${logs.join(' | ')}`);

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/fideoState.js';
+import { addFixedAsset, logAssetMaintenance } from '../src/domain/assets/assetActions.js';
+import { crateAssetSummary, fixedAssetSummary } from '../src/domain/assets/assetSelectors.js';
 import { setProductGroupArchived, setRipeningRule, updateSize } from '../src/domain/catalog/catalogActions.js';
 import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
 import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
@@ -10,11 +12,15 @@ import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from
 import { addMessage, approveInterpretation, correctInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../src/domain/messages/messageActions.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
+import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
+import { customerPortal, packerPortal, supplierPortal } from '../src/domain/portals/portalSelectors.js';
 import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import { createPurchaseOrder, receivePurchaseOrder } from '../src/domain/suppliers/supplierActions.js';
 import { supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
+import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
+import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
 
 const state = createInitialState();
 const snapshot = buildPersistableSnapshot(state);
@@ -182,6 +188,39 @@ assert.equal(messageStats(messageState).approved >= 2, true);
 const push = planPushBinding({ id: 'u1', role: 'Admin', employeeId: 'emp-admin' }, messageState.workspace);
 assert.equal(push.bindingStatus, 'dry-run');
 assert.equal(push.tags.employee_id, 'emp-admin');
+
+assert.equal(pocketBaseRouteManifest.length, 19);
+assert.equal(routeById('messages_revert').path, '/api/fideo/messages/revert');
+assert.equal(mutatingPocketBaseRoutes().length, 18);
+const gateway = createPocketBaseGateway();
+assert.equal(gateway.routes().length, 19);
+const dryInspect = await gateway.inspect();
+assert.equal(dryInspect.routes, 19);
+
+const portalState = createInitialState();
+assert.equal(fixedAssetSummary(portalState).total, 2);
+const addedAsset = addFixedAsset(portalState, {
+  name: 'Patin hidraulico',
+  category: 'Equipo de Carga',
+  cost: 12500,
+});
+assert.equal(addedAsset.status, 'ok');
+const maintainedAsset = logAssetMaintenance(portalState, addedAsset.asset.id, 900, 'Cambio de ruedas');
+assert.equal(maintainedAsset.status, 'ok');
+assert.equal(portalState.fixedAssets.find((asset) => asset.id === addedAsset.asset.id).status, 'En Reparacion');
+const crateAssets = crateAssetSummary(portalState);
+assert.equal(crateAssets.owned, 200);
+assert.equal(crateAssets.loaned, 12);
+const zones = planogramZones(portalState);
+assert.equal(zones.totalQuantity, 144);
+assert.equal(zones.floor.length >= 1, true);
+const customerView = customerPortal(portalState, 'cus-lupita');
+assert.equal(customerView.customer.name, 'Fruteria Lupita');
+assert.equal(customerView.historicalSales.length, 1);
+const packerView = packerPortal(portalState, 'emp-pack');
+assert.equal(packerView.tasks.some((task) => task.taskId === 'pack-sale-1'), true);
+const supplierView = supplierPortal(portalState, 'sup-huerta');
+assert.equal(supplierView.orders.length >= 1, true);
 
 const exception = {
   id: 'task_report:report-route-sale-2',

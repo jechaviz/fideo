@@ -48,6 +48,17 @@
       @send-promotion="actions.sendPromotion"
       @bind-push="actions.bindPush"
     />
+
+    <PortalAssetBoard
+      :state="state"
+      :pocketbase-routes="pocketbaseRoutes"
+      @add-asset="actions.addDemoAsset"
+      @maintain-asset="actions.maintainAsset"
+      @ack-task="actions.ackTask"
+      @start-task="actions.startTask"
+      @block-task="actions.blockTask"
+      @complete-task="actions.completeTask"
+    />
   </main>
 </template>
 
@@ -62,6 +73,7 @@ export default {
       actions: kernel.actions,
       exceptions: kernel.exceptionQueue,
       metrics: kernel.metrics,
+      pocketbaseRoutes: kernel.pocketbaseRoutes,
       receipts: kernel.receipts,
       state: kernel.state,
     };
@@ -74,6 +86,7 @@ export default {
     const DomainBoard = resolveComponent('DomainBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
     const MessageBoard = resolveComponent('MessageBoard');
+    const PortalAssetBoard = resolveComponent('PortalAssetBoard');
 
     return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
       h(ShellHeader, {
@@ -121,6 +134,16 @@ export default {
         onRevertMessage: this.actions.revertMessage,
         onSendPromotion: this.actions.sendPromotion,
         onBindPush: this.actions.bindPush,
+      }),
+      h(PortalAssetBoard, {
+        state: this.state,
+        pocketbaseRoutes: this.pocketbaseRoutes,
+        onAddAsset: this.actions.addDemoAsset,
+        onMaintainAsset: this.actions.maintainAsset,
+        onAckTask: this.actions.ackTask,
+        onStartTask: this.actions.startTask,
+        onBlockTask: this.actions.blockTask,
+        onCompleteTask: this.actions.completeTask,
       }),
     ]);
   },

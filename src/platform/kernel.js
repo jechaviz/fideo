@@ -1,5 +1,7 @@
 import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domain/fideoState.js';
+import { addFixedAsset, logAssetMaintenance } from '../domain/assets/assetActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
+import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { addExpense, closeCashDrawer, openCashDrawer } from '../domain/finance/financeActions.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
 import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
@@ -46,6 +48,7 @@ export const createKernel = ({ vue, config }) => {
 
   const veeper = createVeeperGateway({ baseUrl: config.veeperBaseUrl });
   const pocketbase = createPocketBaseGateway();
+  const pocketbaseRoutes = pocketbase.routes();
   const ai = createAiGateway({ codexGoalPath: config.codexGoalPath });
 
   const metrics = vue.computed(() => deriveMetrics(state));
@@ -172,6 +175,50 @@ export const createKernel = ({ vue, config }) => {
         message: 'Push identity preparada sin cargar SDK externo.',
       });
     },
+    addDemoAsset: () => {
+      pushReceipt(receipts, addFixedAsset(state, {
+        name: 'Montacargas compacto',
+        category: 'Equipo de Carga',
+        status: 'Activo',
+        cost: 78000,
+        metadata: { area: 'Bodega' },
+      }));
+    },
+    maintainAsset: (assetId) => {
+      pushReceipt(receipts, logAssetMaintenance(state, assetId, 1200, 'Servicio preventivo'));
+    },
+    ackTask: (taskId) => {
+      const task = state.taskAssignments.find((item) => item.taskId === taskId);
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'acknowledged', {
+        employeeId: task?.employeeId,
+        employeeName: task?.employeeName,
+      }));
+    },
+    startTask: (taskId) => {
+      const task = state.taskAssignments.find((item) => item.taskId === taskId);
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'in_progress', {
+        employeeId: task?.employeeId,
+        employeeName: task?.employeeName,
+      }));
+    },
+    blockTask: (taskId) => {
+      const task = state.taskAssignments.find((item) => item.taskId === taskId);
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'blocked', {
+        employeeId: task?.employeeId,
+        employeeName: task?.employeeName,
+      }, 'Bloqueo reportado desde portal'));
+    },
+    completeTask: (taskId) => {
+      const task = state.taskAssignments.find((item) => item.taskId === taskId);
+      const result = updateTaskAssignmentStatus(state, taskId, 'done', {
+        employeeId: task?.employeeId,
+        employeeName: task?.employeeName,
+      });
+      pushReceipt(receipts, result);
+      if (result.status === 'ok' && task?.kind === 'PACK_ORDER' && task.saleId) {
+        pushReceipt(receipts, markOrderAsPacked(state, task.saleId));
+      }
+    },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([
         pocketbase.inspect(),
@@ -192,6 +239,7 @@ export const createKernel = ({ vue, config }) => {
     actions,
     exceptionQueue,
     metrics,
+    pocketbaseRoutes,
     receipts,
     state,
   };

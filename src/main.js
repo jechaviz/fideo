@@ -8,6 +8,7 @@ const componentUrls = {
   IntegrationHealth: './src/components/IntegrationHealth.vue',
   MessageBoard: './src/components/MessageBoard.vue',
   MetricStrip: './src/components/MetricStrip.vue',
+  PortalAssetBoard: './src/components/PortalAssetBoard.vue',
   ShellHeader: './src/components/ShellHeader.vue',
 };
 

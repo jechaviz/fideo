@@ -1,5 +1,6 @@
 import { compactRemoteSnapshot, normalizePersistResult, SnapshotConflictError } from '../domain/snapshotTransport.js';
 import { createJsonClient } from './httpClient.js';
+import { pocketBaseRouteManifest, routeById } from './pocketbaseRoutes.js';
 
 const dryReceipt = (message) => ({
   kind: 'pocketbase',
@@ -30,10 +31,24 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
     }
   };
 
+  const routePath = (routeId) => {
+    const route = routeById(routeId);
+    if (!route) throw new Error(`Ruta PocketBase no registrada: ${routeId}`);
+    return route.path;
+  };
+
   return {
+    routes() {
+      return pocketBaseRouteManifest.map((route) => ({ ...route }));
+    },
     async inspect() {
       const dry = requireBaseUrl();
-      if (dry) return dry;
+      if (dry) {
+        return {
+          ...dry,
+          routes: pocketBaseRouteManifest.length,
+        };
+      }
 
       const response = await fetch(new URL('/api/health', baseUrl).href, {
         credentials: 'same-origin',
@@ -46,17 +61,34 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
       };
     },
     bootstrap(seedSnapshot) {
-      return postSnapshotAction('/api/fideo/bootstrap', { seedSnapshot });
+      return postSnapshotAction(routePath('bootstrap'), { seedSnapshot });
+    },
+    presencePing(workspaceId, presence) {
+      return postSnapshotAction(routePath('presence_ping'), { workspaceId, presence });
+    },
+    runtimeOverview(workspaceId) {
+      const dry = requireBaseUrl();
+      if (dry) return Promise.resolve(dry);
+      return client.get(`${routePath('runtime_overview')}?workspaceId=${encodeURIComponent(workspaceId)}`);
     },
     persist(workspaceId, snapshot, expectedVersion, referenceSnapshot = null) {
-      return postSnapshotAction('/api/fideo/state/persist', {
+      return postSnapshotAction(routePath('state_persist'), {
         workspaceId,
         expectedVersion,
         snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
       });
     },
+    submitTaskReport(workspaceId, snapshot, taskId, report, expectedVersion, referenceSnapshot = null) {
+      return postSnapshotAction(routePath('tasks_report'), {
+        workspaceId,
+        taskId,
+        report,
+        expectedVersion,
+        snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
+      });
+    },
     followUpException(workspaceId, exception, followUp, expectedVersion) {
-      return postSnapshotAction('/api/fideo/exceptions/follow-up', {
+      return postSnapshotAction(routePath('exceptions_follow_up'), {
         workspaceId,
         exceptionId: exception.id,
         exception,
@@ -65,7 +97,7 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
       });
     },
     reassignException(workspaceId, snapshot, exception, reassignment, expectedVersion, referenceSnapshot = null) {
-      return postSnapshotAction('/api/fideo/exceptions/reassign', {
+      return postSnapshotAction(routePath('exceptions_reassign'), {
         workspaceId,
         exceptionId: exception.id,
         exception,
@@ -75,7 +107,7 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
       });
     },
     resolveException(workspaceId, snapshot, exception, resolution, expectedVersion, referenceSnapshot = null) {
-      return postSnapshotAction('/api/fideo/exceptions/resolve', {
+      return postSnapshotAction(routePath('exceptions_resolve'), {
         workspaceId,
         exceptionId: exception.id,
         exception,
@@ -84,6 +116,43 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
         snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
       });
     },
+    interpretMessage(workspaceId, snapshot, messageId, message, expectedVersion, referenceSnapshot = null) {
+      return postSnapshotAction(routePath('messages_interpret'), {
+        workspaceId,
+        messageId,
+        message,
+        expectedVersion,
+        snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
+      });
+    },
+    approveMessage(workspaceId, snapshot, messageId, message, expectedVersion, referenceSnapshot = null) {
+      return postSnapshotAction(routePath('messages_approve'), {
+        workspaceId,
+        messageId,
+        message,
+        expectedVersion,
+        snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
+      });
+    },
+    correctMessage(workspaceId, snapshot, messageId, message, interpretation, expectedVersion, referenceSnapshot = null) {
+      return postSnapshotAction(routePath('messages_correct'), {
+        workspaceId,
+        messageId,
+        message,
+        interpretation,
+        expectedVersion,
+        snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
+      });
+    },
+    revertMessage(workspaceId, snapshot, messageId, message, expectedVersion, actionId = '', referenceSnapshot = null) {
+      return postSnapshotAction(routePath('messages_revert'), {
+        workspaceId,
+        messageId,
+        message,
+        actionId,
+        expectedVersion,
+        snapshot: compactRemoteSnapshot(snapshot, referenceSnapshot),
+      });
+    },
   };
 };
-

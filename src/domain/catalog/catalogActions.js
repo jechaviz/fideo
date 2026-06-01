@@ -141,7 +141,11 @@ export const setRipeningRule = (state, varietyId, fromState, toState, days) => {
 };
 
 export const addCrateType = (state, crateTypeData) => {
-  const crateType = { ...crateTypeData, id: makeId('ct') };
+  const crateType = {
+    ...crateTypeData,
+    dimensions: crateTypeData.dimensions || { width: 40, depth: 30, height: 20 },
+    id: makeId('ct'),
+  };
   state.crateTypes.push(crateType);
   state.crateInventory.push({ crateTypeId: crateType.id, quantityOwned: 0 });
   pushLog(state, 'PRODUCTO_CRUD', `Tipo de caja creado: ${crateType.name}`);
