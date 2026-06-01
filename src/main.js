@@ -18,7 +18,7 @@ const loadComponents = async () => {
 
 const boot = async () => {
   if (!window.Vue) {
-    throw new Error('Vue local no esta disponible en vendor/vue.global.prod.js');
+    throw new Error('Vue local no esta disponible en vendor/vue.runtime.global.prod.js');
   }
 
   const [App, components] = await Promise.all([
@@ -49,4 +49,3 @@ boot().catch((error) => {
   document.querySelector('#app').innerHTML =
     '<main class="boot-screen"><strong>No se pudo iniciar FideoVue.</strong></main>';
 });
-

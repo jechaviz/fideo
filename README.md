@@ -4,7 +4,7 @@ FideoVue is the Vue 3/SFC port of `C:\git\customers\fideo`.
 
 This repository is intentionally static-first:
 
-- Vue 3 is vendored as a local browser file in `vendor/vue.global.prod.js`.
+- Vue 3 is vendored as a local browser file in `vendor/vue.runtime.global.prod.js`.
 - UnoCSS runtime is vendored as local runtime files.
 - Components stay as browser-loaded `.vue` SFC files through `src/platform/sfcLoader.js`.
 - Domain logic lives outside components and talks through explicit ports.
@@ -16,7 +16,7 @@ Serve the folder with any static HTTP server and open the printed URL.
 
 ```powershell
 cd C:\git\websites\fideovue
-python -m http.server 4173
+node scripts\serve.mjs 4173
 ```
 
 Then open:
@@ -32,6 +32,7 @@ Opening `index.html` directly is not supported because browser SFC loading uses
 
 ```powershell
 node scripts/verify.mjs
+node scripts/browser-smoke.mjs http://127.0.0.1:4173/
 ```
 
 The verifier checks:
@@ -41,6 +42,7 @@ The verifier checks:
 - no remote script is used in production entrypoint
 - required Fideo/Veeper/AI adapters are present
 - all SFC files expose template and script blocks
+- a real Edge/Chrome headless session renders the operational cockpit
 
 ## Architecture
 
@@ -71,4 +73,3 @@ allowing component or backend-equivalent files to grow past the line limit.
   The path is currently absent locally, so this slice keeps an adapter contract
   and dry-run evidence instead of hard failing.
 - Reusable V-side contracts live in `C:\git\v_projects\lib\fideo_core`.
-

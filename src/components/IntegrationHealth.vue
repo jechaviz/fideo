@@ -24,12 +24,38 @@
 </template>
 
 <script>
+const { h } = Vue;
+
 export default {
   name: 'IntegrationHealth',
   props: {
     integrations: { type: Object, required: true },
     receipts: { type: Array, required: true },
   },
+  render() {
+    const integrations = Object.entries(this.integrations).map(([key, integration]) =>
+      h('article', { class: 'rounded-lg border border-slate-700 bg-slate-950/45 p-3', key }, [
+        h('div', { class: 'flex items-center justify-between gap-3' }, [
+          h('strong', { class: 'text-sm text-white' }, integration.label),
+          h('span', { class: 'pill text-xs' }, integration.status),
+        ]),
+      ]));
+
+    const receipts = this.receipts.map((receipt) =>
+      h('li', { class: 'rounded-lg bg-slate-950/55 p-2 text-xs text-slate-300', key: receipt.id }, [
+        h('strong', { class: 'text-white' }, receipt.kind),
+        ` · ${receipt.message}`,
+      ]));
+
+    return h('aside', { class: 'surface p-4' }, [
+      h('p', { class: 'm-0 text-xs font-black uppercase tracking-wide text-amber-300' }, 'Integraciones'),
+      h('h2', { class: 'm-0 text-xl font-black text-white' }, 'Puertos productivos'),
+      h('div', { class: 'mt-4 grid gap-3' }, integrations),
+      h('div', { class: 'mt-4' }, [
+        h('p', { class: 'm-0 text-xs font-black uppercase tracking-wide text-slate-400' }, 'Receipts'),
+        h('ol', { class: 'm-0 mt-2 grid list-none gap-2 p-0' }, receipts),
+      ]),
+    ]);
+  },
 };
 </script>
-

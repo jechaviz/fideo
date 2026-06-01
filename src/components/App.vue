@@ -24,7 +24,7 @@
 </template>
 
 <script>
-const { inject } = Vue;
+const { h, inject, resolveComponent } = Vue;
 
 export default {
   name: 'FideoVueApp',
@@ -38,6 +38,35 @@ export default {
       state: kernel.state,
     };
   },
+  render() {
+    const ShellHeader = resolveComponent('ShellHeader');
+    const MetricStrip = resolveComponent('MetricStrip');
+    const ActionCenterPanel = resolveComponent('ActionCenterPanel');
+    const IntegrationHealth = resolveComponent('IntegrationHealth');
+    const DomainBoard = resolveComponent('DomainBoard');
+
+    return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
+      h(ShellHeader, {
+        workspace: this.state.workspace,
+        openExceptions: this.metrics.openExceptions,
+        onInspect: this.actions.inspectIntegrations,
+      }),
+      h(MetricStrip, { metrics: this.metrics }),
+      h('section', { class: 'mt-4 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]' }, [
+        h(ActionCenterPanel, {
+          exceptions: this.exceptions,
+          employees: this.state.employees,
+          onFollowUp: this.actions.followUp,
+          onResolve: this.actions.resolve,
+          onReassign: this.actions.reassign,
+        }),
+        h(IntegrationHealth, {
+          integrations: this.state.integrations,
+          receipts: this.receipts,
+        }),
+      ]),
+      h(DomainBoard, { class: 'mt-4', state: this.state }),
+    ]);
+  },
 };
 </script>
-

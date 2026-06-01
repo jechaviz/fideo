@@ -9,23 +9,27 @@
 </template>
 
 <script>
-const { computed } = Vue;
+const { h } = Vue;
 
 export default {
   name: 'MetricStrip',
   props: {
     metrics: { type: Object, required: true },
   },
-  setup(props) {
+  render() {
     const money = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
-    const tiles = computed(() => [
-      { label: 'Excepciones', value: props.metrics.openExceptions, hint: 'cola viva' },
-      { label: 'Ventas', value: money.format(props.metrics.totalSales), hint: 'snapshot actual' },
-      { label: 'Inventario', value: props.metrics.inventoryUnits, hint: 'unidades/cajas' },
-      { label: 'Staff', value: props.metrics.activeStaff, hint: 'activos' },
-    ]);
-    return { tiles };
+    const tiles = [
+      { label: 'Excepciones', value: this.metrics.openExceptions, hint: 'cola viva' },
+      { label: 'Ventas', value: money.format(this.metrics.totalSales), hint: 'snapshot actual' },
+      { label: 'Inventario', value: this.metrics.inventoryUnits, hint: 'unidades/cajas' },
+      { label: 'Staff', value: this.metrics.activeStaff, hint: 'activos' },
+    ];
+    return h('section', { class: 'mt-4 grid gap-3 md:grid-cols-4' }, tiles.map((tile) =>
+      h('article', { class: 'surface p-4', key: tile.label }, [
+        h('p', { class: 'm-0 text-xs font-black uppercase tracking-wide text-slate-400' }, tile.label),
+        h('strong', { class: 'mt-2 block text-2xl text-white' }, String(tile.value)),
+        h('span', { class: 'text-sm text-slate-300' }, tile.hint),
+      ])));
   },
 };
 </script>
-

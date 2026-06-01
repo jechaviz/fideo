@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const maxLines = 600;
-const sourceExtensions = new Set(['.js', '.vue', '.css', '.html', '.md']);
+const sourceExtensions = new Set(['.js', '.mjs', '.vue', '.css', '.html', '.md']);
 const requiredFiles = [
-  'vendor/vue.global.prod.js',
+  'vendor/vue.runtime.global.prod.js',
   'vendor/unocss-runtime.global.js',
+  'src/platform/unocssConfig.js',
   'src/platform/sfcLoader.js',
   'src/infrastructure/veeperGateway.js',
   'src/infrastructure/aiGateway.js',
@@ -55,4 +56,3 @@ assert(!/https?:\/\/.*<script/i.test(index), 'remote script detected in index.ht
 assert(index.includes('Content-Security-Policy'), 'CSP missing');
 
 console.log(`FideoVue verification passed for ${files.length} source files.`);
-

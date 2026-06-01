@@ -70,8 +70,9 @@ export const loadSfc = async (url) => {
   parsed.styles.forEach((css, index) => injectStyle(`${resolved.pathname}:${index}`, css));
 
   const component = await loadScript(parsed.script, resolved.pathname);
-  component.template = parsed.template;
+  if (!component.render) {
+    component.template = parsed.template;
+  }
   loadedComponents.set(resolved.href, component);
   return component;
 };
-
