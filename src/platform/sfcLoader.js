@@ -28,8 +28,19 @@ const injectStyle = (id, css) => {
   loadedStyles.add(id);
 };
 
+const rootModuleUrl = (path) => new URL(`/${path}`, window.location.origin).href;
+
+const rewriteRootModuleSpecifiers = (source) =>
+  source
+    .replace(/(from\s*['"])\/(src\/[^'"]+)(['"])/g,
+      (_, prefix, path, suffix) => `${prefix}${rootModuleUrl(path)}${suffix}`)
+    .replace(/(\bimport\s*['"])\/(src\/[^'"]+)(['"])/g,
+      (_, prefix, path, suffix) => `${prefix}${rootModuleUrl(path)}${suffix}`)
+    .replace(/(import\s*\(\s*['"])\/(src\/[^'"]+)(['"]\s*\))/g,
+      (_, prefix, path, suffix) => `${prefix}${rootModuleUrl(path)}${suffix}`);
+
 const loadScript = async (source, id) => {
-  const script = source.trim() || 'export default {}';
+  const script = rewriteRootModuleSpecifiers(source.trim() || 'export default {}');
   const blob = new Blob([script], { type: 'text/javascript' });
   const moduleUrl = URL.createObjectURL(blob);
   try {

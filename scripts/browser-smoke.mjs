@@ -21,6 +21,16 @@ if (!browser) {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const withTimeout = (promise, label, ms = 8000) => {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+};
+
 const waitForJson = async (targetUrl, tries = 40) => {
   for (let index = 0; index < tries; index += 1) {
     try {
@@ -54,7 +64,7 @@ const cleanup = async () => {
 };
 
 try {
-  await waitForJson(`http://127.0.0.1:${port}/json/version`);
+  await withTimeout(waitForJson(`http://127.0.0.1:${port}/json/version`), 'CDP version');
   const targetResponse = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' });
   const target = await targetResponse.json();
 
@@ -82,13 +92,17 @@ try {
     }
   };
 
-  await new Promise((resolve) => { ws.onopen = resolve; });
+  await withTimeout(new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = () => reject(new Error('CDP websocket error'));
+    ws.onclose = () => reject(new Error('CDP websocket closed before ready'));
+  }), 'CDP websocket open');
 
   const send = (method, params = {}) => {
     const id = nextId;
     nextId += 1;
     ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve) => pending.set(id, resolve));
+    return withTimeout(new Promise((resolve) => pending.set(id, resolve)), `CDP ${method}`);
   };
 
   await send('Page.enable');

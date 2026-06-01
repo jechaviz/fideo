@@ -19,7 +19,12 @@
       <IntegrationHealth :integrations="state.integrations" :receipts="receipts" />
     </section>
 
-    <DomainBoard class="mt-4" :state="state" />
+    <DomainBoard
+      class="mt-4"
+      :state="state"
+      @advance-batch="actions.advanceBatch"
+      @mark-waste="actions.markWaste"
+    />
   </main>
 </template>
 
@@ -65,7 +70,12 @@ export default {
           receipts: this.receipts,
         }),
       ]),
-      h(DomainBoard, { class: 'mt-4', state: this.state }),
+      h(DomainBoard, {
+        class: 'mt-4',
+        state: this.state,
+        onAdvanceBatch: this.actions.advanceBatch,
+        onMarkWaste: this.actions.markWaste,
+      }),
     ]);
   },
 };

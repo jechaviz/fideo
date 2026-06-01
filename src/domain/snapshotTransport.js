@@ -1,4 +1,4 @@
-const compactOmitKeys = ['productGroups', 'customers', 'suppliers'];
+const compactOmitKeys = ['productGroups', 'sizes', 'warehouses', 'customers', 'suppliers'];
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -14,8 +14,16 @@ export const buildPersistableSnapshot = (state) => {
   const {
     workspace,
     employees,
+    productGroups,
+    sizes,
+    warehouses,
     customers,
     suppliers,
+    prices,
+    crateTypes,
+    crateInventory,
+    expenses,
+    ripeningRules,
     inventory,
     sales,
     taskAssignments,
@@ -26,8 +34,16 @@ export const buildPersistableSnapshot = (state) => {
   return clone({
     workspace,
     employees,
+    productGroups,
+    sizes,
+    warehouses,
     customers,
     suppliers,
+    prices,
+    crateTypes,
+    crateInventory,
+    expenses,
+    ripeningRules,
     inventory,
     sales,
     taskAssignments,
@@ -71,4 +87,3 @@ export class SnapshotConflictError extends Error {
     this.snapshotRecordId = String(payload.snapshotRecordId || '');
   }
 }
-

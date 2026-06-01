@@ -19,10 +19,124 @@ export const createInitialState = () => ({
   suppliers: [
     { id: 'sup-huerta', name: 'Huerta del Sur', contact: 'WhatsApp proveedor' },
   ],
+  productGroups: [
+    {
+      id: 'pg-mango',
+      name: 'Mango',
+      category: 'Tropical',
+      unit: 'cajas',
+      icon: 'MG',
+      archived: false,
+      varieties: [
+        {
+          id: 'var-mango-ataulfo',
+          name: 'Ataulfo',
+          aliases: ['ataulfo', 'mango ataulfo'],
+          sizes: ['Mediano', 'Grande'],
+          archived: false,
+        },
+      ],
+    },
+    {
+      id: 'pg-platano',
+      name: 'Platano',
+      category: 'Tropical',
+      unit: 'cajas',
+      icon: 'PL',
+      archived: false,
+      varieties: [
+        {
+          id: 'var-platano-chiapas',
+          name: 'Chiapas',
+          aliases: ['chiapas'],
+          sizes: ['Mediano'],
+          archived: false,
+        },
+      ],
+    },
+    {
+      id: 'pg-papaya',
+      name: 'Papaya',
+      category: 'Tropical',
+      unit: 'cajas',
+      icon: 'PP',
+      archived: false,
+      varieties: [
+        {
+          id: 'var-papaya-maradol',
+          name: 'Maradol',
+          aliases: ['maradol'],
+          sizes: ['Grande'],
+          archived: false,
+        },
+      ],
+    },
+  ],
+  sizes: {
+    Mediano: { icon: 'M', archived: false },
+    Grande: { icon: 'G', archived: false },
+  },
+  warehouses: [
+    { id: 'wh-main', name: 'Bodega Principal', icon: 'WH', archived: false },
+    { id: 'wh-floor', name: 'Piso Sucursal', icon: 'PV', archived: false },
+  ],
+  prices: [
+    { varietyId: 'var-mango-ataulfo', size: 'Mediano', quality: 'Normal', state: 'Maduro', price: 470 },
+    { varietyId: 'var-platano-chiapas', size: 'Mediano', quality: 'Normal', state: 'Entrado', price: 310 },
+    { varietyId: 'var-papaya-maradol', size: 'Grande', quality: 'Con Defectos', state: 'Suave', price: 180 },
+  ],
+  crateTypes: [
+    { id: 'crate-green', name: 'Caja verde', shortCode: 'CV', color: 'verde', size: 'Mediano', cost: 38 },
+    { id: 'crate-wood', name: 'Caja madera', shortCode: 'CM', color: 'madera', size: 'Grande', cost: 52 },
+  ],
+  crateInventory: [
+    { crateTypeId: 'crate-green', quantityOwned: 120 },
+    { crateTypeId: 'crate-wood', quantityOwned: 80 },
+  ],
+  expenses: [],
+  ripeningRules: [
+    { id: 'rr-mango-1', varietyId: 'var-mango-ataulfo', fromState: 'Entrado', toState: 'Maduro', days: 2 },
+  ],
   inventory: [
-    { id: 'inv-1', product: 'Mango Ataulfo', quality: 'Normal', state: 'Maduro', quantity: 82 },
-    { id: 'inv-2', product: 'Platano Chiapas', quality: 'Normal', state: 'Entrado', quantity: 44 },
-    { id: 'inv-3', product: 'Papaya Maradol', quality: 'Con Defectos', state: 'Suave', quantity: 18 },
+    {
+      id: 'inv-1',
+      varietyId: 'var-mango-ataulfo',
+      product: 'Mango Ataulfo',
+      size: 'Mediano',
+      quality: 'Normal',
+      state: 'Maduro',
+      quantity: 82,
+      warehouseId: 'wh-main',
+      location: 'Piso de Venta',
+      packagingId: 'crate-green',
+      entryDate: nowIso(),
+    },
+    {
+      id: 'inv-2',
+      varietyId: 'var-platano-chiapas',
+      product: 'Platano Chiapas',
+      size: 'Mediano',
+      quality: 'Normal',
+      state: 'Entrado',
+      quantity: 44,
+      warehouseId: 'wh-main',
+      location: 'Maduracion',
+      packagingId: 'crate-green',
+      entryDate: nowIso(),
+    },
+    {
+      id: 'inv-3',
+      varietyId: 'var-papaya-maradol',
+      product: 'Papaya Maradol',
+      size: 'Grande',
+      quality: 'Con Defectos',
+      state: 'Suave',
+      quantity: 18,
+      warehouseId: 'wh-floor',
+      location: 'Piso de Venta',
+      packagingId: 'crate-wood',
+      entryDate: nowIso(),
+    },
   ],
   sales: [
     {
@@ -125,4 +239,3 @@ export const buildExceptionQueue = (state) =>
         createdAt: report.createdAt,
       };
     });
-
