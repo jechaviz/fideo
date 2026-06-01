@@ -33,6 +33,7 @@ Opening `index.html` directly is not supported because browser SFC loading uses
 ```powershell
 node scripts/verify.mjs
 node scripts/domain-tests.mjs
+node scripts/source-inventory.mjs C:\git\customers\fideo\frontend
 node scripts/browser-smoke.mjs http://127.0.0.1:4173/
 ```
 
