@@ -24,6 +24,9 @@
       :state="state"
       @advance-batch="actions.advanceBatch"
       @mark-waste="actions.markWaste"
+      @pack-sale="actions.packSale"
+      @route-sale="actions.routeSale"
+      @complete-sale="actions.completeSale"
     />
   </main>
 </template>
@@ -75,6 +78,9 @@ export default {
         state: this.state,
         onAdvanceBatch: this.actions.advanceBatch,
         onMarkWaste: this.actions.markWaste,
+        onPackSale: this.actions.packSale,
+        onRouteSale: this.actions.routeSale,
+        onCompleteSale: this.actions.completeSale,
       }),
     ]);
   },

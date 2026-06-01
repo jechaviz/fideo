@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/fideoState.js';
 import { setProductGroupArchived, setRipeningRule, updateSize } from '../src/domain/catalog/catalogActions.js';
+import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from '../src/domain/inventory/inventoryActions.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
+import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 
 const state = createInitialState();
@@ -68,6 +70,47 @@ assert.equal(adjust.difference, 8);
 const location = moveBatchLocation(inventoryState, 'inv-1', 'Camara Fria', 5);
 assert.equal(location.status, 'ok');
 assert.equal(inventoryState.inventory.some((batch) => batch.location === 'Camara Fria' && batch.quantity === 5), true);
+
+const salesState = createInitialState();
+syncOperationalTaskAssignments(salesState);
+assert.equal(salesState.taskAssignments.some((task) => task.taskId === 'pack-sale-1'), true);
+
+const packed = markOrderAsPacked(salesState, 'sale-1');
+assert.equal(packed.status, 'ok');
+assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'Listo para Entrega');
+assert.equal(salesState.taskAssignments.some((task) => task.taskId === 'assign-sale-1'), true);
+
+const assigned = assignDelivery(salesState, 'sale-1', 'emp-route');
+assert.equal(assigned.status, 'ok');
+assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'En Ruta');
+assert.equal(salesState.taskAssignments.some((task) => task.taskId === 'route-sale-1'), true);
+
+const inProgress = updateTaskAssignmentStatus(salesState, 'route-sale-1', 'in_progress', {
+  employeeId: 'emp-route',
+  employeeName: 'Ruta Centro',
+});
+assert.equal(inProgress.status, 'ok');
+
+const completed = completeSale(salesState, 'sale-1', 'Pagado', 'Efectivo');
+assert.equal(completed.status, 'ok');
+assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'Completado');
+assert.equal(salesState.payments.length, 1);
+assert.equal(salesState.cashDrawers[0].balance, 16280);
+
+const blockedTask = updateTaskAssignmentStatus(salesState, 'route-sale-2', 'blocked', {
+  employeeId: 'emp-route',
+  employeeName: 'Ruta Centro',
+}, 'Cliente no disponible');
+assert.equal(blockedTask.status, 'ok');
+assert.equal(salesState.taskReports[0].summary, 'Cliente no disponible');
+
+const price = setPrice(salesState, 'var-mango-ataulfo', 'Mediano', 'Normal', 'Maduro', 490);
+assert.equal(price.status, 'ok');
+assert.equal(salesState.prices.find((item) => item.varietyId === 'var-mango-ataulfo').price, 490);
+
+const specialPrice = setSpecialPrice(salesState, 'cus-lupita', 'var-mango-ataulfo', 'Mediano', 'Normal', 'Maduro', 455);
+assert.equal(specialPrice.status, 'ok');
+assert.equal(salesState.customers.find((item) => item.id === 'cus-lupita').specialPrices[0].price, 455);
 
 const exception = {
   id: 'task_report:report-route-sale-2',

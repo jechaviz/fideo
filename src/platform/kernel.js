@@ -1,6 +1,7 @@
 import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domain/fideoState.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
+import { assignDelivery, completeSale, markOrderAsPacked } from '../domain/sales/salesActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
 import { createPocketBaseGateway } from '../infrastructure/pocketbaseGateway.js';
 import { createVeeperGateway } from '../infrastructure/veeperGateway.js';
@@ -82,6 +83,16 @@ export const createKernel = ({ vue, config }) => {
       }
       const result = changeQuality(state, criteriaFromBatch(batch), 'Merma', Math.min(4, batch.quantity));
       pushReceipt(receipts, result);
+    },
+    packSale: (saleId) => {
+      pushReceipt(receipts, markOrderAsPacked(state, saleId));
+    },
+    routeSale: (saleId) => {
+      const employee = state.employees.find((item) => item.role === 'Repartidor');
+      pushReceipt(receipts, assignDelivery(state, saleId, employee?.id || ''));
+    },
+    completeSale: (saleId) => {
+      pushReceipt(receipts, completeSale(state, saleId, 'Pagado', 'Efectivo'));
     },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([

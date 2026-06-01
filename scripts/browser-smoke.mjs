@@ -130,6 +130,30 @@ try {
   if (!value.hasUnoRuntime) throw new Error('UnoCSS runtime styles were not injected.');
   if (exceptions.length) throw new Error(`Browser exceptions: ${exceptions.join('; ')}`);
 
+  const clickResult = await send('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `(() => {
+      const button = Array.from(document.querySelectorAll('button'))
+        .find((item) => item.textContent.trim() === 'Empacar');
+      if (!button) return { clicked: false, text: document.body.innerText };
+      button.click();
+      return { clicked: true };
+    })()`,
+  });
+  if (!clickResult.result?.result?.value?.clicked) {
+    throw new Error(`Could not click Empacar action: ${JSON.stringify(clickResult.result?.result?.value)}`);
+  }
+
+  await delay(500);
+  const interactionResult = await send('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `({ text: document.body.innerText })`,
+  });
+  const interactionValue = interactionResult.result?.result?.value;
+  if (!interactionValue?.text.includes('Listo para Entrega')) {
+    throw new Error(`Sale action did not update visible state: ${JSON.stringify(interactionValue)}`);
+  }
+
   console.log(`FideoVue browser smoke passed: ${value.title}`);
   ws.close();
 } finally {

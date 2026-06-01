@@ -28,7 +28,7 @@ export default {
   props: {
     state: { type: Object, required: true },
   },
-  emits: ['advance-batch', 'mark-waste'],
+  emits: ['advance-batch', 'mark-waste', 'pack-sale', 'route-sale', 'complete-sale'],
   computed: {
     inventoryRows() {
       return inventoryRows(this.state);
@@ -74,10 +74,37 @@ export default {
       ]);
     },
     renderSaleRow(sale) {
+      const actions = [];
+      if (sale.status === 'Pendiente de Empaque') {
+        actions.push(h('button', {
+          class: 'focus-ring rounded-lg bg-sky-300 px-2 py-1 text-xs font-black text-slate-950',
+          title: 'Marcar empacado',
+          onClick: () => this.$emit('pack-sale', sale.id),
+        }, 'Empacar'));
+      }
+      if (sale.status === 'Listo para Entrega') {
+        actions.push(h('button', {
+          class: 'focus-ring rounded-lg bg-violet-300 px-2 py-1 text-xs font-black text-slate-950',
+          title: 'Asignar ruta',
+          onClick: () => this.$emit('route-sale', sale.id),
+        }, 'Ruta'));
+      }
+      if (sale.status === 'En Ruta') {
+        actions.push(h('button', {
+          class: 'focus-ring rounded-lg bg-emerald-300 px-2 py-1 text-xs font-black text-slate-950',
+          title: 'Completar entrega',
+          onClick: () => this.$emit('complete-sale', sale.id),
+        }, 'Entregar'));
+      }
       return h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: sale.id }, [
-        h('strong', { class: 'text-white' }, sale.customer),
-        h('span', { class: 'block text-slate-300' }, `${sale.product} - ${sale.status}`),
-        h('span', { class: 'block text-xs text-slate-500' }, money(sale.total)),
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('strong', { class: 'text-white' }, sale.customer),
+            h('span', { class: 'block text-slate-300' }, `${sale.product} - ${sale.status}`),
+            h('span', { class: 'block text-xs text-slate-500' }, `${sale.paymentStatus} - ${money(sale.total)}`),
+          ]),
+          actions.length ? h('div', { class: 'flex flex-col gap-2' }, actions) : null,
+        ]),
       ]);
     },
     renderEmployeeRow(employee) {
