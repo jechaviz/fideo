@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data: https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    >
+    <title>FideoVue</title>
+    <link rel="stylesheet" href="./styles/fallback.css">
+    <script>
+      window.__unocss = {
+        runtime: {
+          cloakAttribute: 'data-fideo-cloak'
+        },
+        safelist: [
+          'grid',
+          'flex',
+          'items-center',
+          'justify-between',
+          'gap-2',
+          'gap-3',
+          'rounded-lg',
+          'border',
+          'text-sm',
+          'font-bold',
+          'font-black',
+          'uppercase'
+        ],
+        theme: {
+          colors: {
+            fideo: {
+              ink: '#0f172a',
+              panel: '#101827',
+              lime: '#a3e635',
+              mint: '#22c55e',
+              sky: '#38bdf8',
+              amber: '#f59e0b'
+            }
+          }
+        }
+      };
+    </script>
+    <script src="./vendor/vue.global.prod.js"></script>
+    <script src="./vendor/unocss-runtime.global.js"></script>
+  </head>
+  <body>
+    <noscript>FideoVue necesita JavaScript para operar.</noscript>
+    <div id="app" data-fideo-cloak>
+      <div class="boot-screen">Cargando FideoVue...</div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
+
