@@ -36,6 +36,9 @@ Ported and verified:
   `src/domain/suppliers/*` plus `src/components/CommerceBoard.vue`
 - `frontend/components/Finances.tsx` cash/debt subset ->
   `src/domain/finance/*` plus `src/components/CommerceBoard.vue`
+- `frontend/components/MessageFeed.tsx`, `MessageConfig.tsx`, `Promotions.tsx`
+  and `useOneSignalPush.ts` safe local subset ->
+  `src/domain/messages/*`, `src/domain/push/*` plus `src/components/MessageBoard.vue`
 
 ## Pending Domains
 
@@ -44,8 +47,8 @@ Ported and verified:
 - Supplier portal and full purchase-order lifecycle.
 - Delivery board parity, packer portal and deliverer portal.
 - Finance activity history, advanced cash attention and fixed-asset sales.
-- Message feed, interpretation approval/correction/revert.
-- OneSignal push identity and live SLA policy.
+- Full Gemini/codex-goal message interpretation parity and remote correction receipts.
+- OneSignal live SDK binding behind explicit deployment gate.
 - PocketBase bootstrap, realtime restore and full normalized slices.
 - Backend route parity for every PocketBase hook route.
 - Veeper live receipt loop once provider credentials are present.

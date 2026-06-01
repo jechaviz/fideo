@@ -38,6 +38,16 @@
       @toggle-drawer="actions.toggleDrawer"
       @add-expense="actions.addExpense"
     />
+
+    <MessageBoard
+      :state="state"
+      @add-message="actions.addDemoMessage"
+      @interpret-message="actions.interpretMessage"
+      @approve-message="actions.approveMessage"
+      @revert-message="actions.revertMessage"
+      @send-promotion="actions.sendPromotion"
+      @bind-push="actions.bindPush"
+    />
   </main>
 </template>
 
@@ -63,6 +73,7 @@ export default {
     const IntegrationHealth = resolveComponent('IntegrationHealth');
     const DomainBoard = resolveComponent('DomainBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
+    const MessageBoard = resolveComponent('MessageBoard');
 
     return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
       h(ShellHeader, {
@@ -101,6 +112,15 @@ export default {
         onCreateDemoOrder: this.actions.createDemoOrder,
         onToggleDrawer: this.actions.toggleDrawer,
         onAddExpense: this.actions.addExpense,
+      }),
+      h(MessageBoard, {
+        state: this.state,
+        onAddMessage: this.actions.addDemoMessage,
+        onInterpretMessage: this.actions.interpretMessage,
+        onApproveMessage: this.actions.approveMessage,
+        onRevertMessage: this.actions.revertMessage,
+        onSendPromotion: this.actions.sendPromotion,
+        onBindPush: this.actions.bindPush,
       }),
     ]);
   },

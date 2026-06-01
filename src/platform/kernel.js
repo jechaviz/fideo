@@ -2,7 +2,9 @@ import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domai
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
 import { addExpense, closeCashDrawer, openCashDrawer } from '../domain/finance/financeActions.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
+import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
+import { planPushBinding } from '../domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked } from '../domain/sales/salesActions.js';
 import { createPurchaseOrder, receivePurchaseOrder } from '../domain/suppliers/supplierActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
@@ -130,6 +132,45 @@ export const createKernel = ({ vue, config }) => {
         amount: 250,
         category: 'Otros',
       }));
+    },
+    addDemoMessage: () => {
+      pushReceipt(receipts, addMessage(state, 'compra proveedor mango mediano 10 cajas', 'Huerta del Sur'));
+    },
+    interpretMessage: (messageId) => {
+      pushReceipt(receipts, interpretMessage(state, messageId));
+    },
+    approveMessage: (messageId) => {
+      pushReceipt(receipts, approveInterpretation(state, messageId));
+    },
+    revertMessage: (messageId) => {
+      pushReceipt(receipts, revertInterpretation(state, messageId));
+    },
+    sendPromotion: async () => {
+      const message = 'Mango maduro premium disponible hoy.';
+      const customerIds = state.customers.map((customer) => customer.id);
+      const result = sendPromotion(state, message, customerIds);
+      pushReceipt(receipts, result);
+      if (result.status === 'ok') {
+        const veeperReceipt = await veeper.planPromotion({
+          campaignId: `promo_${Date.now()}`,
+          message,
+          targets: result.targets,
+        });
+        pushReceipt(receipts, veeperReceipt);
+      }
+    },
+    bindPush: () => {
+      state.push = planPushBinding({
+        id: 'local-admin',
+        role: 'Admin',
+        employeeId: 'emp-admin',
+        channel: 'web',
+      }, state.workspace);
+      pushReceipt(receipts, {
+        kind: 'push_bind',
+        status: 'dry-run',
+        message: 'Push identity preparada sin cargar SDK externo.',
+      });
     },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([

@@ -7,7 +7,10 @@ import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../s
 import { addExpense, closeCashDrawer, openCashDrawer } from '../src/domain/finance/financeActions.js';
 import { financeSummary } from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from '../src/domain/inventory/inventoryActions.js';
+import { addMessage, approveInterpretation, correctInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../src/domain/messages/messageActions.js';
+import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
+import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import { createPurchaseOrder, receivePurchaseOrder } from '../src/domain/suppliers/supplierActions.js';
 import { supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
@@ -150,6 +153,35 @@ assert.equal(opened.status, 'ok');
 const expense = addExpense(commerceState, { description: 'Gasolina ruta', amount: 500, category: 'Combustible' });
 assert.equal(expense.status, 'ok');
 assert.equal(financeSummary(commerceState).expenses >= 500, true);
+
+const messageState = createInitialState();
+assert.equal(messageStats(messageState).pending, 1);
+const addedMessage = addMessage(messageState, 'compra proveedor mango mediano 10 cajas', 'Huerta del Sur');
+assert.equal(addedMessage.status, 'ok');
+const interpreted = interpretMessage(messageState, addedMessage.messageId);
+assert.equal(interpreted.status, 'ok');
+assert.equal(messageState.messages.find((message) => message.id === addedMessage.messageId).status, 'interpreted');
+
+const corrected = correctInterpretation(messageState, addedMessage.messageId, {
+  type: 'CREAR_OFERTA',
+  certainty: 0.9,
+  explanation: 'Campana corregida',
+  data: { targetAudience: 'clientes activos', productDescription: 'Mango premium', price: 490 },
+});
+assert.equal(corrected.status, 'ok');
+const approvedMessage = approveInterpretation(messageState, addedMessage.messageId);
+assert.equal(approvedMessage.status, 'ok');
+assert.equal(messageState.messages.find((message) => message.id === addedMessage.messageId).status, 'approved');
+const revertedMessage = revertInterpretation(messageState, addedMessage.messageId);
+assert.equal(revertedMessage.status, 'ok');
+assert.equal(messageState.messages.find((message) => message.id === addedMessage.messageId).status, 'interpreted');
+
+const promo = sendPromotion(messageState, 'Mango listo hoy', ['cus-lupita', 'cus-mercado']);
+assert.equal(promo.status, 'ok');
+assert.equal(messageStats(messageState).approved >= 2, true);
+const push = planPushBinding({ id: 'u1', role: 'Admin', employeeId: 'emp-admin' }, messageState.workspace);
+assert.equal(push.bindingStatus, 'dry-run');
+assert.equal(push.tags.employee_id, 'emp-admin');
 
 const exception = {
   id: 'task_report:report-route-sale-2',

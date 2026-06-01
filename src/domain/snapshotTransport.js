@@ -33,6 +33,10 @@ export const buildPersistableSnapshot = (state) => {
     sales,
     taskAssignments,
     taskReports,
+    messages,
+    messageTemplates,
+    push,
+    systemPrompt,
     activityLog,
   } = state;
 
@@ -58,6 +62,10 @@ export const buildPersistableSnapshot = (state) => {
     sales,
     taskAssignments,
     taskReports,
+    messages,
+    messageTemplates,
+    push,
+    systemPrompt,
     activityLog,
   });
 };

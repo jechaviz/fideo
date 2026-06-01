@@ -123,7 +123,7 @@ try {
   });
 
   const value = result.result?.result?.value;
-  const requiredText = ['Mesa operativa', 'Clientes', 'Proveedores', 'Finanzas'];
+  const requiredText = ['Mesa operativa', 'Clientes', 'Proveedores', 'Finanzas', 'Mensajes IA', 'Campanas'];
   const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));
   if (!value || !hasRequiredText || !value.hasActionCenter) {
     throw new Error(`FideoVue did not render expected cockpit text: ${JSON.stringify(value)} logs=${logs.join(' | ')}`);

@@ -316,6 +316,47 @@ export const createInitialState = () => ({
       employeeName: 'Ruta Centro',
     },
   ],
+  messages: [
+    {
+      id: 'msg-demo-offer',
+      sender: 'Fruteria Lupita',
+      text: 'promo de mango maduro para clientes frecuentes',
+      timestamp: nowIso(),
+      status: 'pending',
+    },
+  ],
+  messageTemplates: [
+    {
+      id: 'tpl-ticket',
+      type: 'ticket',
+      name: 'Ticket WhatsApp',
+      content: 'Gracias {{customer}}, tu pedido {{order_id}} va en camino.',
+      variables: ['customer', 'order_id'],
+    },
+    {
+      id: 'tpl-promo',
+      type: 'promotion',
+      name: 'Promocion directa',
+      content: '{{customer}}, hoy tenemos {{product}} a precio especial.',
+      variables: ['customer', 'product'],
+    },
+    {
+      id: 'tpl-reminder',
+      type: 'payment_reminder',
+      name: 'Recordatorio de pago',
+      content: '{{customer}}, tu saldo pendiente es {{balance}}.',
+      variables: ['customer', 'balance'],
+    },
+  ],
+  push: {
+    enabled: false,
+    bindingStatus: 'dry-run',
+    permission: false,
+    tags: {},
+    aliases: {},
+    lastError: '',
+  },
+  systemPrompt: 'Interpreta mensajes de Fideo con prioridad en ventas, compras, precios, entregas y ofertas.',
   activityLog: [],
   integrations: {
     pocketbase: { status: 'pending', label: 'PocketBase snapshot runtime' },

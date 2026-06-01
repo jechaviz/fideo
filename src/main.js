@@ -6,6 +6,7 @@ const componentUrls = {
   CommerceBoard: './src/components/CommerceBoard.vue',
   DomainBoard: './src/components/DomainBoard.vue',
   IntegrationHealth: './src/components/IntegrationHealth.vue',
+  MessageBoard: './src/components/MessageBoard.vue',
   MetricStrip: './src/components/MetricStrip.vue',
   ShellHeader: './src/components/ShellHeader.vue',
 };

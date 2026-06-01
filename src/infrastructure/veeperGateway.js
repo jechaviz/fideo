@@ -51,6 +51,33 @@ export const createVeeperGateway = ({ baseUrl, token = '' }) => {
         };
       }
     },
+    async planPromotion(input) {
+      try {
+        const plan = await client.post('/api/automessage/plan', {
+          chat_id: input.campaignId || 'fideo-promotion',
+          account_id: 'acc-whatsapp-local',
+          intent: 'commercial_promotion',
+          tone: 'premium_direct',
+          cadence: 'once',
+          context: input.message,
+          media_kinds: ['text'],
+          consent_scope: 'client_authorized_marketing',
+          enabled: true,
+          targets: input.targets || [],
+        });
+
+        return {
+          kind: 'veeper_promotion_plan',
+          status: 'ok',
+          message: plan.message || 'Promocion WhatsApp planeada por Veeper.',
+        };
+      } catch (error) {
+        return {
+          kind: 'veeper_promotion_plan',
+          status: 'dry-run',
+          message: `Promocion Veeper pendiente: ${error.message}`,
+        };
+      }
+    },
   };
 };
-
