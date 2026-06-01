@@ -46,6 +46,11 @@ const boot = async () => {
 
 boot().catch((error) => {
   console.error(error);
-  document.querySelector('#app').innerHTML =
-    '<main class="boot-screen"><strong>No se pudo iniciar FideoVue.</strong></main>';
+  const root = document.querySelector('#app');
+  const message = document.createElement('main');
+  const title = document.createElement('strong');
+  message.className = 'boot-screen';
+  title.textContent = 'No se pudo iniciar FideoVue.';
+  message.appendChild(title);
+  root.replaceChildren(message);
 });

@@ -2,10 +2,10 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const url = process.argv[2] || 'http://127.0.0.1:4173/';
-const port = Number(process.env.FIDEOVUE_CDP_PORT || 9224);
+const port = Number(process.env.FIDEOVUE_CDP_PORT || (9300 + Math.floor(Math.random() * 600)));
 const browserCandidates = [
   process.env.FIDEOVUE_BROWSER,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -44,7 +44,11 @@ const child = spawn(browser, [
 ], { stdio: 'ignore' });
 
 const cleanup = async () => {
-  child.kill();
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    child.kill();
+  }
   await delay(500);
   await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
 };
