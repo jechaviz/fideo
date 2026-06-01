@@ -40,6 +40,9 @@
       @complete-task="actions.completeTask"
       @note-task="actions.noteTask"
       @incident-task="actions.incidentTask"
+      @ping-presence="actions.pingDeliveryPresence"
+      @pause-presence="actions.pauseDeliveryPresence"
+      @record-report-receipt="actions.recordDeliveryReportReceipt"
     />
 
     <InventoryOpsBoard
@@ -214,6 +217,9 @@ export default {
         onCompleteTask: this.actions.completeTask,
         onNoteTask: this.actions.noteTask,
         onIncidentTask: this.actions.incidentTask,
+        onPingPresence: this.actions.pingDeliveryPresence,
+        onPausePresence: this.actions.pauseDeliveryPresence,
+        onRecordReportReceipt: this.actions.recordDeliveryReportReceipt,
       }),
       h(InventoryOpsBoard, {
         state: this.state,

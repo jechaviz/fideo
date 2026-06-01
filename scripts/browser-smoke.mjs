@@ -132,6 +132,8 @@ try {
     'Campanas',
     'ENTREGA VIVA',
     'Atencion ruta',
+    'Presencia ruta',
+    'Mapa entregas',
     'TABLA INVENTARIO',
     'Lotes operables',
     'CATALOGO OPERATIVO',

@@ -13,6 +13,7 @@ import {
   updateWarehouse,
 } from '../domain/catalog/catalogActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
+import { pingDeliveryPresence, recordDeliveryReportReceipt } from '../domain/delivery/presenceActions.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement } from '../domain/finance/financeActions.js';
@@ -460,6 +461,27 @@ export const createKernel = ({ vue, config }) => {
         severity: 'high',
         nextTaskStatus: 'blocked',
       }, actorForTask(taskId)));
+    },
+    pingDeliveryPresence: (employeeId) => {
+      pushReceipt(receipts, pingDeliveryPresence(state, employeeId, { status: 'active' }));
+    },
+    pauseDeliveryPresence: (employeeId) => {
+      pushReceipt(receipts, pingDeliveryPresence(state, employeeId, { status: 'background' }));
+    },
+    recordDeliveryReportReceipt: () => {
+      const result = recordDeliveryReportReceipt(state, {
+        provider: 'pocketbase',
+        status: 'acknowledged',
+      });
+      pushReceipt(receipts, result);
+      if (result.status === 'ok') {
+        pushReceipt(receipts, {
+          kind: 'delivery_report_remote_receipt',
+          status: 'dry-run',
+          message: 'Acuse remoto de reporte listo para PocketBase.',
+          reportId: result.reportId,
+        });
+      }
     },
     bootstrapPocketBase: async () => {
       pushReceipt(receipts, await pocketbase.bootstrap(buildPersistableSnapshot(state)));

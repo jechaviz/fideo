@@ -365,6 +365,17 @@ export const createInitialState = () => ({
       employeeName: 'Ruta Centro',
     },
   ],
+  deliveryPresence: [
+    {
+      employeeId: 'emp-route',
+      status: 'active',
+      lat: 20.5888,
+      lng: -100.3899,
+      lastSeenAt: nowIso(),
+      device: 'web-static',
+    },
+  ],
+  deliveryReportReceipts: [],
   messages: [
     {
       id: 'msg-demo-offer',

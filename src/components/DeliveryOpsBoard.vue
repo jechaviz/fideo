@@ -11,6 +11,8 @@ import {
   deliveryAttentionItems,
   deliveryColumns,
   deliveryLiveActivity,
+  deliveryPresenceRows,
+  deliveryReportReceiptRows,
   routeGroups,
 } from '/src/domain/delivery/deliverySelectors.js';
 
@@ -53,6 +55,9 @@ export default {
     'complete-task',
     'note-task',
     'incident-task',
+    'ping-presence',
+    'pause-presence',
+    'record-report-receipt',
   ],
   computed: {
     columns() {
@@ -66,6 +71,12 @@ export default {
     },
     liveActivity() {
       return deliveryLiveActivity(this.state);
+    },
+    presenceRows() {
+      return deliveryPresenceRows(this.state);
+    },
+    reportReceipts() {
+      return deliveryReportReceiptRows(this.state).slice(0, 4);
     },
     counts() {
       const all = [...this.columns.packing, ...this.columns.assignment, ...this.columns.route];
@@ -207,6 +218,61 @@ export default {
           : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin elementos abiertos.'),
       ]);
     },
+    renderPresencePanel() {
+      return h('article', { class: 'surface p-4' }, [
+        h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Presencia ruta'),
+        h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.presenceRows.map((row) =>
+          h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: row.employeeId }, [
+            h('div', { class: 'flex items-start justify-between gap-3' }, [
+              h('div', [
+                h('strong', { class: 'text-white' }, row.employeeName),
+                h('span', { class: 'block text-slate-300' }, `${row.status} - ${row.taskCount} tarea(s)`),
+                h('span', { class: 'block text-xs text-slate-500' }, row.lastSeenAt || 'sin ping'),
+              ]),
+              h('div', { class: 'flex shrink-0 flex-wrap justify-end gap-2' }, [
+                h('button', {
+                  class: 'focus-ring rounded-lg bg-emerald-300 px-2 py-1 text-xs font-black text-slate-950',
+                  onClick: () => this.$emit('ping-presence', row.employeeId),
+                }, 'Ping'),
+                h('button', {
+                  class: 'focus-ring rounded-lg border border-white/10 px-2 py-1 text-xs font-black text-slate-200',
+                  onClick: () => this.$emit('pause-presence', row.employeeId),
+                }, 'Pausa'),
+              ]),
+            ]),
+          ]))),
+      ]);
+    },
+    renderMapPanel() {
+      return h('article', { class: 'surface p-4' }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Mapa entregas'),
+            h('span', { class: 'text-sm text-slate-400' }, `${this.reportReceipts.length} acuse(s)`),
+          ]),
+          h('button', {
+            class: 'focus-ring rounded-lg bg-sky-300 px-3 py-2 text-xs font-black text-slate-950',
+            onClick: () => this.$emit('record-report-receipt'),
+          }, 'Acuse reporte'),
+        ]),
+        h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.presenceRows.map((row) =>
+          h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: `map-${row.employeeId}` }, [
+            h('strong', { class: 'text-white' }, row.nextTask?.customerName || row.employeeName),
+            h('span', { class: 'block text-slate-300' }, row.nextTask?.destination || 'Sin destino activo'),
+            h('a', {
+              class: 'focus-ring mt-2 inline-flex rounded-lg border border-white/10 px-2 py-1 text-xs font-black text-slate-200',
+              href: row.mapUrl,
+              target: '_blank',
+              rel: 'noreferrer',
+            }, 'Mapa'),
+          ]))),
+        this.reportReceipts.length
+          ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.reportReceipts.map((row) =>
+            h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-xs text-slate-300', key: row.id },
+              `${row.provider} - ${row.status} - ${row.report?.summary || row.reportId}`)))
+          : null,
+      ]);
+    },
   },
   render() {
     return h('section', { class: 'mt-4 grid gap-4' }, [
@@ -233,6 +299,10 @@ export default {
         this.renderRouteSummary(),
         this.renderListPanel('Atencion ruta', this.attention),
         this.renderListPanel('Actividad entrega', this.liveActivity),
+      ]),
+      h('div', { class: 'grid gap-4 lg:grid-cols-2' }, [
+        this.renderPresencePanel(),
+        this.renderMapPanel(),
       ]),
     ]);
   },

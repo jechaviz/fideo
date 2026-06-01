@@ -25,7 +25,15 @@ import {
 import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
 import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
 import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
-import { deliveryAttentionItems, deliveryColumns, delivererPortal, routeGroups } from '../src/domain/delivery/deliverySelectors.js';
+import { pingDeliveryPresence, recordDeliveryReportReceipt } from '../src/domain/delivery/presenceActions.js';
+import {
+  deliveryAttentionItems,
+  deliveryColumns,
+  deliveryPresenceRows,
+  deliveryReportReceiptRows,
+  delivererPortal,
+  routeGroups,
+} from '../src/domain/delivery/deliverySelectors.js';
 import { submitTaskReport } from '../src/domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement, signedCashMovementAmount } from '../src/domain/finance/financeActions.js';
 import { cashActivityRows, debtRows, financeSummary } from '../src/domain/finance/financeSelectors.js';
@@ -215,11 +223,20 @@ assert.equal(salesState.taskReports[0].summary, 'Cliente no disponible');
 const deliveryState = createInitialState();
 assert.equal(deliveryColumns(deliveryState).packing.length, 1);
 assert.equal(routeGroups(deliveryState).length, 1);
+const pingPresence = pingDeliveryPresence(deliveryState, 'emp-route', { status: 'active' });
+assert.equal(pingPresence.status, 'ok');
+assert.equal(deliveryPresenceRows(deliveryState)[0].status, 'active');
 const taskNote = submitTaskReport(deliveryState, 'pack-sale-1', {
   kind: 'note',
   summary: 'Empaque revisado',
 }, { employeeId: 'emp-pack', employeeName: 'Empaque Norte' });
 assert.equal(taskNote.status, 'ok');
+const reportReceipt = recordDeliveryReportReceipt(deliveryState, {
+  reportId: taskNote.report.id,
+  provider: 'pocketbase',
+});
+assert.equal(reportReceipt.status, 'ok');
+assert.equal(deliveryReportReceiptRows(deliveryState)[0].provider, 'pocketbase');
 const routeIncident = submitTaskReport(deliveryState, 'route-sale-2', {
   kind: 'incident',
   summary: 'Cliente no contesta',

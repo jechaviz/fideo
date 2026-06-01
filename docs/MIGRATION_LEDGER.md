@@ -67,10 +67,11 @@ Ported and verified:
   `src/domain/messages/*`, `src/infrastructure/veeperGateway.js` plus `MessageAiOpsBoard.vue`
 - `frontend/components/Suppliers.tsx`, `views/SupplierView.tsx` editing/remote receipt subset ->
   `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
+- `frontend/views/DelivererView.tsx`, `components/RoleSwitcher.tsx` presence/map/report receipt subset ->
+  `src/domain/delivery/*` plus `src/components/DeliveryOpsBoard.vue`
 
 ## Pending Domains
 
-- Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.
 - Full Gemini live execution and provider-backed correction receipts.
 - OneSignal live SDK execution after deployment credentials.

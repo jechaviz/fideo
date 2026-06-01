@@ -170,3 +170,32 @@ export const delivererPortal = (state, employeeId = '') => {
     blocked: tasks.filter((task) => task.status === 'blocked'),
   };
 };
+
+const mapUrlFor = (destination) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination || 'Central de Abastos')}`;
+
+export const deliveryPresenceRows = (state) =>
+  state.employees
+    .filter((employee) => employee.role === 'Repartidor')
+    .map((employee) => {
+      const presence = (state.deliveryPresence || []).find((item) => item.employeeId === employee.id) || {};
+      const tasks = deliveryTaskRows(state).filter((task) => task.employeeId === employee.id && task.stage === 'route');
+      const nextTask = tasks[0] || null;
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        status: presence.status || 'offline',
+        lastSeenAt: presence.lastSeenAt || '',
+        lat: presence.lat || null,
+        lng: presence.lng || null,
+        taskCount: tasks.length,
+        nextTask,
+        mapUrl: mapUrlFor(nextTask?.destination || nextTask?.customerName || employee.name),
+      };
+    });
+
+export const deliveryReportReceiptRows = (state) =>
+  (state.deliveryReportReceipts || []).map((receipt) => ({
+    ...receipt,
+    report: state.taskReports.find((report) => report.id === receipt.reportId) || null,
+  })).toSorted((left, right) => String(right.at || '').localeCompare(String(left.at || '')));
