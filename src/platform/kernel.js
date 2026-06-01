@@ -29,6 +29,7 @@ import {
   approveInterpretation,
   correctInterpretation,
   interpretMessage,
+  recordCampaignProviderReceipt,
   revertInterpretation,
   sendPromotion,
   updateMessageTemplate,
@@ -319,13 +320,48 @@ export const createKernel = ({ vue, config }) => {
         pushReceipt(receipts, veeperReceipt);
       }
     },
-    sendCampaignDraft: () => {
+    sendCampaignDraft: async () => {
       const draft = campaignDrafts(state)[0];
       if (!draft) {
         pushReceipt(receipts, { kind: 'promotion_send', status: 'skipped', message: 'Sin campana sugerida.' });
         return;
       }
-      pushReceipt(receipts, sendPromotion(state, draft.message, draft.targetIds));
+      const result = sendPromotion(state, draft.message, draft.targetIds);
+      pushReceipt(receipts, result);
+      if (result.status === 'ok') {
+        pushReceipt(receipts, await veeper.planPromotion({
+          campaignId: result.campaignId,
+          message: draft.message,
+          targets: result.targets,
+        }));
+      }
+    },
+    recordProviderReceipt: async (provider) => {
+      const seed = state.campaignReceipts.find((item) => item.provider === 'local') || state.campaignReceipts[0];
+      const result = recordCampaignProviderReceipt(state, {
+        campaignId: seed?.campaignId,
+        provider,
+        targetCount: seed?.targetCount || state.customers.length,
+        delivered: seed?.targetCount || state.customers.length,
+        failed: 0,
+      });
+      pushReceipt(receipts, result);
+      if (result.status !== 'ok') return;
+      if (provider === 'veeper') {
+        pushReceipt(receipts, await veeper.planProviderReceipt({
+          campaignId: result.campaignId,
+          provider,
+          delivered: seed?.targetCount || state.customers.length,
+          failed: 0,
+        }));
+        return;
+      }
+      pushReceipt(receipts, {
+        kind: 'onesignal_provider_receipt',
+        status: 'gated',
+        message: 'OneSignal receipt gated hasta activar credenciales live.',
+        campaignId: result.campaignId,
+      });
     },
     trainAi: () => {
       pushReceipt(receipts, appendTrainingKnowledge(state, 'cuando digan listo, priorizar fruta madura para campana'));

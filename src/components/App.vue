@@ -111,6 +111,7 @@
       @train-ai="actions.trainAi"
       @send-campaign="actions.sendCampaignDraft"
       @update-template="actions.updateTemplate"
+      @record-provider-receipt="actions.recordProviderReceipt"
     />
 
     <PortalAssetBoard
@@ -274,6 +275,7 @@ export default {
         onTrainAi: this.actions.trainAi,
         onSendCampaign: this.actions.sendCampaignDraft,
         onUpdateTemplate: this.actions.updateTemplate,
+        onRecordProviderReceipt: this.actions.recordProviderReceipt,
       }),
       h(PortalAssetBoard, {
         state: this.state,

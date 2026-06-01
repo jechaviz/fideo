@@ -61,6 +61,29 @@ export const campaignDrafts = (state) => {
   }];
 };
 
+export const campaignReceiptRows = (state) =>
+  (state.campaignReceipts || [])
+    .map((receipt) => ({
+      ...receipt,
+      deliveryRate: Number(receipt.targetCount || 0) > 0
+        ? Math.round((Number(receipt.delivered || 0) / Number(receipt.targetCount || 0)) * 100)
+        : 0,
+    }))
+    .toSorted((left, right) => String(right.at || '').localeCompare(String(left.at || '')));
+
+export const campaignDeliveryAnalytics = (state) => {
+  const rows = campaignReceiptRows(state);
+  const providerRows = rows.filter((row) => row.provider !== 'local');
+  return {
+    campaigns: new Set(rows.map((row) => row.campaignId)).size,
+    receipts: rows.length,
+    providerReceipts: providerRows.length,
+    delivered: providerRows.reduce((sum, row) => sum + Number(row.delivered || 0), 0),
+    failed: providerRows.reduce((sum, row) => sum + Number(row.failed || 0), 0),
+    latestCampaignId: rows[0]?.campaignId || '',
+  };
+};
+
 export const correctionQueue = (state) =>
   state.messages
     .filter((message) => message.status === 'interpreted')

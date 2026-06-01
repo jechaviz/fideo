@@ -373,6 +373,7 @@ export const createInitialState = () => ({
       status: 'pending',
     },
   ],
+  campaignReceipts: [],
   messageTemplates: [
     {
       id: 'tpl-ticket',

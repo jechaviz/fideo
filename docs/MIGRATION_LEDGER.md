@@ -63,10 +63,11 @@ Ported and verified:
 - `frontend/hooks/useCatalogActions.ts`, `components/RipeningRules.tsx`, `Settings.tsx`
   warehouse/size/icon/ripening admin subset ->
   `src/domain/catalog/*` plus `src/components/CatalogAdminBoard.vue`
+- `frontend/components/Promotions.tsx`, `services/onesignal/client.ts` provider receipt subset ->
+  `src/domain/messages/*`, `src/infrastructure/veeperGateway.js` plus `MessageAiOpsBoard.vue`
 
 ## Pending Domains
 
-- Advanced campaign analytics and provider delivery receipts.
 - Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.

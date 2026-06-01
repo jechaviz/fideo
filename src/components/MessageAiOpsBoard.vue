@@ -1,5 +1,5 @@
 <template>
-  <section class="mt-4 grid gap-4 xl:grid-cols-3">
+  <section class="mt-4 grid gap-4 xl:grid-cols-4">
     <article class="surface p-4">
       <h2>Insights IA</h2>
     </article>
@@ -9,13 +9,18 @@
     <article class="surface p-4">
       <h2>Campanas segmentadas</h2>
     </article>
+    <article class="surface p-4">
+      <h2>Entregas proveedor</h2>
+    </article>
   </section>
 </template>
 
 <script>
 import {
   aiInsightCards,
+  campaignDeliveryAnalytics,
   campaignDrafts,
+  campaignReceiptRows,
   correctionQueue,
 } from '/src/domain/messages/messageInsights.js';
 
@@ -26,7 +31,7 @@ export default {
   props: {
     state: { type: Object, required: true },
   },
-  emits: ['correct-message', 'train-ai', 'send-campaign', 'update-template'],
+  emits: ['correct-message', 'train-ai', 'send-campaign', 'update-template', 'record-provider-receipt'],
   computed: {
     insights() {
       return aiInsightCards(this.state);
@@ -37,11 +42,23 @@ export default {
     drafts() {
       return campaignDrafts(this.state);
     },
+    delivery() {
+      return campaignDeliveryAnalytics(this.state);
+    },
+    receiptRows() {
+      return campaignReceiptRows(this.state).slice(0, 4);
+    },
     firstTemplate() {
       return this.state.messageTemplates.find((template) => template.type === 'promotion') || this.state.messageTemplates[0];
     },
   },
   methods: {
+    metric(label, value) {
+      return h('div', { class: 'rounded-lg bg-slate-950/40 p-3' }, [
+        h('span', { class: 'block text-xs font-black uppercase text-slate-500' }, label),
+        h('strong', { class: 'text-lg text-white' }, String(value)),
+      ]);
+    },
     renderInsight(insight) {
       return h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: insight.id }, [
         h('strong', { class: insight.priority === 'high' ? 'text-amber-100' : 'text-white' }, insight.title),
@@ -115,12 +132,54 @@ export default {
         }, 'Actualizar plantilla') : null,
       ]);
     },
+    renderReceipt(row) {
+      return h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: row.id }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('strong', { class: 'text-white' }, row.provider),
+            h('span', { class: 'block text-slate-300' }, row.status),
+            h('span', { class: 'block text-xs text-slate-500' },
+              `${row.delivered}/${row.targetCount} entregados - ${row.deliveryRate}%`),
+          ]),
+          h('span', { class: 'pill text-xs' }, row.campaignId.slice(0, 12)),
+        ]),
+      ]);
+    },
+    renderProviderReceipts() {
+      return h('article', { class: 'surface p-4' }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Entregas proveedor'),
+            h('span', { class: 'text-sm text-slate-400' }, `${this.delivery.providerReceipts} recibos remotos`),
+          ]),
+          h('div', { class: 'flex shrink-0 flex-wrap justify-end gap-2' }, [
+            h('button', {
+              class: 'focus-ring rounded-lg bg-emerald-300 px-2 py-1 text-xs font-black text-slate-950',
+              onClick: () => this.$emit('record-provider-receipt', 'veeper'),
+            }, 'Veeper'),
+            h('button', {
+              class: 'focus-ring rounded-lg border border-white/10 px-2 py-1 text-xs font-black text-slate-200',
+              onClick: () => this.$emit('record-provider-receipt', 'onesignal'),
+            }, 'OneSignal'),
+          ]),
+        ]),
+        h('div', { class: 'mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3' }, [
+          this.metric('Campanas', this.delivery.campaigns),
+          this.metric('Entregados', this.delivery.delivered),
+          this.metric('Fallidos', this.delivery.failed),
+        ]),
+        this.receiptRows.length
+          ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.receiptRows.map((row) => this.renderReceipt(row)))
+          : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin recibos de campana.'),
+      ]);
+    },
   },
   render() {
-    return h('section', { class: 'mt-4 grid gap-4 xl:grid-cols-3' }, [
+    return h('section', { class: 'mt-4 grid gap-4 xl:grid-cols-4' }, [
       this.renderInsights(),
       this.renderCorrections(),
       this.renderCampaigns(),
+      this.renderProviderReceipts(),
     ]);
   },
 };

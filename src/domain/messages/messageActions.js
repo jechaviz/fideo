@@ -195,6 +195,7 @@ export const generateOfferMessage = (idea) =>
 export const sendPromotion = (state, message, customerIds) => {
   const targets = state.customers.filter((customer) => customerIds.includes(customer.id));
   if (!message || targets.length === 0) return receipt('promotion_send', 'skipped', 'Promocion incompleta.');
+  const campaignId = makeId('camp');
   targets.forEach((customer) => {
     state.messages.push({
       id: makeId('promo'),
@@ -203,12 +204,58 @@ export const sendPromotion = (state, message, customerIds) => {
       timestamp: nowIso(),
       status: 'approved',
       isSystemNotification: true,
+      campaignId,
     });
+  });
+  state.campaignReceipts ||= [];
+  state.campaignReceipts.unshift({
+    id: makeId('campaign_receipt'),
+    campaignId,
+    provider: 'local',
+    status: 'queued',
+    targetCount: targets.length,
+    delivered: 0,
+    failed: 0,
+    message,
+    at: nowIso(),
   });
   pushLog(state, 'OFERTA_ENVIADA', 'Campana promocional enviada', {
     Clientes: targets.length,
   });
   return receipt('promotion_send', 'ok', `Promocion enviada a ${targets.length} clientes.`, {
+    campaignId,
     targets: targets.map((customer) => customer.id),
+  });
+};
+
+export const recordCampaignProviderReceipt = (state, input) => {
+  const campaignId = input.campaignId || state.campaignReceipts?.[0]?.campaignId || '';
+  const provider = String(input.provider || '').trim();
+  if (!campaignId || !provider) return receipt('campaign_provider_receipt', 'skipped', 'Campana o proveedor incompleto.');
+  const targetCount = Number(input.targetCount ?? state.campaignReceipts?.find((item) =>
+    item.campaignId === campaignId)?.targetCount ?? 0);
+  const delivered = Math.max(0, Number(input.delivered ?? targetCount));
+  const failed = Math.max(0, Number(input.failed ?? 0));
+  const providerReceipt = {
+    id: makeId('provider_receipt'),
+    campaignId,
+    provider,
+    status: input.status || 'delivered',
+    targetCount,
+    delivered,
+    failed,
+    message: input.message || `${provider} receipt registrado.`,
+    at: nowIso(),
+  };
+  state.campaignReceipts ||= [];
+  state.campaignReceipts.unshift(providerReceipt);
+  pushLog(state, 'OFERTA_ENVIADA', `Recibo proveedor ${provider}`, {
+    Campana: campaignId,
+    Entregados: delivered,
+    Fallidos: failed,
+  });
+  return receipt('campaign_provider_receipt', 'ok', `Recibo ${provider} registrado.`, {
+    campaignId,
+    provider,
   });
 };

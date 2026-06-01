@@ -145,6 +145,7 @@ try {
     'Insights IA',
     'Correccion remota',
     'Campanas segmentadas',
+    'Entregas proveedor',
     'Activos',
     'Planograma',
     'Portales',

@@ -79,5 +79,27 @@ export const createVeeperGateway = ({ baseUrl, token = '' }) => {
         };
       }
     },
+    async planProviderReceipt(input) {
+      try {
+        const receipt = await client.post('/api/automessage/receipt', {
+          campaign_id: input.campaignId,
+          provider: input.provider || 'veeper',
+          delivered: input.delivered || 0,
+          failed: input.failed || 0,
+        });
+
+        return {
+          kind: 'veeper_provider_receipt',
+          status: 'ok',
+          message: receipt.message || 'Recibo de proveedor sincronizado con Veeper.',
+        };
+      } catch (error) {
+        return {
+          kind: 'veeper_provider_receipt',
+          status: 'dry-run',
+          message: `Recibo Veeper pendiente: ${error.message}`,
+        };
+      }
+    },
   };
 };

@@ -37,11 +37,18 @@ import {
   approveInterpretation,
   correctInterpretation,
   interpretMessage,
+  recordCampaignProviderReceipt,
   revertInterpretation,
   sendPromotion,
   updateMessageTemplate,
 } from '../src/domain/messages/messageActions.js';
-import { aiInsightCards, campaignDrafts, correctionQueue } from '../src/domain/messages/messageInsights.js';
+import {
+  aiInsightCards,
+  campaignDeliveryAnalytics,
+  campaignDrafts,
+  campaignReceiptRows,
+  correctionQueue,
+} from '../src/domain/messages/messageInsights.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
 import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
@@ -305,9 +312,20 @@ assert.equal(messageState.messages.find((message) => message.id === addedMessage
 
 const promo = sendPromotion(messageState, 'Mango listo hoy', ['cus-lupita', 'cus-mercado']);
 assert.equal(promo.status, 'ok');
+assert.equal(Boolean(promo.campaignId), true);
 assert.equal(messageStats(messageState).approved >= 2, true);
 assert.equal(aiInsightCards(messageState).length >= 1, true);
 assert.equal(campaignDrafts(messageState)[0].targetIds.length, 2);
+assert.equal(campaignReceiptRows(messageState)[0].provider, 'local');
+const providerReceipt = recordCampaignProviderReceipt(messageState, {
+  campaignId: promo.campaignId,
+  provider: 'veeper',
+  targetCount: promo.targets.length,
+  delivered: 2,
+  failed: 0,
+});
+assert.equal(providerReceipt.status, 'ok');
+assert.equal(campaignDeliveryAnalytics(messageState).delivered, 2);
 const training = appendTrainingKnowledge(messageState, 'listo significa fruta madura');
 assert.equal(training.status, 'ok');
 const templateUpdate = updateMessageTemplate(messageState, 'tpl-promo', { content: '{{customer}} promo {{product}}' });
