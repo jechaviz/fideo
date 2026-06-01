@@ -29,6 +29,19 @@
       @complete-sale="actions.completeSale"
     />
 
+    <DeliveryOpsBoard
+      :state="state"
+      @pack-sale="actions.packSale"
+      @route-sale="actions.routeSale"
+      @complete-sale="actions.completeSale"
+      @ack-task="actions.ackTask"
+      @start-task="actions.startTask"
+      @block-task="actions.blockTask"
+      @complete-task="actions.completeTask"
+      @note-task="actions.noteTask"
+      @incident-task="actions.incidentTask"
+    />
+
     <CommerceBoard
       :state="state"
       @return-crate="actions.returnCrate"
@@ -84,6 +97,7 @@ export default {
     const ActionCenterPanel = resolveComponent('ActionCenterPanel');
     const IntegrationHealth = resolveComponent('IntegrationHealth');
     const DomainBoard = resolveComponent('DomainBoard');
+    const DeliveryOpsBoard = resolveComponent('DeliveryOpsBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
     const MessageBoard = resolveComponent('MessageBoard');
     const PortalAssetBoard = resolveComponent('PortalAssetBoard');
@@ -116,6 +130,18 @@ export default {
         onPackSale: this.actions.packSale,
         onRouteSale: this.actions.routeSale,
         onCompleteSale: this.actions.completeSale,
+      }),
+      h(DeliveryOpsBoard, {
+        state: this.state,
+        onPackSale: this.actions.packSale,
+        onRouteSale: this.actions.routeSale,
+        onCompleteSale: this.actions.completeSale,
+        onAckTask: this.actions.ackTask,
+        onStartTask: this.actions.startTask,
+        onBlockTask: this.actions.blockTask,
+        onCompleteTask: this.actions.completeTask,
+        onNoteTask: this.actions.noteTask,
+        onIncidentTask: this.actions.incidentTask,
       }),
       h(CommerceBoard, {
         state: this.state,

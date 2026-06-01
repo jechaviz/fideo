@@ -2,6 +2,7 @@ import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domai
 import { addFixedAsset, logAssetMaintenance } from '../domain/assets/assetActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
+import { submitTaskReport } from '../domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer } from '../domain/finance/financeActions.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
 import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
@@ -53,6 +54,14 @@ export const createKernel = ({ vue, config }) => {
 
   const metrics = vue.computed(() => deriveMetrics(state));
   const exceptionQueue = vue.computed(() => buildExceptionQueue(state));
+
+  const actorForTask = (taskId) => {
+    const task = state.taskAssignments.find((item) => item.taskId === taskId || item.id === taskId);
+    return {
+      employeeId: task?.employeeId,
+      employeeName: task?.employeeName,
+    };
+  };
 
   const actions = {
     followUp: async (exception) => {
@@ -188,36 +197,40 @@ export const createKernel = ({ vue, config }) => {
       pushReceipt(receipts, logAssetMaintenance(state, assetId, 1200, 'Servicio preventivo'));
     },
     ackTask: (taskId) => {
-      const task = state.taskAssignments.find((item) => item.taskId === taskId);
-      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'acknowledged', {
-        employeeId: task?.employeeId,
-        employeeName: task?.employeeName,
-      }));
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'acknowledged', actorForTask(taskId)));
     },
     startTask: (taskId) => {
-      const task = state.taskAssignments.find((item) => item.taskId === taskId);
-      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'in_progress', {
-        employeeId: task?.employeeId,
-        employeeName: task?.employeeName,
-      }));
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'in_progress', actorForTask(taskId)));
     },
     blockTask: (taskId) => {
-      const task = state.taskAssignments.find((item) => item.taskId === taskId);
-      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'blocked', {
-        employeeId: task?.employeeId,
-        employeeName: task?.employeeName,
-      }, 'Bloqueo reportado desde portal'));
+      pushReceipt(receipts, updateTaskAssignmentStatus(state, taskId, 'blocked', actorForTask(taskId),
+        'Bloqueo reportado desde portal'));
     },
     completeTask: (taskId) => {
       const task = state.taskAssignments.find((item) => item.taskId === taskId);
-      const result = updateTaskAssignmentStatus(state, taskId, 'done', {
-        employeeId: task?.employeeId,
-        employeeName: task?.employeeName,
-      });
+      const result = updateTaskAssignmentStatus(state, taskId, 'done', actorForTask(taskId));
       pushReceipt(receipts, result);
       if (result.status === 'ok' && task?.kind === 'PACK_ORDER' && task.saleId) {
         pushReceipt(receipts, markOrderAsPacked(state, task.saleId));
       }
+      if (result.status === 'ok' && task?.kind === 'DELIVER_ORDER' && task.saleId) {
+        pushReceipt(receipts, completeSale(state, task.saleId, 'Pagado', 'Efectivo'));
+      }
+    },
+    noteTask: (taskId) => {
+      pushReceipt(receipts, submitTaskReport(state, taskId, {
+        kind: 'note',
+        summary: 'Nota operativa desde tablero',
+      }, actorForTask(taskId)));
+    },
+    incidentTask: (taskId) => {
+      pushReceipt(receipts, submitTaskReport(state, taskId, {
+        kind: 'incident',
+        summary: 'Incidencia reportada desde tablero',
+        detail: 'Requiere seguimiento operativo.',
+        severity: 'high',
+        nextTaskStatus: 'blocked',
+      }, actorForTask(taskId)));
     },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([

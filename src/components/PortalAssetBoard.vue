@@ -15,7 +15,7 @@
 <script>
 import { crateAssetSummary, fixedAssetSummary } from '/src/domain/assets/assetSelectors.js';
 import { planogramZones } from '/src/domain/planogram/planogramSelectors.js';
-import { customerPortal, packerPortal, supplierPortal } from '/src/domain/portals/portalSelectors.js';
+import { customerPortal, delivererPortal, packerPortal, supplierPortal } from '/src/domain/portals/portalSelectors.js';
 
 const { h } = Vue;
 
@@ -50,6 +50,9 @@ export default {
     },
     supplierPortal() {
       return supplierPortal(this.state);
+    },
+    delivererPortal() {
+      return delivererPortal(this.state);
     },
     firstAsset() {
       return this.state.fixedAssets[0] || null;
@@ -110,6 +113,7 @@ export default {
           this.metric('Cliente', this.customerPortal?.customer.name || 'N/A'),
           this.metric('Saldo', money(this.customerPortal?.ledger.totalBalance || 0)),
           this.metric('Empaque', this.packerPortal?.tasks.length || 0),
+          this.metric('Reparto', this.delivererPortal?.tasks.length || 0),
           this.metric('Proveedor', this.supplierPortal?.latestStatus || 'N/A'),
         ]),
         this.firstTask ? h('div', { class: 'mt-3 flex flex-wrap gap-2' }, [

@@ -47,13 +47,15 @@ Ported and verified:
   `src/domain/planogram/planogramSelectors.js` plus `src/components/PortalAssetBoard.vue`
 - `frontend/views/CustomerView.tsx`, `PackerView.tsx`, `SupplierView.tsx` portal subset ->
   `src/domain/portals/portalSelectors.js` plus `src/components/PortalAssetBoard.vue`
+- `frontend/components/Deliveries.tsx` and `views/DelivererView.tsx` task/report subset ->
+  `src/domain/delivery/*` plus `src/components/DeliveryOpsBoard.vue`
 
 ## Pending Domains
 
 - Inventory table parity and advanced warehouse editing.
 - Generated AI insights and full message campaigns.
 - Full purchase-order lifecycle.
-- Delivery board parity and deliverer portal.
+- Advanced delivery presence, map deep links and remote report receipts.
 - Finance activity history, advanced cash attention and fixed-asset sales.
 - Full Gemini/codex-goal message interpretation parity and remote correction receipts.
 - OneSignal live SDK binding behind explicit deployment gate.

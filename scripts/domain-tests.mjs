@@ -6,6 +6,8 @@ import { setProductGroupArchived, setRipeningRule, updateSize } from '../src/dom
 import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
 import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
 import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
+import { deliveryAttentionItems, deliveryColumns, delivererPortal, routeGroups } from '../src/domain/delivery/deliverySelectors.js';
+import { submitTaskReport } from '../src/domain/delivery/taskReports.js';
 import { addExpense, closeCashDrawer, openCashDrawer } from '../src/domain/finance/financeActions.js';
 import { financeSummary } from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from '../src/domain/inventory/inventoryActions.js';
@@ -118,6 +120,24 @@ const blockedTask = updateTaskAssignmentStatus(salesState, 'route-sale-2', 'bloc
 }, 'Cliente no disponible');
 assert.equal(blockedTask.status, 'ok');
 assert.equal(salesState.taskReports[0].summary, 'Cliente no disponible');
+
+const deliveryState = createInitialState();
+assert.equal(deliveryColumns(deliveryState).packing.length, 1);
+assert.equal(routeGroups(deliveryState).length, 1);
+const taskNote = submitTaskReport(deliveryState, 'pack-sale-1', {
+  kind: 'note',
+  summary: 'Empaque revisado',
+}, { employeeId: 'emp-pack', employeeName: 'Empaque Norte' });
+assert.equal(taskNote.status, 'ok');
+const routeIncident = submitTaskReport(deliveryState, 'route-sale-2', {
+  kind: 'incident',
+  summary: 'Cliente no contesta',
+  severity: 'high',
+}, { employeeId: 'emp-route', employeeName: 'Ruta Centro' });
+assert.equal(routeIncident.status, 'ok');
+assert.equal(deliveryState.taskAssignments.find((task) => task.taskId === 'route-sale-2').status, 'blocked');
+assert.equal(deliveryAttentionItems(deliveryState).some((item) => item.tone === 'critical'), true);
+assert.equal(delivererPortal(deliveryState, 'emp-route').blocked.length >= 1, true);
 
 const price = setPrice(salesState, 'var-mango-ataulfo', 'Mediano', 'Normal', 'Maduro', 490);
 assert.equal(price.status, 'ok');

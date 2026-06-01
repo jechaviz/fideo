@@ -1,5 +1,8 @@
 import { customerLedger, loanBelongsToCustomer, saleBelongsToCustomer } from '../customers/customerLedger.js';
+import { delivererPortal } from '../delivery/deliverySelectors.js';
 import { purchaseOrderRows } from '../suppliers/supplierSelectors.js';
+
+export { delivererPortal };
 
 export const customerPortal = (state, customerId = state.customers[0]?.id) => {
   const customer = state.customers.find((item) => item.id === customerId) || null;

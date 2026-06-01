@@ -130,6 +130,8 @@ try {
     'Finanzas',
     'Mensajes IA',
     'Campanas',
+    'ENTREGA VIVA',
+    'Atencion ruta',
     'Activos',
     'Planograma',
     'Portales',
