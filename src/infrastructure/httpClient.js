@@ -20,7 +20,9 @@ export const createJsonClient = ({ baseUrl = '', token = '', browserClient = 'fi
     const text = await response.text();
     const payload = text ? JSON.parse(text) : null;
     if (!response.ok) {
-      throw new Error(payload?.message || `HTTP ${response.status}`);
+      const error = new Error(payload?.message || `HTTP ${response.status}`);
+      error.payload = { ...(payload || {}), status: response.status };
+      throw error;
     }
     return payload;
   };
@@ -30,4 +32,3 @@ export const createJsonClient = ({ baseUrl = '', token = '', browserClient = 'fi
     post: (path, body) => request(path, { method: 'POST', body }),
   };
 };
-

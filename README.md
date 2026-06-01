@@ -32,6 +32,7 @@ Opening `index.html` directly is not supported because browser SFC loading uses
 
 ```powershell
 node scripts/verify.mjs
+node scripts/domain-tests.mjs
 node scripts/browser-smoke.mjs http://127.0.0.1:4173/
 ```
 
@@ -41,6 +42,7 @@ The verifier checks:
 - source files stay under 600 lines
 - no remote script is used in production entrypoint
 - required Fideo/Veeper/AI adapters are present
+- compact snapshot transport preserves omitted heavy slices
 - all SFC files expose template and script blocks
 - a real Edge/Chrome headless session renders the operational cockpit
 
