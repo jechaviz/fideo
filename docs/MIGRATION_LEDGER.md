@@ -60,10 +60,12 @@ Ported and verified:
   `src/domain/messages/*` plus `src/components/MessageAiOpsBoard.vue`
 - `frontend/hooks/usePocketBaseSession.ts`, `useOneSignalPush.ts` runtime gate subset ->
   `src/infrastructure/runtimeGates.js` plus `src/components/RuntimeGateBoard.vue`
+- `frontend/hooks/useCatalogActions.ts`, `components/RipeningRules.tsx`, `Settings.tsx`
+  warehouse/size/icon/ripening admin subset ->
+  `src/domain/catalog/*` plus `src/components/CatalogAdminBoard.vue`
 
 ## Pending Domains
 
-- Advanced warehouse CRUD/icon editing.
 - Advanced campaign analytics and provider delivery receipts.
 - Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.

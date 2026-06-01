@@ -1,5 +1,17 @@
 import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domain/fideoState.js';
 import { addFixedAsset, logAssetMaintenance, sellCrateAsset } from '../domain/assets/assetActions.js';
+import {
+  addSize,
+  addWarehouse,
+  setProductGroupArchived,
+  setRipeningRule,
+  setSizeArchived,
+  setWarehouseArchived,
+  updateProductGroup,
+  updateSize,
+  updateVariety,
+  updateWarehouse,
+} from '../domain/catalog/catalogActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
@@ -66,6 +78,24 @@ const criteriaFromBatch = (batch) => ({
   warehouseId: batch.warehouseId,
   packagingId: batch.packagingId,
 });
+
+const iconPalette = ['TR', 'MX', 'PV', 'WH', 'ST', 'AI'];
+
+const nextIconCode = (current) => {
+  const index = iconPalette.indexOf(current);
+  return iconPalette[(index + 1) % iconPalette.length] || iconPalette[0];
+};
+
+const nextAvailableName = (usedNames, baseName) => {
+  const used = new Set(usedNames);
+  let candidate = baseName;
+  let count = 2;
+  while (used.has(candidate)) {
+    candidate = `${baseName} ${count}`;
+    count += 1;
+  }
+  return candidate;
+};
 
 export const createKernel = ({ vue, config }) => {
   const state = vue.reactive(createInitialState());
@@ -140,6 +170,49 @@ export const createKernel = ({ vue, config }) => {
     raiseBatchPrice: (batch) => {
       pushReceipt(receipts, setPrice(state, batch.varietyId, batch.size, batch.quality, batch.state,
         Number(batch.unitPrice || 0) + 10));
+    },
+    addCatalogWarehouse: () => {
+      const name = nextAvailableName(state.warehouses.map((warehouse) => warehouse.name), 'Bodega Norte');
+      pushReceipt(receipts, addWarehouse(state, name, `W${state.warehouses.length + 1}`));
+    },
+    renameCatalogWarehouse: (warehouse) => {
+      const name = nextAvailableName(state.warehouses.map((item) => item.name), `${warehouse.name} Norte`);
+      pushReceipt(receipts, updateWarehouse(state, warehouse.id, { name }));
+    },
+    cycleCatalogWarehouseIcon: (warehouse) => {
+      pushReceipt(receipts, updateWarehouse(state, warehouse.id, { icon: nextIconCode(warehouse.icon) }));
+    },
+    toggleCatalogWarehouse: (warehouse) => {
+      pushReceipt(receipts, setWarehouseArchived(state, warehouse.id, !warehouse.archived));
+    },
+    addCatalogSize: () => {
+      const name = nextAvailableName(Object.keys(state.sizes), 'Extra');
+      pushReceipt(receipts, addSize(state, name, name.slice(0, 2).toUpperCase()));
+    },
+    renameCatalogSize: (size) => {
+      const name = nextAvailableName(Object.keys(state.sizes), `${size.name} Plus`);
+      pushReceipt(receipts, updateSize(state, size.name, { name }));
+    },
+    cycleCatalogSizeIcon: (size) => {
+      pushReceipt(receipts, updateSize(state, size.name, { icon: nextIconCode(size.icon) }));
+    },
+    toggleCatalogSize: (size) => {
+      pushReceipt(receipts, setSizeArchived(state, size.name, !size.archived));
+    },
+    cycleCatalogGroupIcon: (group) => {
+      pushReceipt(receipts, updateProductGroup(state, group.id, { icon: nextIconCode(group.icon) }));
+    },
+    toggleCatalogGroup: (group) => {
+      pushReceipt(receipts, setProductGroupArchived(state, group.id, !group.archived));
+    },
+    cycleCatalogVarietyIcon: (row) => {
+      pushReceipt(receipts, updateVariety(state, row.productGroupId, row.varietyId, { icon: nextIconCode(row.icon) }));
+    },
+    increaseRipeningRule: (row) => {
+      pushReceipt(receipts, setRipeningRule(state, row.varietyId, row.fromState, row.toState, Number(row.days || 0) + 1));
+    },
+    resetRipeningRule: (row) => {
+      pushReceipt(receipts, setRipeningRule(state, row.varietyId, row.fromState, row.toState, 0));
     },
     packSale: (saleId) => {
       pushReceipt(receipts, markOrderAsPacked(state, saleId));

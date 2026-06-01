@@ -121,6 +121,16 @@ export const createInitialState = () => ({
     Mediano: { icon: 'M', archived: false },
     Grande: { icon: 'G', archived: false },
   },
+  categoryIcons: {
+    Tropical: 'TR',
+    Activos: 'AC',
+  },
+  stateIcons: {
+    Verde: 'VE',
+    Entrado: 'EN',
+    Maduro: 'MA',
+    Suave: 'SU',
+  },
   warehouses: [
     { id: 'wh-main', name: 'Bodega Principal', icon: 'WH', archived: false },
     { id: 'wh-floor', name: 'Piso Sucursal', icon: 'PV', archived: false },

@@ -50,6 +50,23 @@
       @raise-price="actions.raiseBatchPrice"
     />
 
+    <CatalogAdminBoard
+      :state="state"
+      @add-warehouse="actions.addCatalogWarehouse"
+      @rename-warehouse="actions.renameCatalogWarehouse"
+      @cycle-warehouse-icon="actions.cycleCatalogWarehouseIcon"
+      @toggle-warehouse="actions.toggleCatalogWarehouse"
+      @add-size="actions.addCatalogSize"
+      @rename-size="actions.renameCatalogSize"
+      @cycle-size-icon="actions.cycleCatalogSizeIcon"
+      @toggle-size="actions.toggleCatalogSize"
+      @cycle-group-icon="actions.cycleCatalogGroupIcon"
+      @toggle-group="actions.toggleCatalogGroup"
+      @cycle-variety-icon="actions.cycleCatalogVarietyIcon"
+      @increase-ripening="actions.increaseRipeningRule"
+      @reset-ripening="actions.resetRipeningRule"
+    />
+
     <CommerceBoard
       :state="state"
       @return-crate="actions.returnCrate"
@@ -144,6 +161,7 @@ export default {
     const DomainBoard = resolveComponent('DomainBoard');
     const DeliveryOpsBoard = resolveComponent('DeliveryOpsBoard');
     const InventoryOpsBoard = resolveComponent('InventoryOpsBoard');
+    const CatalogAdminBoard = resolveComponent('CatalogAdminBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
     const FinanceOpsBoard = resolveComponent('FinanceOpsBoard');
     const SupplierOpsBoard = resolveComponent('SupplierOpsBoard');
@@ -199,6 +217,22 @@ export default {
         onTransferWarehouse: this.actions.transferWarehouse,
         onAdjustBatch: this.actions.adjustBatch,
         onRaisePrice: this.actions.raiseBatchPrice,
+      }),
+      h(CatalogAdminBoard, {
+        state: this.state,
+        onAddWarehouse: this.actions.addCatalogWarehouse,
+        onRenameWarehouse: this.actions.renameCatalogWarehouse,
+        onCycleWarehouseIcon: this.actions.cycleCatalogWarehouseIcon,
+        onToggleWarehouse: this.actions.toggleCatalogWarehouse,
+        onAddSize: this.actions.addCatalogSize,
+        onRenameSize: this.actions.renameCatalogSize,
+        onCycleSizeIcon: this.actions.cycleCatalogSizeIcon,
+        onToggleSize: this.actions.toggleCatalogSize,
+        onCycleGroupIcon: this.actions.cycleCatalogGroupIcon,
+        onToggleGroup: this.actions.toggleCatalogGroup,
+        onCycleVarietyIcon: this.actions.cycleCatalogVarietyIcon,
+        onIncreaseRipening: this.actions.increaseRipeningRule,
+        onResetRipening: this.actions.resetRipeningRule,
       }),
       h(CommerceBoard, {
         state: this.state,

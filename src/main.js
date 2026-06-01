@@ -3,6 +3,7 @@ import { createKernel } from './platform/kernel.js';
 
 const componentUrls = {
   ActionCenterPanel: './src/components/ActionCenterPanel.vue',
+  CatalogAdminBoard: './src/components/CatalogAdminBoard.vue',
   CommerceBoard: './src/components/CommerceBoard.vue',
   DeliveryOpsBoard: './src/components/DeliveryOpsBoard.vue',
   DomainBoard: './src/components/DomainBoard.vue',

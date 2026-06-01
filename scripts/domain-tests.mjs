@@ -2,7 +2,26 @@ import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/fideoState.js';
 import { addFixedAsset, logAssetMaintenance, sellCrateAsset } from '../src/domain/assets/assetActions.js';
 import { crateAssetSummary, fixedAssetSummary } from '../src/domain/assets/assetSelectors.js';
-import { setProductGroupArchived, setRipeningRule, updateSize } from '../src/domain/catalog/catalogActions.js';
+import {
+  addSize,
+  addWarehouse,
+  setCategoryIcon,
+  setProductGroupArchived,
+  setRipeningRule,
+  setSizeArchived,
+  setStateIcon,
+  setWarehouseArchived,
+  updateProductGroup,
+  updateSize,
+  updateVariety,
+  updateWarehouse,
+} from '../src/domain/catalog/catalogActions.js';
+import {
+  catalogSizeRows,
+  catalogSummary,
+  catalogWarehouseRows,
+  ripeningTransitionRows,
+} from '../src/domain/catalog/catalogSelectors.js';
 import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
 import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
 import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
@@ -51,20 +70,53 @@ assert.equal(compact.suppliers, undefined);
 assert.equal(compact.productGroups, undefined);
 assert.equal(compact.taskAssignments.length, 2);
 assert.equal(snapshot.productGroups.length, 3);
+assert.equal(snapshot.stateIcons.Verde, 'VE');
 
 const catalogState = createInitialState();
 const archive = setProductGroupArchived(catalogState, 'pg-mango', true);
 assert.equal(archive.status, 'ok');
 assert.equal(catalogState.productGroups.find((group) => group.id === 'pg-mango').varieties[0].archived, true);
+const unarchive = setProductGroupArchived(catalogState, 'pg-mango', false);
+assert.equal(unarchive.status, 'ok');
+assert.equal(catalogState.productGroups.find((group) => group.id === 'pg-mango').varieties[0].archived, false);
+const groupIcon = updateProductGroup(catalogState, 'pg-mango', { icon: 'MX' });
+assert.equal(groupIcon.status, 'ok');
+const varietyIcon = updateVariety(catalogState, 'pg-mango', 'var-mango-ataulfo', { icon: 'AT' });
+assert.equal(varietyIcon.status, 'ok');
+assert.equal(catalogState.productGroups.find((group) => group.id === 'pg-mango').varieties[0].icon, 'AT');
+
+const categoryIcon = setCategoryIcon(catalogState, 'Tropical', 'TP');
+assert.equal(categoryIcon.status, 'ok');
+const stateIcon = setStateIcon(catalogState, 'Verde', 'VD');
+assert.equal(stateIcon.status, 'ok');
+assert.equal(catalogState.stateIcons.Verde, 'VD');
+
+const addedSize = addSize(catalogState, 'Extra', 'EX');
+assert.equal(addedSize.status, 'ok');
+assert.equal(catalogSizeRows(catalogState).some((row) => row.name === 'Extra'), true);
+const archivedSize = setSizeArchived(catalogState, 'Extra', true);
+assert.equal(archivedSize.status, 'ok');
+assert.equal(catalogSummary(catalogState).activeSizes, 2);
 
 const renameSize = updateSize(catalogState, 'Grande', { name: 'Extra', icon: 'X' });
-assert.equal(renameSize.status, 'ok');
-assert.equal(catalogState.sizes.Extra.icon, 'X');
-assert.equal(catalogState.productGroups.find((group) => group.id === 'pg-papaya').varieties[0].sizes[0], 'Extra');
+assert.equal(renameSize.status, 'failed');
+const renameGrande = updateSize(catalogState, 'Grande', { name: 'Jumbo', icon: 'J' });
+assert.equal(renameGrande.status, 'ok');
+assert.equal(catalogState.sizes.Jumbo.icon, 'J');
+assert.equal(catalogState.productGroups.find((group) => group.id === 'pg-papaya').varieties[0].sizes[0], 'Jumbo');
+
+const addedWarehouse = addWarehouse(catalogState, 'Bodega Norte', 'BN');
+assert.equal(addedWarehouse.status, 'ok');
+assert.equal(catalogWarehouseRows(catalogState).some((row) => row.name === 'Bodega Norte'), true);
+const warehouseUpdate = updateWarehouse(catalogState, addedWarehouse.warehouse.id, { icon: 'B2' });
+assert.equal(warehouseUpdate.status, 'ok');
+const warehouseArchive = setWarehouseArchived(catalogState, addedWarehouse.warehouse.id, true);
+assert.equal(warehouseArchive.status, 'ok');
 
 const rule = setRipeningRule(catalogState, 'var-mango-ataulfo', 'Verde', 'Entrado', 3);
 assert.equal(rule.status, 'ok');
 assert.equal(catalogState.ripeningRules.find((item) => item.fromState === 'Verde').days, 3);
+assert.equal(ripeningTransitionRows(catalogState).some((row) => row.fromState === 'Verde' && row.days === 3), true);
 const removedRule = setRipeningRule(catalogState, 'var-mango-ataulfo', 'Verde', 'Entrado', 0);
 assert.equal(removedRule.status, 'ok');
 assert.equal(catalogState.ripeningRules.some((item) => item.fromState === 'Verde'), false);
