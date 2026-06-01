@@ -72,13 +72,13 @@ Ported and verified:
 - `frontend/components/Finances.tsx` export/cash remote receipt subset ->
   `src/domain/finance/*` plus `src/components/FinanceOpsBoard.vue`
 
-## Pending Domains
+## Deployment Gates
 
-- Full Gemini live execution and provider-backed correction receipts.
-- OneSignal live SDK execution after deployment credentials.
-- PocketBase authenticated realtime restore against live backend.
-- Veeper live receipt loop once provider credentials are present.
-- codex-goal live engine execution once local path exists.
+- Full Gemini live execution and provider-backed correction receipts require server-side credentials.
+- OneSignal live SDK execution requires deployment app id plus explicit live flag.
+- PocketBase authenticated realtime restore requires a live backend URL/session.
+- Veeper live receipt loop requires a running provider service and credentials.
+- codex-goal live engine execution requires `C:\git\codex\codex-goal` on the operator machine.
 
 ## Completion Rule
 

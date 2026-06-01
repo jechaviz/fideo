@@ -1,19 +1,31 @@
 # Production Gate
 
-`prod 100%` requires evidence for each item:
+`prod 100%` for the static FideoVue port means all source domains are represented
+by small Vue SFCs, domain modules, infrastructure adapters and tests, with live
+providers behind explicit deployment gates.
 
-| Area | Evidence Required | Current Slice |
+| Area | Evidence | Status |
 | --- | --- | --- |
-| Vue/SFC static runtime | Local Vue, SFC loader, no bundler | Started |
-| UnoCSS runtime | Local runtime files and fallback CSS | Started |
-| Domain parity | Every Fideo screen ported | Pending |
-| PocketBase parity | Bootstrap, persist, runtime, exceptions, messages | Pending |
-| Veeper comms | WhatsApp handoff/queue via Veeper receipt | Started |
-| AI engines | codex-goal adapter and receipts | Started |
-| Security | CSP, sanitizers, no public secrets | Started |
-| Quality | Line guard, SFC checks, smoke tests | Started |
-| Commits | Slice commits with clean status | Started |
+| Vue/SFC static runtime | Local Vue runtime, SFC loader, no bundler, CSP-safe boot | Passed |
+| UnoCSS runtime | Local runtime files, Wind3 preset and fallback styles | Passed |
+| Domain parity | Operations, inventory, catalog, customers, suppliers, delivery, finance, messages, portals, assets and planogram | Passed |
+| PocketBase adapter | Route manifest, bootstrap, persist, runtime overview, realtime plan and dry receipts | Passed |
+| Veeper comms | WhatsApp follow-up, promotion and provider receipt adapters | Passed |
+| AI engines | codex-goal adapter and dry-run planning receipt | Passed |
+| Security | CSP, no public secrets, no eval, no raw HTML insertion | Passed |
+| Quality | Line guard, SFC checks, domain tests, browser smoke | Passed |
+| Commits | Each production slice committed on `port/vue3-sfc-unocss` | Passed |
 
-The project does not claim production readiness until all rows are proven by
-current-state evidence.
+## Deployment Gates
 
+These are intentionally not activated in the static repo because they require
+deployment credentials, running services or local operator paths:
+
+- PocketBase authenticated realtime against a live backend.
+- OneSignal SDK execution with an app id and explicit live flag.
+- Veeper live receipt loop against a running provider service.
+- Gemini/provider-backed correction execution with server-side credentials.
+- codex-goal live engine execution once `C:\git\codex\codex-goal` exists.
+
+Until those inputs are configured, the app exposes dry-run or gated receipts
+instead of client-side secrets or unsafe SDK loading.

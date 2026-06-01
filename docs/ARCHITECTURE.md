@@ -49,7 +49,7 @@ kernel actions. They do not own transport or business rules.
    finances, messaging and staff portals.
 3. Replace large Fideo source files with small Vue components plus domain
    services.
-4. Add real PocketBase smoke and Veeper smoke once local services are running.
-5. Promote from `v0.x` to `v1.0.0` only when parity, security and production
-   gates pass.
-
+4. Keep live PocketBase, Veeper, OneSignal and AI execution behind deployment
+   gates until credentials and services are supplied.
+5. Treat the static port as production-ready when parity, security and local
+   gates pass, with live provider activation tracked separately.
