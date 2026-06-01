@@ -142,6 +142,8 @@ try {
     'CAJA OPERATIVA',
     'Timeline caja',
     'Cobranza viva',
+    'Export finanzas',
+    'Recibos caja',
     'ABASTO COORDINADO',
     'Pipeline compras',
     'Recibos compra',

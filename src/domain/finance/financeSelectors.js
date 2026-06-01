@@ -105,3 +105,11 @@ export const debtRows = (state) =>
       lastSaleAt: ledger.lastSale?.timestamp || null,
     }))
     .toSorted((left, right) => right.totalBalance - left.totalBalance);
+
+export const financeExportRows = (state) =>
+  (state.financeExports || []).toSorted((left, right) =>
+    String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+
+export const cashRemoteReceiptRows = (state) =>
+  (state.cashRemoteReceipts || []).toSorted((left, right) =>
+    String(right.at || '').localeCompare(String(left.at || '')));

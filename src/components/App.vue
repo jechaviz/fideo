@@ -87,6 +87,8 @@
       @cash-withdraw="actions.cashWithdraw"
       @sell-crate-asset="actions.sellCrateAsset"
       @add-expense="actions.addExpense"
+      @create-finance-export="actions.createFinanceExport"
+      @record-cash-receipt="actions.recordCashReceipt"
     />
 
     <SupplierOpsBoard
@@ -260,6 +262,8 @@ export default {
         onCashWithdraw: this.actions.cashWithdraw,
         onSellCrateAsset: this.actions.sellCrateAsset,
         onAddExpense: this.actions.addExpense,
+        onCreateFinanceExport: this.actions.createFinanceExport,
+        onRecordCashReceipt: this.actions.recordCashReceipt,
       }),
       h(SupplierOpsBoard, {
         state: this.state,

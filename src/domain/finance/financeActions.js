@@ -1,4 +1,5 @@
 import { makeId, nowIso, pushLog, receipt } from '../core/events.js';
+import { cashActivityRows, financeSummary } from './financeSelectors.js';
 
 const findDrawer = (state, drawerId) =>
   state.cashDrawers.find((drawer) => drawer.id === drawerId);
@@ -107,4 +108,52 @@ export const recordCashMovement = (state, drawerId, type, amount, notes = '', re
     Monto: signedAmount,
   });
   return receipt('cash_movement', 'ok', `Movimiento registrado: ${activity.notes}`, { activity });
+};
+
+export const createFinanceExport = (state, format = 'json') => {
+  const summary = financeSummary(state);
+  const activities = cashActivityRows(state);
+  const exportRecord = {
+    id: makeId('finance_export'),
+    format,
+    createdAt: nowIso(),
+    totals: {
+      salesRevenue: summary.salesRevenue,
+      grossProfit: summary.grossProfit,
+      expenses: summary.expenses,
+      openCash: summary.openCash,
+      monetaryDebt: summary.portfolio.monetaryDebt,
+    },
+    rows: {
+      cashActivities: activities.length,
+      expenses: state.expenses.length,
+      payments: state.payments.length,
+      debtors: summary.portfolio.ledgers.filter((ledger) => ledger.totalBalance > 0).length,
+    },
+  };
+  state.financeExports ||= [];
+  state.financeExports.unshift(exportRecord);
+  pushLog(state, 'CAJA_OPERACION', 'Export financiero generado', { Formato: format });
+  return receipt('finance_export', 'ok', `Export ${format} generado.`, { exportId: exportRecord.id });
+};
+
+export const recordCashRemoteReceipt = (state, input = {}) => {
+  const provider = String(input.provider || '').trim();
+  if (!provider) return receipt('cash_remote_receipt', 'skipped', 'Proveedor incompleto.');
+  const drawer = findDrawer(state, input.drawerId) || state.cashDrawers[0];
+  state.cashRemoteReceipts ||= [];
+  state.cashRemoteReceipts.unshift({
+    id: makeId('cash_remote_receipt'),
+    drawerId: drawer?.id || '',
+    provider,
+    status: input.status || 'acknowledged',
+    amount: Number(input.amount ?? drawer?.balance ?? 0),
+    message: input.message || `${provider} acuse de caja registrado.`,
+    at: nowIso(),
+  });
+  pushLog(state, 'CAJA_OPERACION', `Acuse remoto de caja ${provider}`, { Caja: drawer?.name || '' });
+  return receipt('cash_remote_receipt', 'ok', `Acuse ${provider} registrado.`, {
+    drawerId: drawer?.id || '',
+    provider,
+  });
 };

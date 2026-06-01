@@ -35,8 +35,22 @@ import {
   routeGroups,
 } from '../src/domain/delivery/deliverySelectors.js';
 import { submitTaskReport } from '../src/domain/delivery/taskReports.js';
-import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement, signedCashMovementAmount } from '../src/domain/finance/financeActions.js';
-import { cashActivityRows, debtRows, financeSummary } from '../src/domain/finance/financeSelectors.js';
+import {
+  addExpense,
+  closeCashDrawer,
+  createFinanceExport,
+  openCashDrawer,
+  recordCashMovement,
+  recordCashRemoteReceipt,
+  signedCashMovementAmount,
+} from '../src/domain/finance/financeActions.js';
+import {
+  cashActivityRows,
+  cashRemoteReceiptRows,
+  debtRows,
+  financeExportRows,
+  financeSummary,
+} from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory, transferBatchWarehouse } from '../src/domain/inventory/inventoryActions.js';
 import { inventoryFilterOptions, inventoryTableRows, warehouseInventoryMatrix } from '../src/domain/inventory/selectors.js';
 import {
@@ -318,6 +332,12 @@ const cashMove = recordCashMovement(commerceState, 'drawer-main', 'DEPOSITO_BANC
 assert.equal(cashMove.status, 'ok');
 assert.equal(commerceState.cashDrawers[0].balance, 3500);
 assert.equal(cashActivityRows(commerceState, 'drawer-main')[0].label, 'Deposito');
+const financeExport = createFinanceExport(commerceState, 'json');
+assert.equal(financeExport.status, 'ok');
+assert.equal(financeExportRows(commerceState)[0].format, 'json');
+const cashReceipt = recordCashRemoteReceipt(commerceState, { provider: 'pocketbase', drawerId: 'drawer-main' });
+assert.equal(cashReceipt.status, 'ok');
+assert.equal(cashRemoteReceiptRows(commerceState)[0].provider, 'pocketbase');
 const assetSale = sellCrateAsset(commerceState, 'cus-lupita', 'crate-green', 2);
 assert.equal(assetSale.status, 'ok');
 assert.equal(commerceState.sales[0].productGroupName, 'Activos');

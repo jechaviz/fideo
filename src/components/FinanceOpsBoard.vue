@@ -13,7 +13,9 @@
 import {
   cashActivityRows,
   cashAttention,
+  cashRemoteReceiptRows,
   debtRows,
+  financeExportRows,
   financeSummary,
 } from '/src/domain/finance/financeSelectors.js';
 
@@ -36,7 +38,15 @@ export default {
   props: {
     state: { type: Object, required: true },
   },
-  emits: ['toggle-drawer', 'cash-deposit', 'cash-withdraw', 'sell-crate-asset', 'add-expense'],
+  emits: [
+    'toggle-drawer',
+    'cash-deposit',
+    'cash-withdraw',
+    'sell-crate-asset',
+    'add-expense',
+    'create-finance-export',
+    'record-cash-receipt',
+  ],
   computed: {
     drawer() {
       return this.state.cashDrawers[0] || null;
@@ -52,6 +62,12 @@ export default {
     },
     debtors() {
       return debtRows(this.state).slice(0, 5);
+    },
+    exports() {
+      return financeExportRows(this.state).slice(0, 4);
+    },
+    remoteReceipts() {
+      return cashRemoteReceiptRows(this.state).slice(0, 4);
     },
   },
   methods: {
@@ -156,6 +172,51 @@ export default {
           : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Cartera sin saldos abiertos.'),
       ]);
     },
+    renderExportPanel() {
+      return h('article', { class: 'surface p-4' }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Export finanzas'),
+            h('span', { class: 'text-sm text-slate-400' }, `${this.exports.length} artefacto(s)`),
+          ]),
+          h('button', {
+            class: 'focus-ring rounded-lg bg-sky-300 px-3 py-2 text-xs font-black text-slate-950',
+            onClick: () => this.$emit('create-finance-export'),
+          }, 'Exportar'),
+        ]),
+        this.exports.length
+          ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.exports.map((row) =>
+            h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: row.id }, [
+              h('strong', { class: 'text-white' }, row.format),
+              h('span', { class: 'block text-slate-300' }, money(row.totals.openCash)),
+              h('span', { class: 'block text-xs text-slate-500' },
+                `${row.rows.cashActivities} movs - ${row.rows.debtors} deudores`),
+            ])))
+          : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin exports generados.'),
+      ]);
+    },
+    renderRemoteReceiptPanel() {
+      return h('article', { class: 'surface p-4' }, [
+        h('div', { class: 'flex items-start justify-between gap-3' }, [
+          h('div', [
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Recibos caja'),
+            h('span', { class: 'text-sm text-slate-400' }, `${this.remoteReceipts.length} remotos`),
+          ]),
+          h('button', {
+            class: 'focus-ring rounded-lg bg-emerald-300 px-3 py-2 text-xs font-black text-slate-950',
+            onClick: () => this.$emit('record-cash-receipt'),
+          }, 'Acuse'),
+        ]),
+        this.remoteReceipts.length
+          ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.remoteReceipts.map((row) =>
+            h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: row.id }, [
+              h('strong', { class: 'text-white' }, row.provider),
+              h('span', { class: 'block text-slate-300' }, row.status),
+              h('span', { class: 'block text-xs text-slate-500' }, money(row.amount)),
+            ])))
+          : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin acuses remotos.'),
+      ]);
+    },
   },
   render() {
     return h('section', { class: 'mt-4 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]' }, [
@@ -166,6 +227,8 @@ export default {
       h('div', { class: 'grid gap-4' }, [
         this.renderTimeline(),
         this.renderDebtPanel(),
+        this.renderExportPanel(),
+        this.renderRemoteReceiptPanel(),
       ]),
     ]);
   },

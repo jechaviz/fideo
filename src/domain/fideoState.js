@@ -302,6 +302,8 @@ export const createInitialState = () => ({
     { id: 'drawer-main', name: 'Caja Principal', status: 'Abierta', balance: 5000, lastOpened: nowIso() },
   ],
   cashDrawerActivities: [],
+  financeExports: [],
+  cashRemoteReceipts: [],
   crateLoans: [
     {
       id: 'loan-mercado-green',

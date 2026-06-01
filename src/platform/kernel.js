@@ -16,7 +16,14 @@ import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerAc
 import { pingDeliveryPresence, recordDeliveryReportReceipt } from '../domain/delivery/presenceActions.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
-import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement } from '../domain/finance/financeActions.js';
+import {
+  addExpense,
+  closeCashDrawer,
+  createFinanceExport,
+  openCashDrawer,
+  recordCashMovement,
+  recordCashRemoteReceipt,
+} from '../domain/finance/financeActions.js';
 import {
   adjustInventory,
   changeQuality,
@@ -305,6 +312,25 @@ export const createKernel = ({ vue, config }) => {
     },
     cashWithdraw: (drawerId) => {
       pushReceipt(receipts, recordCashMovement(state, drawerId, 'RETIRO_EFECTIVO', 300, 'Retiro operativo'));
+    },
+    createFinanceExport: () => {
+      pushReceipt(receipts, createFinanceExport(state, 'json'));
+    },
+    recordCashReceipt: () => {
+      const result = recordCashRemoteReceipt(state, {
+        drawerId: state.cashDrawers[0]?.id,
+        provider: 'pocketbase',
+        status: 'acknowledged',
+      });
+      pushReceipt(receipts, result);
+      if (result.status === 'ok') {
+        pushReceipt(receipts, {
+          kind: 'cash_receipt_remote_plan',
+          status: 'dry-run',
+          message: 'Acuse remoto de caja listo para PocketBase.',
+          drawerId: result.drawerId,
+        });
+      }
     },
     sellCrateAsset: () => {
       const customer = state.customers[0];

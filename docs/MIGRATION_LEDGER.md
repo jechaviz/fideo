@@ -69,10 +69,11 @@ Ported and verified:
   `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
 - `frontend/views/DelivererView.tsx`, `components/RoleSwitcher.tsx` presence/map/report receipt subset ->
   `src/domain/delivery/*` plus `src/components/DeliveryOpsBoard.vue`
+- `frontend/components/Finances.tsx` export/cash remote receipt subset ->
+  `src/domain/finance/*` plus `src/components/FinanceOpsBoard.vue`
 
 ## Pending Domains
 
-- Advanced finance exports and remote cash receipts.
 - Full Gemini live execution and provider-backed correction receipts.
 - OneSignal live SDK execution after deployment credentials.
 - PocketBase authenticated realtime restore against live backend.
