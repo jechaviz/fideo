@@ -12,7 +12,17 @@ import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement, signed
 import { cashActivityRows, debtRows, financeSummary } from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory, transferBatchWarehouse } from '../src/domain/inventory/inventoryActions.js';
 import { inventoryFilterOptions, inventoryTableRows, warehouseInventoryMatrix } from '../src/domain/inventory/selectors.js';
-import { addMessage, approveInterpretation, correctInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../src/domain/messages/messageActions.js';
+import {
+  addMessage,
+  appendTrainingKnowledge,
+  approveInterpretation,
+  correctInterpretation,
+  interpretMessage,
+  revertInterpretation,
+  sendPromotion,
+  updateMessageTemplate,
+} from '../src/domain/messages/messageActions.js';
+import { aiInsightCards, campaignDrafts, correctionQueue } from '../src/domain/messages/messageInsights.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
 import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
@@ -243,6 +253,15 @@ assert.equal(messageState.messages.find((message) => message.id === addedMessage
 const promo = sendPromotion(messageState, 'Mango listo hoy', ['cus-lupita', 'cus-mercado']);
 assert.equal(promo.status, 'ok');
 assert.equal(messageStats(messageState).approved >= 2, true);
+assert.equal(aiInsightCards(messageState).length >= 1, true);
+assert.equal(campaignDrafts(messageState)[0].targetIds.length, 2);
+const training = appendTrainingKnowledge(messageState, 'listo significa fruta madura');
+assert.equal(training.status, 'ok');
+const templateUpdate = updateMessageTemplate(messageState, 'tpl-promo', { content: '{{customer}} promo {{product}}' });
+assert.equal(templateUpdate.status, 'ok');
+const unknownMessage = addMessage(messageState, 'solo saludo sin accion', 'Cliente');
+interpretMessage(messageState, unknownMessage.messageId);
+assert.equal(correctionQueue(messageState).some((message) => message.id === unknownMessage.messageId), true);
 const push = planPushBinding({ id: 'u1', role: 'Admin', employeeId: 'emp-admin' }, messageState.workspace);
 assert.equal(push.bindingStatus, 'dry-run');
 assert.equal(push.tags.employee_id, 'emp-admin');

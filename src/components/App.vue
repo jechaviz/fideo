@@ -88,6 +88,14 @@
       @bind-push="actions.bindPush"
     />
 
+    <MessageAiOpsBoard
+      :state="state"
+      @correct-message="actions.correctMessage"
+      @train-ai="actions.trainAi"
+      @send-campaign="actions.sendCampaignDraft"
+      @update-template="actions.updateTemplate"
+    />
+
     <PortalAssetBoard
       :state="state"
       :pocketbase-routes="pocketbaseRoutes"
@@ -129,6 +137,7 @@ export default {
     const FinanceOpsBoard = resolveComponent('FinanceOpsBoard');
     const SupplierOpsBoard = resolveComponent('SupplierOpsBoard');
     const MessageBoard = resolveComponent('MessageBoard');
+    const MessageAiOpsBoard = resolveComponent('MessageAiOpsBoard');
     const PortalAssetBoard = resolveComponent('PortalAssetBoard');
 
     return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
@@ -212,6 +221,13 @@ export default {
         onRevertMessage: this.actions.revertMessage,
         onSendPromotion: this.actions.sendPromotion,
         onBindPush: this.actions.bindPush,
+      }),
+      h(MessageAiOpsBoard, {
+        state: this.state,
+        onCorrectMessage: this.actions.correctMessage,
+        onTrainAi: this.actions.trainAi,
+        onSendCampaign: this.actions.sendCampaignDraft,
+        onUpdateTemplate: this.actions.updateTemplate,
       }),
       h(PortalAssetBoard, {
         state: this.state,

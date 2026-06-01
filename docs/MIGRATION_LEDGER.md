@@ -55,15 +55,18 @@ Ported and verified:
   `src/domain/suppliers/*` plus `src/components/SupplierOpsBoard.vue`
 - `frontend/components/Inventory.tsx` and `components/inventory/InventoryTable.tsx` table/warehouse subset ->
   `src/domain/inventory/*` plus `src/components/InventoryOpsBoard.vue`
+- `frontend/components/MessageFeed.tsx`, `Promotions.tsx`, `MessageConfig.tsx`, `AITraining.tsx`
+  insight/correction/campaign subset ->
+  `src/domain/messages/*` plus `src/components/MessageAiOpsBoard.vue`
 
 ## Pending Domains
 
 - Advanced warehouse CRUD/icon editing.
-- Generated AI insights and full message campaigns.
+- Advanced campaign analytics and provider delivery receipts.
 - Advanced supplier editing forms and remote purchase receipts.
 - Advanced delivery presence, map deep links and remote report receipts.
 - Advanced finance exports and remote cash receipts.
-- Full Gemini/codex-goal message interpretation parity and remote correction receipts.
+- Full Gemini live execution and provider-backed correction receipts.
 - OneSignal live SDK binding behind explicit deployment gate.
 - PocketBase bootstrap, realtime restore and full normalized slices.
 - Veeper live receipt loop once provider credentials are present.

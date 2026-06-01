@@ -172,6 +172,23 @@ export const updateMessageTemplate = (state, templateId, updates) => {
   return receipt('message_template_update', 'ok', `Plantilla actualizada: ${template.name}`, { templateId });
 };
 
+export const updateSystemPrompt = (state, prompt) => {
+  const cleanPrompt = String(prompt || '').trim();
+  if (!cleanPrompt) return receipt('ai_prompt_update', 'skipped', 'Prompt vacio.');
+  state.systemPrompt = cleanPrompt;
+  pushLog(state, 'PLANTILLA_MENSAJE_UPD', 'Prompt de IA actualizado', { Longitud: cleanPrompt.length });
+  return receipt('ai_prompt_update', 'ok', 'Prompt de IA actualizado.');
+};
+
+export const appendTrainingKnowledge = (state, note) => {
+  const cleanNote = String(note || '').trim();
+  if (!cleanNote) return receipt('ai_training_note', 'skipped', 'Nota de entrenamiento vacia.');
+  const separator = state.systemPrompt?.trim() ? '\n' : '';
+  state.systemPrompt = `${state.systemPrompt || ''}${separator}- Jerga adicional: "${cleanNote}".`;
+  pushLog(state, 'PLANTILLA_MENSAJE_UPD', 'Conocimiento agregado a IA', { Nota: cleanNote });
+  return receipt('ai_training_note', 'ok', 'Conocimiento agregado a IA.', { note: cleanNote });
+};
+
 export const generateOfferMessage = (idea) =>
   `Oferta Fideo: ${String(idea || 'producto destacado').trim()}. Responde para reservar hoy.`;
 

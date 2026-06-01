@@ -9,6 +9,7 @@ const componentUrls = {
   FinanceOpsBoard: './src/components/FinanceOpsBoard.vue',
   IntegrationHealth: './src/components/IntegrationHealth.vue',
   InventoryOpsBoard: './src/components/InventoryOpsBoard.vue',
+  MessageAiOpsBoard: './src/components/MessageAiOpsBoard.vue',
   MessageBoard: './src/components/MessageBoard.vue',
   MetricStrip: './src/components/MetricStrip.vue',
   PortalAssetBoard: './src/components/PortalAssetBoard.vue',

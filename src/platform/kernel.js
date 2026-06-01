@@ -11,7 +11,17 @@ import {
   moveInventory,
   transferBatchWarehouse,
 } from '../domain/inventory/inventoryActions.js';
-import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
+import {
+  addMessage,
+  appendTrainingKnowledge,
+  approveInterpretation,
+  correctInterpretation,
+  interpretMessage,
+  revertInterpretation,
+  sendPromotion,
+  updateMessageTemplate,
+} from '../domain/messages/messageActions.js';
+import { campaignDrafts } from '../domain/messages/messageInsights.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
 import { planPushBinding } from '../domain/push/pushIdentity.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice } from '../domain/sales/salesActions.js';
@@ -203,6 +213,19 @@ export const createKernel = ({ vue, config }) => {
     approveMessage: (messageId) => {
       pushReceipt(receipts, approveInterpretation(state, messageId));
     },
+    correctMessage: (messageId) => {
+      const message = state.messages.find((item) => item.id === messageId);
+      pushReceipt(receipts, correctInterpretation(state, messageId, {
+        type: 'CREAR_OFERTA',
+        certainty: 0.91,
+        explanation: 'Correccion local lista para recibo remoto.',
+        data: {
+          targetAudience: 'clientes activos',
+          productDescription: message?.text || 'Producto destacado',
+          price: 0,
+        },
+      }));
+    },
     revertMessage: (messageId) => {
       pushReceipt(receipts, revertInterpretation(state, messageId));
     },
@@ -219,6 +242,22 @@ export const createKernel = ({ vue, config }) => {
         });
         pushReceipt(receipts, veeperReceipt);
       }
+    },
+    sendCampaignDraft: () => {
+      const draft = campaignDrafts(state)[0];
+      if (!draft) {
+        pushReceipt(receipts, { kind: 'promotion_send', status: 'skipped', message: 'Sin campana sugerida.' });
+        return;
+      }
+      pushReceipt(receipts, sendPromotion(state, draft.message, draft.targetIds));
+    },
+    trainAi: () => {
+      pushReceipt(receipts, appendTrainingKnowledge(state, 'cuando digan listo, priorizar fruta madura para campana'));
+    },
+    updateTemplate: (templateId) => {
+      pushReceipt(receipts, updateMessageTemplate(state, templateId, {
+        content: '{{customer}}, tenemos {{product}} listo hoy. Responde para apartar.',
+      }));
     },
     bindPush: () => {
       state.push = planPushBinding({
