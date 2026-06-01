@@ -1,5 +1,4 @@
-const nowIso = () => new Date().toISOString();
-const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.round(Math.random() * 10000)}`;
+import { makeId, nowIso } from '../core/events.js';
 
 export const taskIdForSale = (kind, saleId) => {
   if (kind === 'PACK_ORDER') return `pack-${saleId}`;

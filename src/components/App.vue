@@ -28,6 +28,16 @@
       @route-sale="actions.routeSale"
       @complete-sale="actions.completeSale"
     />
+
+    <CommerceBoard
+      :state="state"
+      @return-crate="actions.returnCrate"
+      @mark-crate-lost="actions.markCrateLost"
+      @receive-order="actions.receiveOrder"
+      @create-demo-order="actions.createDemoOrder"
+      @toggle-drawer="actions.toggleDrawer"
+      @add-expense="actions.addExpense"
+    />
   </main>
 </template>
 
@@ -52,6 +62,7 @@ export default {
     const ActionCenterPanel = resolveComponent('ActionCenterPanel');
     const IntegrationHealth = resolveComponent('IntegrationHealth');
     const DomainBoard = resolveComponent('DomainBoard');
+    const CommerceBoard = resolveComponent('CommerceBoard');
 
     return h('main', { class: 'app-shell px-4 py-4 md:px-6 lg:px-8' }, [
       h(ShellHeader, {
@@ -81,6 +92,15 @@ export default {
         onPackSale: this.actions.packSale,
         onRouteSale: this.actions.routeSale,
         onCompleteSale: this.actions.completeSale,
+      }),
+      h(CommerceBoard, {
+        state: this.state,
+        onReturnCrate: this.actions.returnCrate,
+        onMarkCrateLost: this.actions.markCrateLost,
+        onReceiveOrder: this.actions.receiveOrder,
+        onCreateDemoOrder: this.actions.createDemoOrder,
+        onToggleDrawer: this.actions.toggleDrawer,
+        onAddExpense: this.actions.addExpense,
       }),
     ]);
   },

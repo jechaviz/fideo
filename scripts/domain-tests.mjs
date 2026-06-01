@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/fideoState.js';
 import { setProductGroupArchived, setRipeningRule, updateSize } from '../src/domain/catalog/catalogActions.js';
+import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
+import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
 import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
+import { addExpense, closeCashDrawer, openCashDrawer } from '../src/domain/finance/financeActions.js';
+import { financeSummary } from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory } from '../src/domain/inventory/inventoryActions.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
 import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
+import { createPurchaseOrder, receivePurchaseOrder } from '../src/domain/suppliers/supplierActions.js';
+import { supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 
 const state = createInitialState();
@@ -111,6 +117,39 @@ assert.equal(salesState.prices.find((item) => item.varietyId === 'var-mango-atau
 const specialPrice = setSpecialPrice(salesState, 'cus-lupita', 'var-mango-ataulfo', 'Mediano', 'Normal', 'Maduro', 455);
 assert.equal(specialPrice.status, 'ok');
 assert.equal(salesState.customers.find((item) => item.id === 'cus-lupita').specialPrices[0].price, 455);
+
+const commerceState = createInitialState();
+const customerUpdate = updateCustomer(commerceState, 'cus-lupita', { creditLimit: 30000 });
+assert.equal(customerUpdate.status, 'ok');
+assert.equal(customerPortfolio(commerceState).customers, 2);
+
+const lostCrate = markCrateAsLost(commerceState, 'loan-mercado-green');
+assert.equal(lostCrate.status, 'ok');
+assert.equal(commerceState.crateInventory.find((item) => item.crateTypeId === 'crate-green').quantityOwned, 108);
+const returnLost = returnCrateLoan(commerceState, 'loan-mercado-green');
+assert.equal(returnLost.status, 'skipped');
+
+const suppliers = supplierStats(commerceState);
+assert.equal(suppliers.supplierCount, 2);
+const order = createPurchaseOrder(commerceState, {
+  supplierId: 'sup-huerta',
+  varietyId: 'var-mango-ataulfo',
+  size: 'Mediano',
+  packaging: 'Caja',
+  quantity: 10,
+});
+assert.equal(order.status, 'ok');
+const received = receivePurchaseOrder(commerceState, order.order.id);
+assert.equal(received.status, 'ok');
+assert.equal(commerceState.purchaseOrders.find((item) => item.id === order.order.id).status, 'Recibido');
+
+const closed = closeCashDrawer(commerceState, 'drawer-main', commerceState.cashDrawers[0].balance + 50, 'conteo');
+assert.equal(closed.difference, 50);
+const opened = openCashDrawer(commerceState, 'drawer-main', 4000);
+assert.equal(opened.status, 'ok');
+const expense = addExpense(commerceState, { description: 'Gasolina ruta', amount: 500, category: 'Combustible' });
+assert.equal(expense.status, 'ok');
+assert.equal(financeSummary(commerceState).expenses >= 500, true);
 
 const exception = {
   id: 'task_report:report-route-sale-2',

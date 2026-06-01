@@ -123,7 +123,9 @@ try {
   });
 
   const value = result.result?.result?.value;
-  if (!value || !value.text.includes('Mesa operativa') || !value.hasActionCenter) {
+  const requiredText = ['Mesa operativa', 'Clientes', 'Proveedores', 'Finanzas'];
+  const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));
+  if (!value || !hasRequiredText || !value.hasActionCenter) {
     throw new Error(`FideoVue did not render expected cockpit text: ${JSON.stringify(value)} logs=${logs.join(' | ')}`);
   }
   if (value.cloaked) throw new Error('FideoVue remained cloaked after boot.');

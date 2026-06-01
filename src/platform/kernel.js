@@ -1,7 +1,10 @@
 import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domain/fideoState.js';
+import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
+import { addExpense, closeCashDrawer, openCashDrawer } from '../domain/finance/financeActions.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
 import { assignDelivery, completeSale, markOrderAsPacked } from '../domain/sales/salesActions.js';
+import { createPurchaseOrder, receivePurchaseOrder } from '../domain/suppliers/supplierActions.js';
 import { createAiGateway } from '../infrastructure/aiGateway.js';
 import { createPocketBaseGateway } from '../infrastructure/pocketbaseGateway.js';
 import { createVeeperGateway } from '../infrastructure/veeperGateway.js';
@@ -93,6 +96,40 @@ export const createKernel = ({ vue, config }) => {
     },
     completeSale: (saleId) => {
       pushReceipt(receipts, completeSale(state, saleId, 'Pagado', 'Efectivo'));
+    },
+    returnCrate: (loanId) => {
+      pushReceipt(receipts, returnCrateLoan(state, loanId));
+    },
+    markCrateLost: (loanId) => {
+      pushReceipt(receipts, markCrateAsLost(state, loanId));
+    },
+    receiveOrder: (orderId) => {
+      pushReceipt(receipts, receivePurchaseOrder(state, orderId));
+    },
+    createDemoOrder: () => {
+      const supplier = state.suppliers[0];
+      const supply = supplier?.supplies[0];
+      pushReceipt(receipts, createPurchaseOrder(state, {
+        supplierId: supplier?.id,
+        varietyId: supply?.varietyId,
+        size: supply?.availableSizes[0] || 'Mediano',
+        packaging: supply?.packagingOptions[0]?.name || 'Caja',
+        quantity: 12,
+      }));
+    },
+    toggleDrawer: (drawerId) => {
+      const drawer = state.cashDrawers.find((item) => item.id === drawerId);
+      const result = drawer?.status === 'Abierta'
+        ? closeCashDrawer(state, drawerId, drawer.balance)
+        : openCashDrawer(state, drawerId, 5000);
+      pushReceipt(receipts, result);
+    },
+    addExpense: () => {
+      pushReceipt(receipts, addExpense(state, {
+        description: 'Gasto operativo',
+        amount: 250,
+        category: 'Otros',
+      }));
     },
     inspectIntegrations: async () => {
       const results = await Promise.allSettled([

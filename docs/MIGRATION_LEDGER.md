@@ -24,15 +24,26 @@ Ported and verified:
 - Veeper WhatsApp handoff contract -> `src/infrastructure/veeperGateway.js`
 - codex-goal AI engine contract -> `src/infrastructure/aiGateway.js`
 - reusable V contracts -> `C:\git\v_projects\lib\fideo_core`
+- `frontend/hooks/useCatalogActions.ts` core catalog behavior ->
+  `src/domain/catalog/catalogActions.js`
+- `frontend/hooks/useInventoryActions.ts` FIFO inventory behavior ->
+  `src/domain/inventory/inventoryActions.js`
+- `frontend/hooks/useSalesActions.ts` and delivery task sync ->
+  `src/domain/sales/salesActions.js` plus `src/domain/delivery/taskAssignments.js`
+- `frontend/components/Customers.tsx` ledger/debt/crate subset ->
+  `src/domain/customers/*` plus `src/components/CommerceBoard.vue`
+- `frontend/components/Suppliers.tsx` purchase-order/cost subset ->
+  `src/domain/suppliers/*` plus `src/components/CommerceBoard.vue`
+- `frontend/components/Finances.tsx` cash/debt subset ->
+  `src/domain/finance/*` plus `src/components/CommerceBoard.vue`
 
 ## Pending Domains
 
-- Catalog, product groups, varieties, prices and ripening rules.
-- Inventory tables, planogram, assets and fixed assets.
-- Customers, customer portals, credit, routes and insights.
-- Suppliers, purchase orders and supplier portal.
-- Deliveries, packer portal and deliverer portal.
-- Finance, cash drawers, payments and activity history.
+- Inventory table parity, planogram, assets and fixed assets.
+- Customer portal, generated AI insights and full message campaigns.
+- Supplier portal and full purchase-order lifecycle.
+- Delivery board parity, packer portal and deliverer portal.
+- Finance activity history, advanced cash attention and fixed-asset sales.
 - Message feed, interpretation approval/correction/revert.
 - OneSignal push identity and live SLA policy.
 - PocketBase bootstrap, realtime restore and full normalized slices.
@@ -49,4 +60,3 @@ A Fideo source file is complete only when:
 - line guard remains under 600 lines
 - no direct secret, unsafe eval or raw HTML insertion is introduced
 - the slice is committed
-

@@ -1,24 +1,5 @@
+import { makeId, nowIso, pushLog, receipt } from '../core/events.js';
 import { syncOperationalTaskAssignments } from '../delivery/taskAssignments.js';
-
-const nowIso = () => new Date().toISOString();
-const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.round(Math.random() * 10000)}`;
-
-const receipt = (kind, status, message, extra = {}) => ({
-  kind,
-  status,
-  message,
-  ...extra,
-});
-
-const pushLog = (state, type, description, details = {}) => {
-  state.activityLog.unshift({
-    id: makeId('log'),
-    type,
-    timestamp: nowIso(),
-    description,
-    details,
-  });
-};
 
 const saleAmount = (sale) => Number(sale.price ?? sale.total ?? 0);
 
