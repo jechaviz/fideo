@@ -75,3 +75,36 @@ export const addExpense = (state, expenseData) => {
   });
   return receipt('expense_add', 'ok', `Gasto registrado: ${expense.description}`, { expense });
 };
+
+export const signedCashMovementAmount = (type, amount) => {
+  const cleanAmount = Math.abs(Number(amount || 0));
+  return ['EGRESO_COMPRA', 'DEPOSITO_BANCO', 'RETIRO_EFECTIVO'].includes(type) ? -cleanAmount : cleanAmount;
+};
+
+export const recordCashMovement = (state, drawerId, type, amount, notes = '', relatedId = '') => {
+  const drawer = findDrawer(state, drawerId);
+  if (!drawer) return receipt('cash_movement', 'skipped', 'Caja no encontrada.');
+  if (drawer.status !== 'Abierta') return receipt('cash_movement', 'failed', 'La caja esta cerrada.');
+
+  const signedAmount = signedCashMovementAmount(type, amount);
+  if (signedAmount < 0 && Math.abs(signedAmount) > Number(drawer.balance || 0)) {
+    return receipt('cash_movement', 'failed', 'Saldo insuficiente en caja.');
+  }
+
+  drawer.balance = Number(drawer.balance || 0) + signedAmount;
+  const activity = {
+    id: makeId('cda'),
+    drawerId,
+    type,
+    amount: signedAmount,
+    timestamp: nowIso(),
+    notes: notes || type.replace(/_/g, ' ').toLowerCase(),
+    relatedId,
+  };
+  state.cashDrawerActivities.unshift(activity);
+  pushLog(state, 'CAJA_OPERACION', `Movimiento de caja: ${activity.notes}`, {
+    Tipo: type,
+    Monto: signedAmount,
+  });
+  return receipt('cash_movement', 'ok', `Movimiento registrado: ${activity.notes}`, { activity });
+};

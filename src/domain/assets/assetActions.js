@@ -51,3 +51,49 @@ export const logAssetMaintenance = (state, assetId, cost, description) => {
   });
   return receipt('asset_maintenance', 'ok', `Mantenimiento registrado: ${asset.name}`, { assetId, expense });
 };
+
+export const sellCrateAsset = (state, customerId, crateTypeId, quantity = 1) => {
+  const customer = state.customers.find((item) => item.id === customerId);
+  const crateType = state.crateTypes.find((item) => item.id === crateTypeId);
+  const inventory = state.crateInventory.find((item) => item.crateTypeId === crateTypeId);
+  const cleanQuantity = Math.max(1, Number(quantity || 1));
+  if (!customer || !crateType || !inventory) return receipt('crate_asset_sale', 'skipped', 'Datos de activo incompletos.');
+  if (Number(inventory.quantityOwned || 0) < cleanQuantity) {
+    return receipt('crate_asset_sale', 'failed', 'Stock de activo insuficiente.');
+  }
+
+  const total = cleanQuantity * Number(crateType.cost || 0);
+  inventory.quantityOwned -= cleanQuantity;
+  const sale = {
+    id: makeId('sale_asset'),
+    customerId: customer.id,
+    customer: customer.name,
+    product: crateType.name,
+    productGroupId: 'asset',
+    productGroupName: 'Activos',
+    varietyId: crateType.id,
+    varietyName: crateType.name,
+    size: crateType.size,
+    quality: 'Normal',
+    state: 'Vendido',
+    quantity: cleanQuantity,
+    cogs: 0,
+    unit: 'unidades',
+    price: total,
+    total,
+    destination: 'Cliente',
+    status: 'Completado',
+    paymentStatus: 'En Deuda',
+    paymentMethod: 'Credito',
+    assignedEmployeeId: null,
+    timestamp: nowIso(),
+    deliveryDeadline: nowIso(),
+  };
+  state.sales.unshift(sale);
+  pushLog(state, 'VENTA_ACTIVO_CRUD', `Venta de activo a ${customer.name}`, {
+    Activo: crateType.name,
+    Cantidad: cleanQuantity,
+    Total: total,
+  });
+  return receipt('crate_asset_sale', 'ok', `Activo vendido: ${crateType.name}`, { sale });
+};

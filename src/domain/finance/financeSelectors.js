@@ -1,5 +1,14 @@
 import { customerPortfolio } from '../customers/customerLedger.js';
 
+const activityLabel = {
+  INGRESO_VENTA: 'Ingreso',
+  EGRESO_COMPRA: 'Compra',
+  DEPOSITO_BANCO: 'Deposito',
+  RETIRO_EFECTIVO: 'Retiro',
+  SALDO_INICIAL: 'Apertura',
+  CORTE_CIERRE: 'Corte',
+};
+
 const activityDifference = (activity) => {
   const match = String(activity.notes || '').match(/Diferencia al cierre:\s*([+-]?\d+(?:\.\d+)?)/i);
   return match ? Number(match[1]) : 0;
@@ -66,3 +75,33 @@ export const cashAttention = (state) => {
     warning: items.filter((item) => item.tone === 'warning').length,
   };
 };
+
+export const cashActivityRows = (state, drawerId = '') =>
+  state.cashDrawerActivities
+    .filter((activity) => !drawerId || activity.drawerId === drawerId)
+    .map((activity) => {
+      const difference = activityDifference(activity);
+      return {
+        ...activity,
+        label: activityLabel[activity.type] || activity.type.replace(/_/g, ' '),
+        difference,
+        signedAmount: Number(activity.amount || 0),
+        isDifference: difference !== 0,
+      };
+    })
+    .toSorted((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0));
+
+export const debtRows = (state) =>
+  customerPortfolio(state).ledgers
+    .filter((ledger) => ledger.totalBalance > 0 || ledger.sales.some((sale) => sale.paymentStatus !== 'Pagado'))
+    .map((ledger) => ({
+      customerId: ledger.customer.id,
+      customerName: ledger.customer.name,
+      monetaryDebt: ledger.monetaryDebt,
+      lentCratesValue: ledger.lentCratesValue,
+      totalBalance: ledger.totalBalance,
+      totalOrders: ledger.totalOrders,
+      creditUsagePct: ledger.creditUsagePct,
+      lastSaleAt: ledger.lastSale?.timestamp || null,
+    }))
+    .toSorted((left, right) => right.totalBalance - left.totalBalance);

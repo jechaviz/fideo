@@ -1,9 +1,9 @@
 import { createInitialState, deriveMetrics, buildExceptionQueue } from '../domain/fideoState.js';
-import { addFixedAsset, logAssetMaintenance } from '../domain/assets/assetActions.js';
+import { addFixedAsset, logAssetMaintenance, sellCrateAsset } from '../domain/assets/assetActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
-import { addExpense, closeCashDrawer, openCashDrawer } from '../domain/finance/financeActions.js';
+import { addExpense, closeCashDrawer, openCashDrawer, recordCashMovement } from '../domain/finance/financeActions.js';
 import { changeQuality, moveInventory } from '../domain/inventory/inventoryActions.js';
 import { addMessage, approveInterpretation, interpretMessage, revertInterpretation, sendPromotion } from '../domain/messages/messageActions.js';
 import { followUpException, reassignException, resolveException } from '../domain/operations/exceptionLoop.js';
@@ -144,6 +144,17 @@ export const createKernel = ({ vue, config }) => {
         amount: 250,
         category: 'Otros',
       }));
+    },
+    cashDeposit: (drawerId) => {
+      pushReceipt(receipts, recordCashMovement(state, drawerId, 'DEPOSITO_BANCO', 750, 'Deposito a banco'));
+    },
+    cashWithdraw: (drawerId) => {
+      pushReceipt(receipts, recordCashMovement(state, drawerId, 'RETIRO_EFECTIVO', 300, 'Retiro operativo'));
+    },
+    sellCrateAsset: () => {
+      const customer = state.customers[0];
+      const crateType = state.crateTypes[0];
+      pushReceipt(receipts, sellCrateAsset(state, customer?.id, crateType?.id, 2));
     },
     addDemoMessage: () => {
       pushReceipt(receipts, addMessage(state, 'compra proveedor mango mediano 10 cajas', 'Huerta del Sur'));

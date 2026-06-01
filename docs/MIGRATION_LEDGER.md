@@ -49,6 +49,8 @@ Ported and verified:
   `src/domain/portals/portalSelectors.js` plus `src/components/PortalAssetBoard.vue`
 - `frontend/components/Deliveries.tsx` and `views/DelivererView.tsx` task/report subset ->
   `src/domain/delivery/*` plus `src/components/DeliveryOpsBoard.vue`
+- `frontend/components/Finances.tsx` cash attention, drawer timeline and asset-sale subset ->
+  `src/domain/finance/*`, `src/domain/assets/assetActions.js` plus `src/components/FinanceOpsBoard.vue`
 
 ## Pending Domains
 
@@ -56,7 +58,7 @@ Ported and verified:
 - Generated AI insights and full message campaigns.
 - Full purchase-order lifecycle.
 - Advanced delivery presence, map deep links and remote report receipts.
-- Finance activity history, advanced cash attention and fixed-asset sales.
+- Advanced finance exports and remote cash receipts.
 - Full Gemini/codex-goal message interpretation parity and remote correction receipts.
 - OneSignal live SDK binding behind explicit deployment gate.
 - PocketBase bootstrap, realtime restore and full normalized slices.

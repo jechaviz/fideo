@@ -52,6 +52,15 @@
       @add-expense="actions.addExpense"
     />
 
+    <FinanceOpsBoard
+      :state="state"
+      @toggle-drawer="actions.toggleDrawer"
+      @cash-deposit="actions.cashDeposit"
+      @cash-withdraw="actions.cashWithdraw"
+      @sell-crate-asset="actions.sellCrateAsset"
+      @add-expense="actions.addExpense"
+    />
+
     <MessageBoard
       :state="state"
       @add-message="actions.addDemoMessage"
@@ -99,6 +108,7 @@ export default {
     const DomainBoard = resolveComponent('DomainBoard');
     const DeliveryOpsBoard = resolveComponent('DeliveryOpsBoard');
     const CommerceBoard = resolveComponent('CommerceBoard');
+    const FinanceOpsBoard = resolveComponent('FinanceOpsBoard');
     const MessageBoard = resolveComponent('MessageBoard');
     const PortalAssetBoard = resolveComponent('PortalAssetBoard');
 
@@ -150,6 +160,14 @@ export default {
         onReceiveOrder: this.actions.receiveOrder,
         onCreateDemoOrder: this.actions.createDemoOrder,
         onToggleDrawer: this.actions.toggleDrawer,
+        onAddExpense: this.actions.addExpense,
+      }),
+      h(FinanceOpsBoard, {
+        state: this.state,
+        onToggleDrawer: this.actions.toggleDrawer,
+        onCashDeposit: this.actions.cashDeposit,
+        onCashWithdraw: this.actions.cashWithdraw,
+        onSellCrateAsset: this.actions.sellCrateAsset,
         onAddExpense: this.actions.addExpense,
       }),
       h(MessageBoard, {
