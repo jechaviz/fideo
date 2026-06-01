@@ -41,7 +41,8 @@ const boot = async () => {
   const kernel = createKernel({
     vue: window.Vue,
     config: {
-      pocketbaseBaseUrl: '',
+      pocketbaseBaseUrl: './',
+      pocketbaseBackend: 'mysql',
       oneSignalAppId: '',
       allowOneSignalLive: false,
       veeperBaseUrl: 'http://127.0.0.1:8097',

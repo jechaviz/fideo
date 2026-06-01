@@ -1,5 +1,22 @@
 export const createJsonClient = ({ baseUrl = '', token = '', browserClient = 'fideo-vue' } = {}) => {
-  const buildUrl = (path) => new URL(path, baseUrl || window.location.href).href;
+  const browserHref = () => (typeof window !== 'undefined' ? window.location.href : 'http://127.0.0.1/');
+
+  const resolvedBaseUrl = () => new URL(baseUrl || browserHref(), browserHref());
+
+  const buildUrl = (path) => {
+    const base = resolvedBaseUrl();
+    if (baseUrl && path.startsWith('/')) {
+      const basePath = base.pathname.endsWith('/')
+        ? base.pathname
+        : base.pathname.replace(/\/[^/]*$/, '/');
+      const target = new URL(base.href);
+      target.pathname = `${basePath}${path.replace(/^\/+/, '')}`.replace(/\/{2,}/g, '/');
+      target.search = '';
+      target.hash = '';
+      return target.href;
+    }
+    return new URL(path, base.href).href;
+  };
 
   const request = async (path, options = {}) => {
     const headers = {

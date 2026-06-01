@@ -2,15 +2,18 @@ const bool = (value) => value === true || value === 'true' || value === '1';
 
 export const runtimeGateMatrix = (config = {}) => {
   const pocketbaseLive = Boolean(config.pocketbaseBaseUrl);
+  const snapshotBackend = config.pocketbaseBackend === 'mysql' ? 'mysql' : 'pocketbase';
   const veeperLive = Boolean(config.veeperBaseUrl);
   const oneSignalLive = bool(config.allowOneSignalLive) && Boolean(config.oneSignalAppId);
   const aiLive = Boolean(config.codexGoalPath);
   return [
     {
       id: 'pocketbase',
-      title: 'PocketBase realtime',
+      title: snapshotBackend === 'mysql' ? 'MySQL snapshot' : 'PocketBase realtime',
       status: pocketbaseLive ? 'live-ready' : 'dry-run',
-      detail: pocketbaseLive ? config.pocketbaseBaseUrl : 'Sin baseUrl; snapshot local.',
+      detail: pocketbaseLive
+        ? `${config.pocketbaseBaseUrl} via ${snapshotBackend}`
+        : 'Sin baseUrl; snapshot local.',
     },
     {
       id: 'onesignal',

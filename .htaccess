@@ -1,0 +1,10 @@
+DirectoryIndex index.html
+RewriteEngine On
+
+RewriteRule ^healthz$ health.html [L]
+RewriteRule ^api/health$ api/health.php [L]
+RewriteRule ^api/fideo/.*$ api/fideo/index.php [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]

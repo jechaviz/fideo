@@ -28,7 +28,7 @@ const injectStyle = (id, css) => {
   loadedStyles.add(id);
 };
 
-const rootModuleUrl = (path) => new URL(`/${path}`, window.location.origin).href;
+const rootModuleUrl = (path) => new URL(path, appBase).href;
 
 const rewriteRootModuleSpecifiers = (source) =>
   source

@@ -8,12 +8,13 @@ const dryReceipt = (message) => ({
   message,
 });
 
-export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
+export const createPocketBaseGateway = ({ baseUrl = '', backend = 'pocketbase' } = {}) => {
   const client = createJsonClient({ baseUrl, browserClient: '' });
+  const label = backend === 'mysql' ? 'MySQL snapshot adapter' : 'PocketBase';
 
   const requireBaseUrl = () => {
     if (!baseUrl) {
-      return dryReceipt('PocketBase no esta configurado en este slice estatico.');
+      return dryReceipt(`${label} no esta configurado en este slice estatico.`);
     }
     return null;
   };
@@ -50,14 +51,13 @@ export const createPocketBaseGateway = ({ baseUrl = '' } = {}) => {
         };
       }
 
-      const response = await fetch(new URL('/api/health', baseUrl).href, {
-        credentials: 'same-origin',
-      });
+      const response = await client.get('api/health');
 
       return {
-        kind: 'pocketbase',
-        status: response.ok ? 'ok' : 'failed',
-        message: response.ok ? 'PocketBase responde health.' : `PocketBase HTTP ${response.status}`,
+        kind: backend === 'mysql' ? 'mysql_snapshot' : 'pocketbase',
+        status: response.status === 'ok' ? 'ok' : 'failed',
+        message: response.message || `${label} responde health.`,
+        backend: response.backend || backend,
       };
     },
     bootstrap(seedSnapshot) {

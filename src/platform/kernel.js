@@ -113,7 +113,10 @@ export const createKernel = ({ vue, config }) => {
   const receipts = createReceipts(vue);
 
   const veeper = createVeeperGateway({ baseUrl: config.veeperBaseUrl });
-  const pocketbase = createPocketBaseGateway({ baseUrl: config.pocketbaseBaseUrl || '' });
+  const pocketbase = createPocketBaseGateway({
+    baseUrl: config.pocketbaseBaseUrl || '',
+    backend: config.pocketbaseBackend || 'pocketbase',
+  });
   const pocketbaseRoutes = pocketbase.routes();
   const ai = createAiGateway({ codexGoalPath: config.codexGoalPath });
   const runtimeGates = runtimeGateMatrix(config);
