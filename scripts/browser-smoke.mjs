@@ -31,10 +31,20 @@ const withTimeout = (promise, label, ms = 20000) => {
   ]);
 };
 
+const fetchWithTimeout = async (targetUrl, options = {}, ms = 1500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(targetUrl, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const waitForJson = async (targetUrl, tries = 120) => {
   for (let index = 0; index < tries; index += 1) {
     try {
-      const response = await fetch(targetUrl);
+      const response = await fetchWithTimeout(targetUrl);
       if (response.ok) return response.json();
     } catch {
       await delay(250);
@@ -55,13 +65,13 @@ const child = spawn(browser, [
 
 const cleanup = async () => {
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 });
     const escapedUserDataDir = userDataDir.replace(/'/g, "''");
     spawnSync('powershell.exe', [
       '-NoProfile',
       '-Command',
       `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedUserDataDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
-    ], { stdio: 'ignore' });
+    ], { stdio: 'ignore', timeout: 5000 });
   } else {
     child.kill();
   }
@@ -70,8 +80,8 @@ const cleanup = async () => {
 };
 
 try {
-  await withTimeout(waitForJson(`http://127.0.0.1:${port}/json/version`), 'CDP version');
-  const targetResponse = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' });
+  await withTimeout(waitForJson(`http://127.0.0.1:${port}/json/version`), 'CDP version', 45000);
+  const targetResponse = await fetchWithTimeout(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' }, 5000);
   const target = await targetResponse.json();
 
   const ws = new WebSocket(target.webSocketDebuggerUrl);
