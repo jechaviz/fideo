@@ -56,6 +56,12 @@ const child = spawn(browser, [
 const cleanup = async () => {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    const escapedUserDataDir = userDataDir.replace(/'/g, "''");
+    spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedUserDataDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+    ], { stdio: 'ignore' });
   } else {
     child.kill();
   }
