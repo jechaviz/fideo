@@ -20,6 +20,7 @@ if (!browser) {
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const quotePowerShell = (value) => `'${String(value).replace(/'/g, "''")}'`;
 
 const withTimeout = (promise, label, ms = 20000) => {
   let timer;
@@ -41,27 +42,53 @@ const fetchWithTimeout = async (targetUrl, options = {}, ms = 1500) => {
   }
 };
 
-const waitForJson = async (targetUrl, tries = 120) => {
-  for (let index = 0; index < tries; index += 1) {
+const waitForJson = async (targetUrl, timeoutMs = 45000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     try {
-      const response = await fetchWithTimeout(targetUrl);
+      const remaining = Math.max(250, deadline - Date.now());
+      const response = await fetchWithTimeout(targetUrl, {}, Math.min(1500, remaining));
       if (response.ok) return response.json();
     } catch {
-      await delay(250);
+      await delay(Math.min(250, Math.max(0, deadline - Date.now())));
     }
   }
   throw new Error(`CDP endpoint not ready: ${targetUrl}`);
 };
 
 const userDataDir = await mkdtemp(join(tmpdir(), 'fideovue-cdp-'));
-const child = spawn(browser, [
+const browserArgs = [
   '--headless=new',
   '--disable-gpu',
   '--no-first-run',
   `--remote-debugging-port=${port}`,
   `--user-data-dir=${userDataDir}`,
   'about:blank',
-], { stdio: 'ignore' });
+];
+const launchBrowser = () => {
+  if (process.platform !== 'win32') {
+    return spawn(browser, browserArgs, { stdio: 'ignore' });
+  }
+  const command = [
+    `$p = Start-Process -FilePath ${quotePowerShell(browser)}`,
+    `-ArgumentList @(${browserArgs.map(quotePowerShell).join(',')})`,
+    '-PassThru -WindowStyle Hidden;',
+    'Write-Output $p.Id',
+  ].join(' ');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', command], {
+    encoding: 'utf8',
+    timeout: 30000,
+  });
+  if (result.status !== 0) {
+    throw new Error(`Browser launch failed status=${result.status} signal=${result.signal}: ${(result.stderr || result.stdout || '').trim()}`);
+  }
+  const pid = Number(String(result.stdout || '').trim());
+  if (!Number.isFinite(pid) || pid <= 0) {
+    throw new Error(`Browser launch did not return a process id: ${result.stdout}`);
+  }
+  return { pid, kill: () => spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 }) };
+};
+const child = launchBrowser();
 
 const cleanup = async () => {
   if (process.platform === 'win32') {
@@ -80,7 +107,7 @@ const cleanup = async () => {
 };
 
 try {
-  await withTimeout(waitForJson(`http://127.0.0.1:${port}/json/version`), 'CDP version', 45000);
+  await waitForJson(`http://127.0.0.1:${port}/json/version`);
   const targetResponse = await fetchWithTimeout(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' }, 5000);
   const target = await targetResponse.json();
 
