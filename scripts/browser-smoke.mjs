@@ -31,7 +31,7 @@ const withTimeout = (promise, label, ms = 20000) => {
   ]);
 };
 
-const waitForJson = async (targetUrl, tries = 40) => {
+const waitForJson = async (targetUrl, tries = 120) => {
   for (let index = 0; index < tries; index += 1) {
     try {
       const response = await fetch(targetUrl);
