@@ -2,6 +2,7 @@ const bool = (value) => value === true || value === 'true' || value === '1';
 
 export const runtimeGateMatrix = (config = {}) => {
   const snapshotConfigured = Boolean(config.pocketbaseBaseUrl);
+  const snapshotMutationsEnabled = snapshotConfigured && Boolean(config.pocketbaseToken);
   const snapshotBackend = config.pocketbaseBackend === 'mysql' ? 'mysql' : 'pocketbase';
   const veeperConfigured = Boolean(config.veeperBaseUrl);
   const oneSignalLive = bool(config.allowOneSignalLive) && Boolean(config.oneSignalAppId);
@@ -10,9 +11,9 @@ export const runtimeGateMatrix = (config = {}) => {
     {
       id: 'pocketbase',
       title: snapshotBackend === 'mysql' ? 'MySQL snapshot' : 'PocketBase realtime',
-      status: snapshotConfigured ? 'configured' : 'dry-run',
+      status: snapshotConfigured ? (snapshotMutationsEnabled ? 'configured' : 'gated') : 'dry-run',
       detail: snapshotConfigured
-        ? `${config.pocketbaseBaseUrl} via ${snapshotBackend}; validar con inspeccion.`
+        ? `${config.pocketbaseBaseUrl} via ${snapshotBackend}; ${snapshotMutationsEnabled ? 'mutaciones habilitadas' : 'mutaciones protegidas'}.`
         : 'Sin baseUrl; snapshot local.',
     },
     {
