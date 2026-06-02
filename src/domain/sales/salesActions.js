@@ -11,7 +11,11 @@ const findCustomerForSale = (state, sale) =>
 export const addPayment = (state, customerId, amount, saleId = '') => {
   const customer = state.customers.find((item) => item.id === customerId);
   if (!customer) return receipt('payment_add', 'skipped', 'Cliente no encontrado.');
-  const payment = { id: makeId('pay'), customerId, amount: Number(amount || 0), date: nowIso(), saleId };
+  const paymentAmount = Number(amount);
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    return receipt('payment_add', 'failed', 'El abono debe ser mayor a cero.');
+  }
+  const payment = { id: makeId('pay'), customerId, amount: paymentAmount, date: nowIso(), saleId };
   state.payments.unshift(payment);
   pushLog(state, 'PAYMENT_CRUD', `Abono registrado de ${customer.name}`, { Monto: payment.amount });
   return receipt('payment_add', 'ok', `Abono registrado: ${customer.name}`, { payment });
@@ -20,6 +24,12 @@ export const addPayment = (state, customerId, amount, saleId = '') => {
 export const markOrderAsPacked = (state, saleId) => {
   const sale = findSale(state, saleId);
   if (!sale) return receipt('sale_pack', 'skipped', 'Venta no encontrada.');
+  if (sale.status === 'Listo para Entrega') {
+    return receipt('sale_pack', 'skipped', 'El pedido ya esta listo para entrega.');
+  }
+  if (sale.status !== 'Pendiente de Empaque') {
+    return receipt('sale_pack', 'failed', 'Solo se puede empacar una venta pendiente de empaque.');
+  }
   sale.status = 'Listo para Entrega';
   pushLog(state, 'PEDIDO_EMPACADO', `Pedido empacado para ${sale.customer}`, { PedidoID: sale.id });
   syncOperationalTaskAssignments(state);
@@ -49,6 +59,10 @@ export const assignDelivery = (state, saleId, employeeId) => {
 export const completeSale = (state, saleId, paymentStatus = 'Pagado', paymentMethod = 'Efectivo', paymentNotes = '') => {
   const sale = findSale(state, saleId);
   if (!sale) return receipt('sale_complete', 'skipped', 'Venta no encontrada.');
+  if (sale.status === 'Completado') return receipt('sale_complete', 'skipped', 'La venta ya esta completada.');
+  if (sale.status !== 'En Ruta') {
+    return receipt('sale_complete', 'failed', 'La venta debe estar en ruta antes de completarse.');
+  }
   const customer = findCustomerForSale(state, sale);
   if (!customer) return receipt('sale_complete', 'failed', 'Cliente no encontrado.');
 

@@ -119,8 +119,13 @@ export const correctInterpretation = (state, messageId, interpretation) => {
 export const approveInterpretation = (state, messageId) => {
   const message = state.messages.find((item) => item.id === messageId);
   if (!message?.interpretation) return receipt('message_approve', 'skipped', 'Interpretacion no encontrada.');
+  if (message.status === 'approved') return receipt('message_approve', 'skipped', 'Mensaje ya aprobado.');
   const snapshot = clone(state);
   const interpretation = message.interpretation;
+
+  if (interpretation.type === InterpretationType.unknown) {
+    return receipt('message_approve', 'failed', 'La interpretacion requiere correccion antes de aprobarse.', { messageId });
+  }
 
   if (interpretation.type === InterpretationType.offer) {
     pushLog(state, 'OFERTA_ENVIADA', `Oferta creada para ${interpretation.data.targetAudience || 'clientes'}`, {
@@ -128,7 +133,14 @@ export const approveInterpretation = (state, messageId) => {
     });
   }
   if (interpretation.type === InterpretationType.purchaseOrder) {
-    createPurchaseOrder(state, interpretation.data);
+    const actionReceipt = createPurchaseOrder(state, interpretation.data);
+    if (actionReceipt.status !== 'ok') {
+      restoreState(state, snapshot);
+      return receipt('message_approve', 'failed', actionReceipt.message, { messageId });
+    }
+  }
+  if (interpretation.type === InterpretationType.priceUpdate) {
+    return receipt('message_approve', 'failed', 'El ajuste de precio requiere datos completos antes de aprobarse.', { messageId });
   }
 
   updateMessage(state, messageId, (current) => ({

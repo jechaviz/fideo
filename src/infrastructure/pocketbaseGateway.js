@@ -34,7 +34,7 @@ export const createPocketBaseGateway = ({ baseUrl = '', backend = 'pocketbase' }
 
   const routePath = (routeId) => {
     const route = routeById(routeId);
-    if (!route) throw new Error(`Ruta PocketBase no registrada: ${routeId}`);
+    if (!route) throw new Error(`Ruta snapshot no registrada: ${routeId}`);
     return route.path;
   };
 
@@ -75,9 +75,9 @@ export const createPocketBaseGateway = ({ baseUrl = '', backend = 'pocketbase' }
       const dry = requireBaseUrl();
       if (dry) return Promise.resolve({ ...dry, realtime: 'disabled' });
       return Promise.resolve({
-        kind: 'pocketbase_realtime',
+        kind: backend === 'mysql' ? 'mysql_realtime_plan' : 'pocketbase_realtime',
         status: 'planned',
-        message: 'Realtime subscribe listo para el adaptador PocketBase.',
+        message: `Realtime subscribe listo para el adaptador ${label}.`,
         workspaceId,
         snapshotRecordId,
       });

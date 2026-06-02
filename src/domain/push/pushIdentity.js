@@ -35,7 +35,7 @@ export const buildPushTags = (identity) => {
     user_id: identity.userId,
     push_external_id: identity.externalId,
     external_id_source: identity.externalIdSource,
-    auth_source: 'pocketbase',
+    auth_source: 'mysql',
   };
   if (identity.employeeId) tags.employee_id = identity.employeeId;
   if (identity.customerId) tags.customer_id = identity.customerId;

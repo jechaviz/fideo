@@ -422,7 +422,7 @@ export const createInitialState = () => ({
   systemPrompt: 'Interpreta mensajes de Fideo con prioridad en ventas, compras, precios, entregas y ofertas.',
   activityLog: [],
   integrations: {
-    pocketbase: { status: 'pending', label: 'PocketBase snapshot runtime' },
+    pocketbase: { status: 'pending', label: 'MySQL snapshot runtime' },
     veeper: { status: 'pending', label: 'Veeper WhatsApp handoff' },
     ai: { status: 'dry-run', label: 'codex-goal AI engines' },
   },

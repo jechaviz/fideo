@@ -68,6 +68,15 @@ export const createPurchaseOrder = (state, input) => {
   }
 
   const quantity = Number(input.quantity || 0);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return receipt('purchase_order_add', 'failed', 'La cantidad de compra debe ser mayor a cero.');
+  }
+  if (supply.availableSizes?.length && !supply.availableSizes.includes(input.size)) {
+    return receipt('purchase_order_add', 'failed', 'Tamano no disponible para este proveedor.');
+  }
+  if (supply.packagingOptions?.length && !supply.packagingOptions.some((option) => option.name === input.packaging)) {
+    return receipt('purchase_order_add', 'failed', 'Empaque no disponible para este proveedor.');
+  }
   const totalCost = (supply.baseCost + supply.freightCost + packagingCost(supply, input.packaging)) * quantity;
   const order = {
     id: makeId('po'),
@@ -95,6 +104,9 @@ export const receivePurchaseOrder = (state, orderId, warehouseId = 'wh-main') =>
   const order = state.purchaseOrders.find((item) => item.id === orderId);
   if (!order) return receipt('purchase_order_receive', 'skipped', 'Orden no encontrada.');
   if (order.status === 'Recibido') return receipt('purchase_order_receive', 'skipped', 'Orden ya recibida.');
+  if (!Number.isFinite(Number(order.quantity)) || Number(order.quantity) <= 0) {
+    return receipt('purchase_order_receive', 'failed', 'La orden no tiene cantidad valida para inventario.');
+  }
   order.status = 'Recibido';
 
   const product = productInfoFor(state, order.varietyId);

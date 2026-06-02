@@ -4,7 +4,7 @@
       <h2>Gates runtime</h2>
     </article>
     <article class="surface p-4">
-      <h2>PocketBase realtime</h2>
+      <h2>MySQL snapshot</h2>
     </article>
   </section>
 </template>
@@ -59,7 +59,7 @@ export default {
       h('article', { class: 'surface p-4' }, [
         h('div', { class: 'flex items-start justify-between gap-3' }, [
           h('div', [
-            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'PocketBase realtime'),
+            h('h2', { class: 'm-0 text-lg font-black text-white' }, 'MySQL snapshot'),
             h('p', { class: 'mt-2 text-sm text-slate-400' },
               `${this.pocketbaseRoutes.length} rutas manifestadas con bootstrap, persistencia y mensajes.`),
           ]),

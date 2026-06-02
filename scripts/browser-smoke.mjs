@@ -130,6 +130,8 @@ try {
     'Finanzas',
     'Mensajes IA',
     'Campanas',
+    'AUDITORIA ROLES',
+    'Pipelines por rol',
     'ENTREGA VIVA',
     'Atencion ruta',
     'Presencia ruta',
@@ -155,7 +157,7 @@ try {
     'Planograma',
     'Portales',
     'Gates runtime',
-    'PocketBase realtime',
+    'MySQL snapshot',
     'OneSignal live',
   ];
   const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));

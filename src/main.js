@@ -15,6 +15,7 @@ const componentUrls = {
   MetricStrip: './src/components/MetricStrip.vue',
   PortalAssetBoard: './src/components/PortalAssetBoard.vue',
   RuntimeGateBoard: './src/components/RuntimeGateBoard.vue',
+  RolePipelineAuditBoard: './src/components/RolePipelineAuditBoard.vue',
   ShellHeader: './src/components/ShellHeader.vue',
   SupplierOpsBoard: './src/components/SupplierOpsBoard.vue',
 };

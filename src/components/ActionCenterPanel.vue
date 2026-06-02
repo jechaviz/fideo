@@ -32,7 +32,7 @@
           <select class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-sm text-white" @change="onReassign(item, $event)">
             <option value="">Seleccionar responsable</option>
             <option v-for="employee in employees" :key="employee.id" :value="employee.id">
-              {{ employee.name }} · {{ employee.role }}
+              {{ employee.name }} - {{ employee.role }}
             </option>
           </select>
         </label>
@@ -88,7 +88,7 @@ export default {
           }, [
             h('option', { value: '' }, 'Seleccionar responsable'),
             ...this.employees.map((employee) =>
-              h('option', { key: employee.id, value: employee.id }, `${employee.name} · ${employee.role}`)),
+              h('option', { key: employee.id, value: employee.id }, `${employee.name} - ${employee.role}`)),
           ]),
         ]),
       ]);

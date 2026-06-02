@@ -1,7 +1,7 @@
 import { makeId, nowIso, pushLog, receipt } from '../core/events.js';
 
 export const pingDeliveryPresence = (state, employeeId, input = {}) => {
-  const employee = state.employees.find((item) => item.id === employeeId);
+  const employee = state.employees.find((item) => item.id === employeeId && item.role === 'Repartidor');
   if (!employee) return receipt('delivery_presence_ping', 'skipped', 'Repartidor no encontrado.');
   state.deliveryPresence ||= [];
   const existing = state.deliveryPresence.find((item) => item.employeeId === employeeId);

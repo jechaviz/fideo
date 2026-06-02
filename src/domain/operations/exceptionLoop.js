@@ -13,6 +13,12 @@ const makeReceipt = (kind, message, extra = {}) => ({
   ...extra,
 });
 
+const requiredRoleByTaskKind = {
+  PACK_ORDER: 'Empacador',
+  DELIVER_ORDER: 'Repartidor',
+  ASSIGN_DELIVERY: 'Admin',
+};
+
 export const followUpException = (state, exception) => {
   const task = findTask(state, exception);
   const report = findReport(state, exception);
@@ -61,11 +67,26 @@ export const reassignException = (state, exception, employeeId) => {
   if (!task || !assignee) {
     return { receipt: makeReceipt('reassign', 'No se pudo resolver la reasignacion.', { status: 'skipped' }) };
   }
+  const requiredRole = requiredRoleByTaskKind[task.kind];
+  if (requiredRole && assignee.role !== requiredRole) {
+    return {
+      receipt: makeReceipt('reassign', `La tarea requiere rol ${requiredRole}.`, {
+        status: 'failed',
+        taskId: task.taskId,
+        employeeId: assignee.id,
+      }),
+    };
+  }
 
   task.employeeId = assignee.id;
   task.employeeName = assignee.name;
   task.role = assignee.role;
   task.updatedAt = nowIso();
+
+  if (task.kind === 'DELIVER_ORDER' && task.saleId) {
+    const sale = state.sales.find((item) => item.id === task.saleId);
+    if (sale) sale.assignedEmployeeId = assignee.id;
+  }
 
   return {
     receipt: makeReceipt('reassign', `Tarea reasignada a ${assignee.name}.`, {
@@ -86,8 +107,11 @@ export const resolveException = (state, exception) => {
   }
 
   if (task) {
-    task.status = 'done';
-    task.doneAt = resolvedAt;
+    if (task.status === 'blocked') task.status = 'acknowledged';
+    task.blockReason = undefined;
+    task.blockedReason = undefined;
+    task.blockedAt = undefined;
+    task.updatedAt = resolvedAt;
   }
 
   state.activityLog.unshift({
@@ -104,4 +128,3 @@ export const resolveException = (state, exception) => {
     }),
   };
 };
-

@@ -73,10 +73,11 @@ import {
 } from '../src/domain/messages/messageInsights.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
+import { rolePipelineAudit } from '../src/domain/operations/rolePipelineAudit.js';
 import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
 import { customerPortal, packerPortal, supplierPortal } from '../src/domain/portals/portalSelectors.js';
 import { planPushBinding } from '../src/domain/push/pushIdentity.js';
-import { assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
+import { addPayment, assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import {
   createPurchaseOrder,
   recordPurchaseProviderReceipt,
@@ -108,6 +109,13 @@ assert.equal(compact.productGroups, undefined);
 assert.equal(compact.taskAssignments.length, 2);
 assert.equal(snapshot.productGroups.length, 3);
 assert.equal(snapshot.stateIcons.Verde, 'VE');
+
+const initialAudit = rolePipelineAudit(createInitialState());
+assert.equal(initialAudit.summary.adminKnowsEverything, true);
+assert.equal(initialAudit.summary.objectivesAchieved, false);
+assert.equal(initialAudit.objectives.find((item) => item.id === 'orders').status, 'critical');
+assert.equal(initialAudit.roleCards.some((card) => card.role === 'Admin'), true);
+assert.equal(initialAudit.risks.some((risk) => risk.owner === 'Ruta Centro'), true);
 
 const catalogState = createInitialState();
 const archive = setProductGroupArchived(catalogState, 'pg-mango', true);
@@ -205,6 +213,13 @@ const salesState = createInitialState();
 syncOperationalTaskAssignments(salesState);
 assert.equal(salesState.taskAssignments.some((task) => task.taskId === 'pack-sale-1'), true);
 
+const invalidPack = markOrderAsPacked(salesState, 'sale-2');
+assert.equal(invalidPack.status, 'failed');
+assert.equal(salesState.sales.find((sale) => sale.id === 'sale-2').status, 'En Ruta');
+const prematureComplete = completeSale(salesState, 'sale-1', 'Pagado', 'Efectivo');
+assert.equal(prematureComplete.status, 'failed');
+assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'Pendiente de Empaque');
+
 const packed = markOrderAsPacked(salesState, 'sale-1');
 assert.equal(packed.status, 'ok');
 assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'Listo para Entrega');
@@ -226,6 +241,9 @@ assert.equal(completed.status, 'ok');
 assert.equal(salesState.sales.find((sale) => sale.id === 'sale-1').status, 'Completado');
 assert.equal(salesState.payments.length, 1);
 assert.equal(salesState.cashDrawers[0].balance, 16280);
+const invalidPayment = addPayment(salesState, 'cus-lupita', 0);
+assert.equal(invalidPayment.status, 'failed');
+assert.equal(salesState.payments.length, 1);
 
 const blockedTask = updateTaskAssignmentStatus(salesState, 'route-sale-2', 'blocked', {
   employeeId: 'emp-route',
@@ -240,6 +258,8 @@ assert.equal(routeGroups(deliveryState).length, 1);
 const pingPresence = pingDeliveryPresence(deliveryState, 'emp-route', { status: 'active' });
 assert.equal(pingPresence.status, 'ok');
 assert.equal(deliveryPresenceRows(deliveryState)[0].status, 'active');
+const invalidPresence = pingDeliveryPresence(deliveryState, 'emp-admin', { status: 'active' });
+assert.equal(invalidPresence.status, 'skipped');
 const taskNote = submitTaskReport(deliveryState, 'pack-sale-1', {
   kind: 'note',
   summary: 'Empaque revisado',
@@ -247,10 +267,10 @@ const taskNote = submitTaskReport(deliveryState, 'pack-sale-1', {
 assert.equal(taskNote.status, 'ok');
 const reportReceipt = recordDeliveryReportReceipt(deliveryState, {
   reportId: taskNote.report.id,
-  provider: 'pocketbase',
+  provider: 'mysql',
 });
 assert.equal(reportReceipt.status, 'ok');
-assert.equal(deliveryReportReceiptRows(deliveryState)[0].provider, 'pocketbase');
+assert.equal(deliveryReportReceiptRows(deliveryState)[0].provider, 'mysql');
 const routeIncident = submitTaskReport(deliveryState, 'route-sale-2', {
   kind: 'incident',
   summary: 'Cliente no contesta',
@@ -284,6 +304,22 @@ const suppliers = supplierStats(commerceState);
 assert.equal(suppliers.supplierCount, 2);
 const supplierEdit = updateSupplier(commerceState, 'sup-huerta', { contact: 'WhatsApp compras' });
 assert.equal(supplierEdit.status, 'ok');
+const invalidOrderQuantity = createPurchaseOrder(commerceState, {
+  supplierId: 'sup-huerta',
+  varietyId: 'var-mango-ataulfo',
+  size: 'Mediano',
+  packaging: 'Caja',
+  quantity: 0,
+});
+assert.equal(invalidOrderQuantity.status, 'failed');
+const invalidOrderSize = createPurchaseOrder(commerceState, {
+  supplierId: 'sup-huerta',
+  varietyId: 'var-mango-ataulfo',
+  size: 'Chico',
+  packaging: 'Caja',
+  quantity: 1,
+});
+assert.equal(invalidOrderSize.status, 'failed');
 const order = createPurchaseOrder(commerceState, {
   supplierId: 'sup-huerta',
   varietyId: 'var-mango-ataulfo',
@@ -296,9 +332,24 @@ const received = receivePurchaseOrder(commerceState, order.order.id);
 assert.equal(received.status, 'ok');
 assert.equal(commerceState.purchaseOrders.find((item) => item.id === order.order.id).status, 'Recibido');
 assert.equal(purchaseReceiptRows(commerceState)[0].provider, 'local');
+commerceState.purchaseOrders.unshift({
+  id: 'po-invalid-quantity',
+  supplierId: 'sup-huerta',
+  varietyId: 'var-mango-ataulfo',
+  size: 'Mediano',
+  packaging: 'Caja',
+  quantity: 0,
+  totalCost: 0,
+  status: 'Ordenado',
+  orderDate: new Date().toISOString(),
+  paymentMethod: 'Credito',
+});
+const invalidReceive = receivePurchaseOrder(commerceState, 'po-invalid-quantity');
+assert.equal(invalidReceive.status, 'failed');
+assert.equal(commerceState.purchaseOrders.find((item) => item.id === 'po-invalid-quantity').status, 'Ordenado');
 const remotePurchaseReceipt = recordPurchaseProviderReceipt(commerceState, {
   purchaseOrderId: order.order.id,
-  provider: 'pocketbase',
+  provider: 'mysql',
   status: 'acknowledged',
 });
 assert.equal(remotePurchaseReceipt.status, 'ok');
@@ -335,9 +386,9 @@ assert.equal(cashActivityRows(commerceState, 'drawer-main')[0].label, 'Deposito'
 const financeExport = createFinanceExport(commerceState, 'json');
 assert.equal(financeExport.status, 'ok');
 assert.equal(financeExportRows(commerceState)[0].format, 'json');
-const cashReceipt = recordCashRemoteReceipt(commerceState, { provider: 'pocketbase', drawerId: 'drawer-main' });
+const cashReceipt = recordCashRemoteReceipt(commerceState, { provider: 'mysql', drawerId: 'drawer-main' });
 assert.equal(cashReceipt.status, 'ok');
-assert.equal(cashRemoteReceiptRows(commerceState)[0].provider, 'pocketbase');
+assert.equal(cashRemoteReceiptRows(commerceState)[0].provider, 'mysql');
 const assetSale = sellCrateAsset(commerceState, 'cus-lupita', 'crate-green', 2);
 assert.equal(assetSale.status, 'ok');
 assert.equal(commerceState.sales[0].productGroupName, 'Activos');
@@ -385,12 +436,33 @@ const training = appendTrainingKnowledge(messageState, 'listo significa fruta ma
 assert.equal(training.status, 'ok');
 const templateUpdate = updateMessageTemplate(messageState, 'tpl-promo', { content: '{{customer}} promo {{product}}' });
 assert.equal(templateUpdate.status, 'ok');
+const badPurchaseMessage = addMessage(messageState, 'compra proveedor sin cantidad valida', 'Huerta del Sur');
+assert.equal(badPurchaseMessage.status, 'ok');
+const badCorrection = correctInterpretation(messageState, badPurchaseMessage.messageId, {
+  type: 'ORDEN_COMPRA',
+  certainty: 0.95,
+  explanation: 'Orden corregida con cantidad invalida',
+  data: {
+    supplierId: 'sup-huerta',
+    varietyId: 'var-mango-ataulfo',
+    size: 'Mediano',
+    packaging: 'Caja',
+    quantity: 0,
+  },
+});
+assert.equal(badCorrection.status, 'ok');
+const badApproval = approveInterpretation(messageState, badPurchaseMessage.messageId);
+assert.equal(badApproval.status, 'failed');
+assert.equal(messageState.messages.find((message) => message.id === badPurchaseMessage.messageId).status, 'interpreted');
 const unknownMessage = addMessage(messageState, 'solo saludo sin accion', 'Cliente');
 interpretMessage(messageState, unknownMessage.messageId);
 assert.equal(correctionQueue(messageState).some((message) => message.id === unknownMessage.messageId), true);
+const unknownApproval = approveInterpretation(messageState, unknownMessage.messageId);
+assert.equal(unknownApproval.status, 'failed');
 const push = planPushBinding({ id: 'u1', role: 'Admin', employeeId: 'emp-admin' }, messageState.workspace);
 assert.equal(push.bindingStatus, 'dry-run');
 assert.equal(push.tags.employee_id, 'emp-admin');
+assert.equal(push.tags.auth_source, 'mysql');
 
 assert.equal(pocketBaseRouteManifest.length, 19);
 assert.equal(routeById('messages_revert').path, '/api/fideo/messages/revert');
@@ -449,12 +521,19 @@ const follow = followUpException(state, exception);
 assert.equal(state.taskReports.length, beforeReports + 1);
 assert.equal(follow.receipt.kind, 'follow_up');
 
-const reassigned = reassignException(state, exception, 'emp-admin');
+const wrongReassign = reassignException(state, exception, 'emp-admin');
+assert.equal(wrongReassign.receipt.status, 'failed');
+assert.equal(state.taskAssignments.find((task) => task.taskId === exception.taskId).employeeId, 'emp-route');
+state.employees.push({ id: 'emp-route-2', name: 'Ruta Sur', role: 'Repartidor', status: 'active' });
+const reassigned = reassignException(state, exception, 'emp-route-2');
 assert.equal(reassigned.receipt.status, 'ok');
-assert.equal(state.taskAssignments.find((task) => task.taskId === exception.taskId).employeeId, 'emp-admin');
+assert.equal(state.taskAssignments.find((task) => task.taskId === exception.taskId).employeeId, 'emp-route-2');
+assert.equal(state.sales.find((sale) => sale.id === 'sale-2').assignedEmployeeId, 'emp-route-2');
 
 const resolved = resolveException(state, exception);
 assert.equal(resolved.receipt.kind, 'resolve');
 assert.equal(state.taskReports.find((report) => report.id === exception.reportId).status, 'resolved');
+assert.equal(state.taskAssignments.find((task) => task.taskId === exception.taskId).status, 'acknowledged');
+assert.equal(state.taskAssignments.find((task) => task.taskId === exception.taskId).blockReason, undefined);
 
 console.log('FideoVue domain tests passed.');

@@ -8,6 +8,8 @@
 
     <MetricStrip :metrics="metrics" />
 
+    <RolePipelineAuditBoard :state="state" />
+
     <section class="mt-4 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
       <ActionCenterPanel
         :exceptions="exceptions"
@@ -165,6 +167,7 @@ export default {
   render() {
     const ShellHeader = resolveComponent('ShellHeader');
     const MetricStrip = resolveComponent('MetricStrip');
+    const RolePipelineAuditBoard = resolveComponent('RolePipelineAuditBoard');
     const ActionCenterPanel = resolveComponent('ActionCenterPanel');
     const IntegrationHealth = resolveComponent('IntegrationHealth');
     const DomainBoard = resolveComponent('DomainBoard');
@@ -186,6 +189,7 @@ export default {
         onInspect: this.actions.inspectIntegrations,
       }),
       h(MetricStrip, { metrics: this.metrics }),
+      h(RolePipelineAuditBoard, { state: this.state }),
       h('section', { class: 'mt-4 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]' }, [
         h(ActionCenterPanel, {
           exceptions: this.exceptions,

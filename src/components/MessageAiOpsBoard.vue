@@ -100,7 +100,7 @@ export default {
       return h('article', { class: 'surface p-4' }, [
         h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Correccion remota'),
         h('p', { class: 'mt-2 text-sm text-slate-400' },
-          'Contrato dry-run: PocketBase correct/revert + codex-goal sin SDK cliente.'),
+          'Contrato dry-run: MySQL correct/revert + codex-goal sin SDK cliente.'),
         this.corrections.length
           ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' }, this.corrections.map(this.renderCorrection))
           : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Sin correcciones abiertas.'),

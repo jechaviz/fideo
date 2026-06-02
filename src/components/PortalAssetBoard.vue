@@ -96,7 +96,7 @@ export default {
           this.metric('Total cajas', this.zones.totalQuantity),
           this.metric('Stacks frio', this.zones.cold.length),
           this.metric('Stacks piso', this.zones.floor.length),
-          this.metric('Rutas PB', this.pocketbaseRoutes.length),
+          this.metric('Rutas MySQL', this.pocketbaseRoutes.length),
         ]),
         h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' },
           this.zones.floor.slice(0, 3).map((stack) =>

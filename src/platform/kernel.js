@@ -272,7 +272,7 @@ export const createKernel = ({ vue, config }) => {
       const order = state.purchaseOrders.find((item) => item.status !== 'Recibido') || state.purchaseOrders[0];
       const result = recordPurchaseProviderReceipt(state, {
         purchaseOrderId: order?.id,
-        provider: 'pocketbase',
+        provider: 'mysql',
         status: 'acknowledged',
       });
       pushReceipt(receipts, result);
@@ -280,7 +280,7 @@ export const createKernel = ({ vue, config }) => {
         pushReceipt(receipts, {
           kind: 'purchase_remote_receipt',
           status: 'dry-run',
-          message: 'Acuse remoto de compra listo para PocketBase.',
+          message: 'Acuse remoto de compra listo para MySQL.',
           orderId: result.orderId,
         });
       }
@@ -322,7 +322,7 @@ export const createKernel = ({ vue, config }) => {
     recordCashReceipt: () => {
       const result = recordCashRemoteReceipt(state, {
         drawerId: state.cashDrawers[0]?.id,
-        provider: 'pocketbase',
+        provider: 'mysql',
         status: 'acknowledged',
       });
       pushReceipt(receipts, result);
@@ -330,7 +330,7 @@ export const createKernel = ({ vue, config }) => {
         pushReceipt(receipts, {
           kind: 'cash_receipt_remote_plan',
           status: 'dry-run',
-          message: 'Acuse remoto de caja listo para PocketBase.',
+          message: 'Acuse remoto de caja listo para MySQL.',
           drawerId: result.drawerId,
         });
       }
@@ -499,7 +499,7 @@ export const createKernel = ({ vue, config }) => {
     },
     recordDeliveryReportReceipt: () => {
       const result = recordDeliveryReportReceipt(state, {
-        provider: 'pocketbase',
+        provider: 'mysql',
         status: 'acknowledged',
       });
       pushReceipt(receipts, result);
@@ -507,7 +507,7 @@ export const createKernel = ({ vue, config }) => {
         pushReceipt(receipts, {
           kind: 'delivery_report_remote_receipt',
           status: 'dry-run',
-          message: 'Acuse remoto de reporte listo para PocketBase.',
+          message: 'Acuse remoto de reporte listo para MySQL.',
           reportId: result.reportId,
         });
       }
