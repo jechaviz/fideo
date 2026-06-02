@@ -12,6 +12,7 @@ const requiredFiles = [
   'src/platform/sfcLoader.js',
   'src/infrastructure/veeperGateway.js',
   'src/infrastructure/aiGateway.js',
+  'src/infrastructure/aiProviderCatalog.js',
 ];
 
 const extensionOf = (file) => {

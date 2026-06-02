@@ -61,7 +61,7 @@ index.html
           -> infrastructure adapters
               -> MySQL snapshot HTTP contract
               -> Veeper WhatsApp/comms contract
-              -> codex-goal AI engine contract
+              -> codex-goal AI provider contract
 ```
 
 The first slice ports the operational cockpit shell and the exception loop
@@ -84,7 +84,9 @@ allowing component or backend-equivalent files to grow past the line limit.
   409 with the current server `version` and `snapshotRecordId`.
 - Repeated posts with the same `actionId` or `idempotencyKey` replay the stored
   response without creating a second version or event.
-- `C:\git\codex\codex-goal` is represented as a configurable AI engine path.
-  The path is currently absent locally, so this slice keeps an adapter contract
-  and dry-run evidence instead of hard failing.
+- The AI adapter defaults to Kilo Code with `kilo/stepfun/step-3.7-flash:free`
+  and also accepts Gemini Free or an OmniRoute StepFun 3.7 gateway through
+  `window.FIDEO_CONFIG.aiProvider`, `aiModel` and `aiVariant`. The codex-goal
+  path remains configurable, so missing local engines produce dry-run receipts
+  instead of hard failing.
 - Reusable V-side contracts live in `C:\git\v_projects\lib\fideo_core`.

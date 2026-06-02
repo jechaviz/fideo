@@ -6,4 +6,7 @@ window.FIDEO_CONFIG = {
   allowOneSignalLive: false,
   veeperBaseUrl: '',
   codexGoalPath: '',
+  aiProvider: 'kilo',
+  aiModel: 'kilo/stepfun/step-3.7-flash:free',
+  aiVariant: 'high',
 };

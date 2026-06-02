@@ -11,7 +11,7 @@ providers behind explicit deployment gates.
 | Domain parity | Operations, inventory, catalog, customers, suppliers, delivery, finance, messages, portals, assets and planogram | Passed |
 | MySQL snapshot adapter | PocketBase-compatible route manifest, bootstrap, persist, runtime overview, realtime plan and dry receipts via `pb-mysql` | Passed |
 | Veeper comms | WhatsApp follow-up, promotion and provider receipt adapters | Passed |
-| AI engines | codex-goal adapter and dry-run planning receipt | Passed |
+| AI engines | codex-goal adapter, Kilo/StepFun provider catalog and dry-run planning receipt | Passed |
 | Security | CSP, no committed secrets, mutation token gate, no eval, no raw HTML insertion | Passed |
 | Quality | Line guard, SFC checks, domain tests, browser smoke | Passed |
 | Commits | Each production slice committed on `port/vue3-sfc-unocss` | Passed |
@@ -24,7 +24,8 @@ deployment credentials, running services or local operator paths:
 - MySQL credentials, `FIDEO_API_TOKEN` and tables on the production host.
 - OneSignal SDK execution with an app id and explicit live flag.
 - Veeper live receipt loop against a running provider service.
-- Gemini/provider-backed correction execution with server-side credentials.
+- Kilo StepFun 3.7 Free, Gemini or gateway-backed correction execution once the
+  selected engine is installed/configured server-side or on the operator machine.
 - codex-goal live engine execution once `C:\git\codex\codex-goal` exists.
 
 Until those inputs are configured, the app exposes dry-run or gated receipts

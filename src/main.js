@@ -50,6 +50,9 @@ const boot = async () => {
       allowOneSignalLive: runtimeConfig.allowOneSignalLive || false,
       veeperBaseUrl: runtimeConfig.veeperBaseUrl || '',
       codexGoalPath: runtimeConfig.codexGoalPath || '',
+      aiProvider: runtimeConfig.aiProvider || 'kilo',
+      aiModel: runtimeConfig.aiModel || 'kilo/stepfun/step-3.7-flash:free',
+      aiVariant: runtimeConfig.aiVariant || 'high',
     },
   });
 

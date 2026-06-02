@@ -28,6 +28,8 @@ import { purchaseOrderPipeline, purchaseReceiptRows, purchaseReceiptSummary, sup
 import { buildPersistableSnapshot, compactRemoteSnapshot, normalizePersistResult } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
+import { createAiGateway } from '../src/infrastructure/aiGateway.js';
+import { normalizeAiProviderConfig, providerForModel } from '../src/infrastructure/aiProviderCatalog.js';
 import { gateSummary, runtimeGateMatrix } from '../src/infrastructure/runtimeGates.js';
 
 const state = createInitialState();
@@ -411,10 +413,24 @@ assert.equal(persistResult.version, 7);
 const gates = runtimeGateMatrix({
   veeperBaseUrl: 'http://127.0.0.1:8097',
   codexGoalPath: 'C:/git/codex/codex-goal',
+  aiProvider: 'kilo',
+  aiModel: 'stepfun 3.7 free',
 });
 assert.equal(gates.length, 4);
 assert.equal(gateSummary(gates).gated, 1);
 assert.equal(gateSummary(gates).configured, 2);
+assert.equal(gates.find((gate) => gate.id === 'codex-goal').title, 'Kilo Code AI');
+assert.equal(gates.find((gate) => gate.id === 'codex-goal').detail.includes('kilo/stepfun/step-3.7-flash:free'), true);
+const kiloConfig = normalizeAiProviderConfig({ provider: 'kilo', model: 'stepfun 3.7 free' });
+assert.equal(kiloConfig.provider, 'kilo');
+assert.equal(kiloConfig.model, 'kilo/stepfun/step-3.7-flash:free');
+assert.equal(providerForModel('stepfun-ai/step-3.7-flash')?.id, 'omniroute');
+const geminiConfig = normalizeAiProviderConfig({ provider: 'gemini' });
+assert.equal(geminiConfig.model, 'gemini-3-flash-preview');
+const aiGateway = createAiGateway({ provider: 'kilo', model: 'stepfun 3.7 free', variant: 'high' });
+const aiPlan = await aiGateway.planInsightRun('fideo-demo', 'fideo-insights');
+assert.equal(aiPlan.provider, 'kilo');
+assert.equal(aiPlan.model, 'kilo/stepfun/step-3.7-flash:free');
 
 const portalState = createInitialState();
 assert.equal(fixedAssetSummary(portalState).total, 2);

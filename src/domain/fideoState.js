@@ -424,7 +424,7 @@ export const createInitialState = () => ({
   integrations: {
     pocketbase: { status: 'pending', label: 'MySQL snapshot runtime' },
     veeper: { status: 'pending', label: 'Veeper WhatsApp handoff' },
-    ai: { status: 'dry-run', label: 'codex-goal AI engines' },
+    ai: { status: 'dry-run', label: 'Kilo StepFun AI engines' },
   },
 });
 

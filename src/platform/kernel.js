@@ -81,7 +81,12 @@ export const createKernel = ({ vue, config }) => {
     token: config.pocketbaseToken || '',
   });
   const pocketbaseRoutes = pocketbase.routes();
-  const ai = createAiGateway({ codexGoalPath: config.codexGoalPath });
+  const ai = createAiGateway({
+    codexGoalPath: config.codexGoalPath,
+    provider: config.aiProvider,
+    model: config.aiModel,
+    variant: config.aiVariant,
+  });
   const runtimeGates = runtimeGateMatrix(config);
 
   const metrics = vue.computed(() => deriveMetrics(state));

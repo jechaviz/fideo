@@ -22,7 +22,8 @@ Ported and verified:
 - `frontend/hooks/usePocketBaseSession.ts` PocketBase route surface subset ->
   `src/infrastructure/pocketbaseGateway.js`
 - Veeper WhatsApp handoff contract -> `src/infrastructure/veeperGateway.js`
-- codex-goal AI engine contract -> `src/infrastructure/aiGateway.js`
+- codex-goal AI engine contract plus Kilo/StepFun provider normalization ->
+  `src/infrastructure/aiGateway.js` and `src/infrastructure/aiProviderCatalog.js`
 - reusable V contracts -> `C:\git\v_projects\lib\fideo_core`
 - `frontend/hooks/useCatalogActions.ts` core catalog behavior ->
   `src/domain/catalog/catalogActions.js`
@@ -74,7 +75,8 @@ Ported and verified:
 
 ## Deployment Gates
 
-- Full Gemini live execution and provider-backed correction receipts require server-side credentials.
+- Full Kilo StepFun, Gemini or gateway-backed correction receipts require the selected
+  provider executable/endpoint and credentials when applicable.
 - OneSignal live SDK execution requires deployment app id plus explicit live flag.
 - MySQL-backed snapshot restore requires production database credentials and
   host-side schema readiness; PocketBase remains only as route-compatibility

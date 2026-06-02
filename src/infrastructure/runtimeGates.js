@@ -1,3 +1,5 @@
+import { normalizeAiProviderConfig } from './aiProviderCatalog.js';
+
 const bool = (value) => value === true || value === 'true' || value === '1';
 
 export const runtimeGateMatrix = (config = {}) => {
@@ -7,6 +9,11 @@ export const runtimeGateMatrix = (config = {}) => {
   const veeperConfigured = Boolean(config.veeperBaseUrl);
   const oneSignalLive = bool(config.allowOneSignalLive) && Boolean(config.oneSignalAppId);
   const aiConfigured = Boolean(config.codexGoalPath);
+  const ai = normalizeAiProviderConfig({
+    provider: config.aiProvider,
+    model: config.aiModel,
+    variant: config.aiVariant,
+  });
   return [
     {
       id: 'pocketbase',
@@ -30,9 +37,9 @@ export const runtimeGateMatrix = (config = {}) => {
     },
     {
       id: 'codex-goal',
-      title: 'codex-goal AI',
+      title: `${ai.providerLabel} AI`,
       status: aiConfigured ? 'configured' : 'dry-run',
-      detail: config.codexGoalPath || 'Sin ruta local configurada.',
+      detail: `${ai.model} (${ai.variant}); ${config.codexGoalPath || 'sin ruta local configurada'}.`,
     },
   ];
 };
