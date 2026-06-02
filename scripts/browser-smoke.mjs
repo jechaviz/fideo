@@ -105,24 +105,36 @@ try {
     return withTimeout(new Promise((resolve) => pending.set(id, resolve)), `CDP ${method}`);
   };
 
-  await send('Page.enable');
-  await send('Log.enable');
-  await send('Runtime.enable');
-  await send('Page.navigate', { url });
-  await delay(2500);
+  const evaluatePage = async (expression) => {
+    const response = await send('Runtime.evaluate', { returnByValue: true, expression });
+    return response.result?.result?.value;
+  };
 
-  const result = await send('Runtime.evaluate', {
-    returnByValue: true,
-    expression: `({
-      text: document.body.innerText,
-      cloaked: Boolean(document.querySelector('[data-fideo-cloak]')),
-      title: document.title,
-      hasActionCenter: Boolean(document.body.innerText.match(/action center/i)),
-      hasUnoRuntime: Boolean(document.querySelector('[data-unocss-runtime-layer]'))
-    })`,
-  });
+  const waitForPageValue = async (expression, predicate, label, timeoutMs = 15000) => {
+    const started = Date.now();
+    let lastValue;
+    while (Date.now() - started < timeoutMs) {
+      lastValue = await evaluatePage(expression);
+      if (predicate(lastValue)) return lastValue;
+      await delay(400);
+    }
+    throw new Error(`${label} not ready after ${timeoutMs}ms: ${JSON.stringify(lastValue)} logs=${logs.join(' | ')}`);
+  };
 
-  const value = result.result?.result?.value;
+  const cockpitSnapshotExpression = `({
+    text: document.body?.innerText || '',
+    cloaked: Boolean(document.querySelector('[data-fideo-cloak]')),
+    title: document.title,
+    hasActionCenter: Boolean((document.body?.innerText || '').match(/action center/i)),
+    hasUnoRuntime: Boolean(document.querySelector('[data-unocss-runtime-layer]'))
+  })`;
+
+  const hasRequiredText = (value) => (
+    value
+    && value.hasActionCenter
+    && requiredText.every((text) => value.text.includes(text))
+  );
+
   const requiredText = [
     'Mesa operativa',
     'Clientes',
@@ -160,8 +172,18 @@ try {
     'MySQL snapshot',
     'OneSignal live',
   ];
-  const hasRequiredText = value && requiredText.every((text) => value.text.includes(text));
-  if (!value || !hasRequiredText || !value.hasActionCenter) {
+
+  await send('Page.enable');
+  await send('Log.enable');
+  await send('Runtime.enable');
+  await send('Page.navigate', { url });
+
+  const value = await waitForPageValue(
+    cockpitSnapshotExpression,
+    hasRequiredText,
+    'FideoVue cockpit',
+  );
+  if (!value || !hasRequiredText(value)) {
     throw new Error(`FideoVue did not render expected cockpit text: ${JSON.stringify(value)} logs=${logs.join(' | ')}`);
   }
   if (value.cloaked) throw new Error('FideoVue remained cloaked after boot.');
@@ -183,11 +205,7 @@ try {
   }
 
   await delay(500);
-  const interactionResult = await send('Runtime.evaluate', {
-    returnByValue: true,
-    expression: `({ text: document.body.innerText })`,
-  });
-  const interactionValue = interactionResult.result?.result?.value;
+  const interactionValue = await evaluatePage(`({ text: document.body.innerText })`);
   if (!interactionValue?.text.includes('Listo para Entrega')) {
     throw new Error(`Sale action did not update visible state: ${JSON.stringify(interactionValue)}`);
   }
