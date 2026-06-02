@@ -51,6 +51,8 @@ function app_env(): array
     return $values;
 }
 
+require_once __DIR__ . '/kilo_ai.php';
+
 function db_config(): array
 {
     $env = app_env();
@@ -418,9 +420,13 @@ function fideo_handle_request(): void
     send_json_headers();
 
     try {
+        $route = route_path();
+        if ($route === 'ai' || str_starts_with($route, 'ai/')) {
+            fideo_handle_ai_request($route);
+        }
+
         $config = db_config();
         ensure_schema($config);
-        $route = route_path();
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             respond(200, [
                 'kind' => 'fideo_mysql_runtime',

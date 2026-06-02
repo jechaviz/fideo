@@ -9,5 +9,5 @@ window.FIDEO_CONFIG = {
   aiProvider: 'kilo',
   aiModel: 'kilo/stepfun/step-3.7-flash:free',
   aiVariant: 'high',
-  aiBridgeUrl: 'http://127.0.0.1:8765',
+  aiBridgeUrl: './api/fideo/ai',
 };

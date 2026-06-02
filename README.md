@@ -86,11 +86,11 @@ allowing component or backend-equivalent files to grow past the line limit.
 - Repeated posts with the same `actionId` or `idempotencyKey` replay the stored
   response without creating a second version or event.
 - The AI adapter defaults to Kilo Code with `kilo/stepfun/step-3.7-flash:free`
-  and also accepts Gemini Free or an OmniRoute StepFun 3.7 gateway through
-  `window.FIDEO_CONFIG.aiProvider`, `aiModel` and `aiVariant`. The codex-goal
-  path remains configurable, so missing local engines produce dry-run receipts
-  instead of hard failing.
-- Live local Kilo execution uses `scripts/kilo-bridge.mjs` on `127.0.0.1:8765`.
-  Start the bridge, open the page and click `AI plan`; no browser token is
-  required in this slice.
+  through `./api/fideo/ai`, a same-origin PHP endpoint that runs Kilo from
+  `/home/agingriouh/apps/fideo/shared/kilo` on Spaceship. The browser no longer
+  needs a local Kilo bridge.
+- Spaceship keeps that runtime warm with `ops/ensure-kilo-serve.sh`, installed
+  in `shared/kilo/run` and scheduled by cron with `flock`.
+- `scripts/kilo-bridge.mjs` remains as a local development smoke tool only; it
+  is not the production path for `appniverse.com/fideo`.
 - Reusable V-side contracts live in `C:\git\v_projects\lib\fideo_core`.

@@ -46,22 +46,22 @@ export const createAiGateway = ({
             return {
               ...result.payload,
               kind: 'ai_engine',
-              status: 'local-ready',
-              message: `${engineLabel} conectado por bridge local.`,
+              status: result.payload.status || 'server-ready',
+              message: result.payload.message || `${engineLabel} conectado por engine server-side.`,
               bridgeUrl: bridge,
             };
           }
           return {
             kind: 'ai_engine',
             status: 'failed',
-            message: result.payload.message || `Kilo bridge fallo (${result.status}).`,
+            message: result.payload.message || `Kilo engine server-side fallo (${result.status}).`,
             bridgeUrl: bridge,
           };
         } catch (error) {
           return {
             kind: 'ai_engine',
             status: 'failed',
-            message: `Kilo bridge no responde: ${error.message}`,
+            message: `Kilo engine server-side no responde: ${error.message}`,
             bridgeUrl: bridge,
           };
         }
@@ -108,7 +108,7 @@ export const createAiGateway = ({
           return {
             kind: 'ai_engine_plan',
             status: 'failed',
-            message: result.payload.message || `Kilo bridge fallo (${result.status}).`,
+            message: result.payload.message || `Kilo engine server-side fallo (${result.status}).`,
             workspaceId,
             provider: aiConfig.provider,
             model: aiConfig.model,
@@ -118,7 +118,7 @@ export const createAiGateway = ({
           return {
             kind: 'ai_engine_plan',
             status: 'failed',
-            message: `Kilo bridge no responde: ${error.message}`,
+            message: `Kilo engine server-side no responde: ${error.message}`,
             workspaceId,
             provider: aiConfig.provider,
             model: aiConfig.model,

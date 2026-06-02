@@ -53,7 +53,7 @@ const boot = async () => {
       aiProvider: runtimeConfig.aiProvider || 'kilo',
       aiModel: runtimeConfig.aiModel || 'kilo/stepfun/step-3.7-flash:free',
       aiVariant: runtimeConfig.aiVariant || 'high',
-      aiBridgeUrl: runtimeConfig.aiBridgeUrl || 'http://127.0.0.1:8765',
+      aiBridgeUrl: runtimeConfig.aiBridgeUrl || './api/fideo/ai',
     },
   });
 

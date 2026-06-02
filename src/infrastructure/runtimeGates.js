@@ -40,13 +40,13 @@ export const runtimeGateMatrix = (config = {}) => {
       id: 'codex-goal',
       title: `${ai.providerLabel} AI`,
       status: aiBridgeConfigured || aiConfigured ? 'configured' : 'dry-run',
-      detail: `${ai.model} (${ai.variant}); bridge ${config.aiBridgeUrl || 'sin bridge'}; ${config.codexGoalPath || 'sin ruta local configurada'}.`,
+      detail: `${ai.model} (${ai.variant}); engine ${config.aiBridgeUrl || 'sin endpoint'}; ${config.codexGoalPath || 'sin ruta local configurada'}.`,
     },
   ];
 };
 
 export const gateSummary = (gates) => ({
-  liveReady: gates.filter((gate) => gate.status === 'live-ready' || gate.status === 'local-ready').length,
+  liveReady: gates.filter((gate) => ['live-ready', 'local-ready', 'server-ready'].includes(gate.status)).length,
   gated: gates.filter((gate) => gate.status === 'gated').length,
   dryRun: gates.filter((gate) => gate.status === 'dry-run').length,
   configured: gates.filter((gate) => gate.status === 'configured').length,

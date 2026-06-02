@@ -434,12 +434,12 @@ assert.equal(aiPlan.model, 'kilo/stepfun/step-3.7-flash:free');
 const bridgeGate = runtimeGateMatrix({
   aiProvider: 'kilo',
   aiModel: 'stepfun 3.7 free',
-  aiBridgeUrl: 'http://127.0.0.1:8765',
+  aiBridgeUrl: './api/fideo/ai',
 });
 assert.equal(bridgeGate.find((gate) => gate.id === 'codex-goal').status, 'configured');
 const bridgeFetch = async (url) => new Response(JSON.stringify(url.endsWith('/health') ? {
   kind: 'fideo_kilo_bridge',
-  status: 'ok',
+  status: 'server-ready',
   model: 'kilo/stepfun/step-3.7-flash:free',
 } : {
   kind: 'ai_engine_plan',
@@ -454,7 +454,7 @@ const liveAiGateway = createAiGateway({
   bridgeUrl: 'http://127.0.0.1:8765',
   fetchImpl: bridgeFetch,
 });
-assert.equal((await liveAiGateway.inspect()).status, 'local-ready');
+assert.equal((await liveAiGateway.inspect()).status, 'server-ready');
 assert.equal((await liveAiGateway.planInsightRun('fideo-demo', 'fideo-insights')).status, 'ok');
 
 const portalState = createInitialState();
