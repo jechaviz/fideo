@@ -11,14 +11,15 @@ const parsePayload = async (response) => {
   }
 };
 
-const requestBridge = async (fetchImpl, bridgeUrl, token, path, options = {}) => {
+const requestBridge = async (fetchImpl, bridgeUrl, path, options = {}) => {
+  const headers = {
+    'content-type': 'application/json',
+    ...(options.headers || {}),
+  };
+
   const response = await fetchImpl(`${bridgeUrl}${path}`, {
     ...options,
-    headers: {
-      'content-type': 'application/json',
-      'x-fideo-ai-token': token,
-      ...(options.headers || {}),
-    },
+    headers,
   });
   const payload = await parsePayload(response);
   return { ok: response.ok, status: response.status, payload };
@@ -30,31 +31,17 @@ export const createAiGateway = ({
   model,
   variant,
   bridgeUrl,
-  bridgeToken,
   fetchImpl = fetch,
 }) => {
   const aiConfig = normalizeAiProviderConfig({ provider, model, variant });
   const engineLabel = `${aiConfig.providerLabel} ${aiConfig.model}`;
   const bridge = cleanUrl(bridgeUrl);
-  const token = String(bridgeToken || '').trim();
-  const activationHint = 'Inicia scripts/kilo-bridge.mjs y guarda FIDEO_AI_BRIDGE_TOKEN en localStorage.';
-
-  const gatedReceipt = (kind) => ({
-    kind,
-    status: 'gated',
-    message: `Kilo bridge requiere token local. ${activationHint}`,
-    provider: aiConfig.provider,
-    model: aiConfig.model,
-    variant: aiConfig.variant,
-    bridgeUrl: bridge,
-  });
 
   return {
     async inspect() {
-      if (bridge && !token) return gatedReceipt('ai_engine');
-      if (bridge && token) {
+      if (bridge) {
         try {
-          const result = await requestBridge(fetchImpl, bridge, token, '/health');
+          const result = await requestBridge(fetchImpl, bridge, '/health');
           if (result.ok) {
             return {
               ...result.payload,
@@ -82,7 +69,7 @@ export const createAiGateway = ({
       return {
         kind: 'ai_engine',
         status: 'dry-run',
-        message: `Adapter listo para ${engineLabel}. ${activationHint}`,
+        message: `Adapter listo para ${engineLabel}.`,
         path: codexGoalPath,
         provider: aiConfig.provider,
         model: aiConfig.model,
@@ -91,10 +78,9 @@ export const createAiGateway = ({
       };
     },
     async planInsightRun(workspaceId, intent) {
-      if (bridge && !token) return gatedReceipt('ai_engine_plan');
-      if (bridge && token) {
+      if (bridge) {
         try {
-          const result = await requestBridge(fetchImpl, bridge, token, '/plan', {
+          const result = await requestBridge(fetchImpl, bridge, '/plan', {
             method: 'POST',
             body: JSON.stringify({
               workspaceId,
@@ -143,7 +129,7 @@ export const createAiGateway = ({
       return {
         kind: 'ai_engine_plan',
         status: 'dry-run',
-        message: `${engineLabel} planificado para ${intent}. ${activationHint}`,
+        message: `${engineLabel} planificado para ${intent}.`,
         path: codexGoalPath,
         workspaceId,
         provider: aiConfig.provider,

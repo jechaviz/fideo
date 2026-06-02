@@ -436,7 +436,7 @@ const bridgeGate = runtimeGateMatrix({
   aiModel: 'stepfun 3.7 free',
   aiBridgeUrl: 'http://127.0.0.1:8765',
 });
-assert.equal(bridgeGate.find((gate) => gate.id === 'codex-goal').status, 'gated');
+assert.equal(bridgeGate.find((gate) => gate.id === 'codex-goal').status, 'configured');
 const bridgeFetch = async (url) => new Response(JSON.stringify(url.endsWith('/health') ? {
   kind: 'fideo_kilo_bridge',
   status: 'ok',
@@ -452,7 +452,6 @@ const liveAiGateway = createAiGateway({
   model: 'stepfun 3.7 free',
   variant: 'high',
   bridgeUrl: 'http://127.0.0.1:8765',
-  bridgeToken: 'test-token',
   fetchImpl: bridgeFetch,
 });
 assert.equal((await liveAiGateway.inspect()).status, 'local-ready');

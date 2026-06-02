@@ -79,7 +79,7 @@ Ported and verified:
 - Full Kilo StepFun, Gemini or gateway-backed correction receipts require the selected
   provider executable/endpoint and credentials when applicable.
 - Local Kilo execution is explicit: `scripts/kilo-bridge.mjs` must be running on
-  loopback and the browser must provide `FIDEO_AI_BRIDGE_TOKEN`.
+  loopback; `AI plan` calls that bridge directly.
 - OneSignal live SDK execution requires deployment app id plus explicit live flag.
 - MySQL-backed snapshot restore requires production database credentials and
   host-side schema readiness; PocketBase remains only as route-compatibility

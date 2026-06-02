@@ -6,8 +6,6 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const url = process.argv[2] || 'http://127.0.0.1:4173/';
 const port = Number(process.env.FIDEOVUE_CDP_PORT || (9300 + Math.floor(Math.random() * 600)));
-const aiBridgeToken = String(process.env.FIDEO_AI_BRIDGE_TOKEN || '');
-const aiBridgeUrl = String(process.env.FIDEO_AI_BRIDGE_URL || '');
 const expectLiveAiBridge = process.env.FIDEO_AI_BRIDGE_EXPECT_LIVE === '1';
 const browserCandidates = [
   process.env.FIDEOVUE_BROWSER,
@@ -160,8 +158,12 @@ try {
     const started = Date.now();
     let lastValue;
     while (Date.now() - started < timeoutMs) {
-      lastValue = await evaluatePage(expression);
-      if (predicate(lastValue)) return lastValue;
+      try {
+        lastValue = await evaluatePage(expression);
+        if (predicate(lastValue)) return lastValue;
+      } catch (error) {
+        lastValue = { error: error.message };
+      }
       await delay(400);
     }
     throw new Error(`${label} not ready after ${timeoutMs}ms: ${JSON.stringify(lastValue)} logs=${logs.join(' | ')}`);
@@ -222,14 +224,6 @@ try {
   await send('Page.enable');
   await send('Log.enable');
   await send('Runtime.enable');
-  if (aiBridgeToken || aiBridgeUrl) {
-    await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `(() => {
-        ${aiBridgeToken ? `localStorage.setItem('FIDEO_AI_BRIDGE_TOKEN', ${JSON.stringify(aiBridgeToken)});` : ''}
-        ${aiBridgeUrl ? `localStorage.setItem('FIDEO_AI_BRIDGE_URL', ${JSON.stringify(aiBridgeUrl)});` : ''}
-      })();`,
-    });
-  }
   await send('Page.navigate', { url });
 
   const value = await waitForPageValue(
@@ -258,9 +252,13 @@ try {
     throw new Error(`Could not click AI plan action: ${JSON.stringify(aiPlanResult.result?.result?.value)}`);
   }
 
-  await delay(500);
-  const aiPlanValue = await evaluatePage(`({ text: document.body.innerText })`);
   const aiReceiptText = expectLiveAiBridge ? 'Kilo mock genero plan Fideo.' : 'ai_engine_plan';
+  const aiPlanValue = await waitForPageValue(
+    `({ text: document.body.innerText })`,
+    (candidate) => candidate?.text?.includes(aiReceiptText),
+    'AI plan receipt',
+    expectLiveAiBridge ? 20000 : 180000,
+  );
   if (!aiPlanValue?.text.includes(aiReceiptText)) {
     throw new Error(`AI plan did not produce a visible receipt: ${JSON.stringify(aiPlanValue)}`);
   }

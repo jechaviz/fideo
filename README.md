@@ -91,8 +91,6 @@ allowing component or backend-equivalent files to grow past the line limit.
   path remains configurable, so missing local engines produce dry-run receipts
   instead of hard failing.
 - Live local Kilo execution uses `scripts/kilo-bridge.mjs` on `127.0.0.1:8765`.
-  Start it with `FIDEO_KILO_BRIDGE_TOKEN` or use the generated token it prints,
-  then store that token in browser localStorage as `FIDEO_AI_BRIDGE_TOKEN`. The
-  public page never starts `kilo.exe` on load; `AI plan` calls the bridge only
-  after the local token is present.
+  Start the bridge, open the page and click `AI plan`; no browser token is
+  required in this slice.
 - Reusable V-side contracts live in `C:\git\v_projects\lib\fideo_core`.

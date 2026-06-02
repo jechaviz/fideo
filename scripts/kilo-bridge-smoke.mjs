@@ -1,7 +1,6 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const port = Number(process.env.FIDEO_KILO_BRIDGE_SMOKE_PORT || 18765);
-const token = 'smoke-token';
 const bridgeUrl = `http://127.0.0.1:${port}`;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,7 +10,6 @@ const fetchJson = async (path, options = {}) => {
     ...options,
     headers: {
       'content-type': 'application/json',
-      'x-fideo-ai-token': token,
       ...(options.headers || {}),
     },
   });
@@ -23,7 +21,6 @@ const child = spawn(process.execPath, ['scripts/kilo-bridge.mjs', String(port)],
   cwd: new URL('..', import.meta.url).pathname.slice(1),
   env: {
     ...process.env,
-    FIDEO_KILO_BRIDGE_TOKEN: token,
     FIDEO_KILO_BRIDGE_MOCK: '1',
     FIDEO_KILO_MODEL: 'kilo/stepfun/step-3.7-flash:free',
   },
@@ -61,5 +58,9 @@ try {
   }
   console.log('Fideo Kilo bridge smoke passed.');
 } finally {
-  child.kill();
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 });
+  } else {
+    child.kill();
+  }
 }

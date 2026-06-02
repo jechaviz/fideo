@@ -27,14 +27,6 @@ const loadComponents = async () => {
   return Object.fromEntries(entries);
 };
 
-const localConfig = (key) => {
-  try {
-    return window.localStorage?.getItem(key) || '';
-  } catch {
-    return '';
-  }
-};
-
 const boot = async () => {
   if (!window.Vue) {
     throw new Error('Vue local no esta disponible en vendor/vue.runtime.global.prod.js');
@@ -61,8 +53,7 @@ const boot = async () => {
       aiProvider: runtimeConfig.aiProvider || 'kilo',
       aiModel: runtimeConfig.aiModel || 'kilo/stepfun/step-3.7-flash:free',
       aiVariant: runtimeConfig.aiVariant || 'high',
-      aiBridgeUrl: localConfig('FIDEO_AI_BRIDGE_URL') || runtimeConfig.aiBridgeUrl || 'http://127.0.0.1:8765',
-      aiBridgeToken: localConfig('FIDEO_AI_BRIDGE_TOKEN') || runtimeConfig.aiBridgeToken || '',
+      aiBridgeUrl: runtimeConfig.aiBridgeUrl || 'http://127.0.0.1:8765',
     },
   });
 

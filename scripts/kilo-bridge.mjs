@@ -1,13 +1,12 @@
-import { randomBytes } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { extractKiloTextOutput, parseKiloFinalJson } from '../src/infrastructure/kiloOutputParser.js';
 
 const port = Number(process.env.FIDEO_KILO_BRIDGE_PORT || process.argv[2] || 8765);
 const host = '127.0.0.1';
-const token = String(process.env.FIDEO_KILO_BRIDGE_TOKEN || randomBytes(24).toString('hex'));
 const model = String(process.env.FIDEO_KILO_MODEL || 'kilo/stepfun/step-3.7-flash:free');
 const variant = String(process.env.FIDEO_KILO_VARIANT || 'high');
 const detectKiloExecutable = () => {
@@ -45,21 +44,16 @@ const kiloExecutable = String(process.env.FIDEO_KILO_EXECUTABLE || process.env.K
 const cwd = String(process.env.FIDEO_KILO_WORKDIR || process.cwd());
 const timeoutMs = Number(process.env.FIDEO_KILO_TIMEOUT_MS || 180000);
 const mockMode = process.env.FIDEO_KILO_BRIDGE_MOCK === '1';
-const allowedOrigins = new Set(String(process.env.FIDEO_KILO_BRIDGE_ORIGINS
-  || 'https://appniverse.com,https://www.appniverse.com,http://127.0.0.1:4173,http://127.0.0.1:4174,http://localhost:4173')
-  .split(',')
-  .map((item) => item.trim())
-  .filter(Boolean));
 
 const send = (response, status, payload, origin = '') => {
   const headers = {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-fideo-ai-token,authorization',
+    'access-control-allow-headers': 'content-type',
     'access-control-allow-private-network': 'true',
   };
-  if (origin && allowedOrigins.has(origin)) {
+  if (origin) {
     headers['access-control-allow-origin'] = origin;
     headers.vary = 'Origin';
   }
@@ -84,32 +78,15 @@ const parseJsonBody = async (request) => {
   return JSON.parse(text);
 };
 
-const authorized = (request) => {
-  const headerToken = request.headers['x-fideo-ai-token'] || '';
-  const bearer = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  return token && (headerToken === token || bearer === token);
-};
-
 const buildPrompt = (body) => [
-  'Eres el operador IA de Fideo. Usa respuestas concretas, accionables y seguras.',
-  `Workspace: ${body.workspaceId || 'fideo-demo'}`,
-  `Intent: ${body.intent || 'fideo-insights'}`,
-  `Provider: ${body.provider || 'kilo'}`,
-  `Modelo: ${body.model || model}`,
-  '',
-  'Devuelve al final una linea FINAL_JSON con esta forma exacta:',
-  '{"summary":"...","nextActions":["..."],"risks":["..."],"receiptMessage":"..."}',
+  'Devuelve solo JSON valido, sin markdown.',
+  `Contexto: Fideo workspace=${body.workspaceId || 'fideo-demo'} intent=${body.intent || 'fideo-insights'} modelo=${body.model || model}.`,
+  'Schema: {"summary":"...","nextActions":["..."],"risks":["..."],"receiptMessage":"..."}',
 ].join('\n');
 
-const parseFinalJson = (text) => {
-  const finalLine = String(text || '').split(/\r?\n/).reverse()
-    .find((line) => line.includes('FINAL_JSON'));
-  const candidate = finalLine ? finalLine.replace(/^.*FINAL_JSON\s*:?\s*/i, '') : text;
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return null;
-  }
+const clipText = (value, limit = 500) => {
+  const text = String(value || '').trim();
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
 };
 
 const runKilo = (body) => new Promise((resolve) => {
@@ -134,25 +111,57 @@ const runKilo = (body) => new Promise((resolve) => {
 
   const child = spawn(kiloExecutable, args, {
     cwd,
-    shell: process.platform === 'win32',
     windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
+  let settled = false;
+  let lineCursor = 0;
+  let finishTimer;
+  const settle = (payload) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    clearTimeout(finishTimer);
+    if (!child.killed) child.kill();
+    resolve(payload);
+  };
+  const processLines = () => {
+    const lines = stdout.split(/\r?\n/);
+    const completeCount = Math.max(0, lines.length - 1);
+    for (; lineCursor < completeCount; lineCursor += 1) {
+      try {
+        const entry = JSON.parse(String(lines[lineCursor] || '').trim());
+        if (entry.type === 'step_finish') {
+          finishTimer = setTimeout(() => settle({ status: 'ok', stdout, stderr, exitCode: 0 }), 100);
+          return;
+        }
+        if (entry.type === 'text' && parseKiloFinalJson(stdout)) {
+          settle({ status: 'ok', stdout, stderr, exitCode: 0 });
+          return;
+        }
+      } catch {}
+    }
+  };
   const timer = setTimeout(() => {
-    child.kill('SIGTERM');
+    settle({ status: 'failed', stdout, stderr: stderr || `Kilo timeout after ${timeoutMs}ms`, exitCode: -1 });
   }, timeoutMs);
 
-  child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+    processLines();
+  });
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   child.on('close', (exitCode) => {
-    clearTimeout(timer);
-    resolve({ status: exitCode === 0 ? 'ok' : 'failed', stdout, stderr, exitCode });
+    settle({ status: exitCode === 0 ? 'ok' : 'failed', stdout, stderr, exitCode });
   });
   child.on('error', (error) => {
-    clearTimeout(timer);
-    resolve({ status: 'failed', stdout, stderr: error.message, exitCode: -1 });
+    settle({ status: 'failed', stdout, stderr: error.message, exitCode: -1 });
   });
+  child.stdin.end('', 'utf8');
 });
 
 const healthPayload = () => ({
@@ -166,16 +175,8 @@ const healthPayload = () => ({
 
 const server = createServer(async (request, response) => {
   const origin = String(request.headers.origin || '');
-  if (origin && !allowedOrigins.has(origin)) {
-    send(response, 403, { kind: 'fideo_kilo_bridge', status: 'forbidden', message: 'Origin no permitido.' });
-    return;
-  }
   if (request.method === 'OPTIONS') {
     send(response, 204, {}, origin);
-    return;
-  }
-  if (!authorized(request)) {
-    send(response, 401, { kind: 'fideo_kilo_bridge', status: 'unauthorized', message: 'Token local requerido.' }, origin);
     return;
   }
 
@@ -188,15 +189,21 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/plan') {
       const body = await parseJsonBody(request);
       const result = await runKilo(body);
-      const parsed = parseFinalJson(result.stdout);
+      const parsed = parseKiloFinalJson(result.stdout);
+      const outputText = extractKiloTextOutput(result.stdout);
+      const fallbackResult = outputText ? {
+        summary: clipText(outputText),
+        nextActions: [],
+        risks: [],
+      } : null;
       send(response, result.status === 'ok' ? 200 : 502, {
         kind: 'ai_engine_plan',
         status: result.status,
         provider: 'kilo',
         model: String(body.model || model),
         variant: String(body.variant || variant),
-        message: parsed?.receiptMessage || parsed?.summary || result.stderr || 'Kilo ejecuto el plan.',
-        result: parsed,
+        message: parsed?.receiptMessage || parsed?.summary || fallbackResult?.summary || result.stderr || 'Kilo ejecuto el plan.',
+        result: parsed || fallbackResult,
         exitCode: result.exitCode,
       }, origin);
       return;
@@ -209,5 +216,4 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`Fideo Kilo bridge listening at http://${host}:${port}`);
-  console.log(`Set browser token: localStorage.setItem('FIDEO_AI_BRIDGE_TOKEN', '${token}')`);
 });

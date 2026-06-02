@@ -10,5 +10,4 @@ window.FIDEO_CONFIG = {
   aiModel: 'kilo/stepfun/step-3.7-flash:free',
   aiVariant: 'high',
   aiBridgeUrl: 'http://127.0.0.1:8765',
-  aiBridgeToken: '',
 };

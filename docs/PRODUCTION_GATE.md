@@ -27,9 +27,8 @@ deployment credentials, running services or local operator paths:
 - Kilo StepFun 3.7 Free, Gemini or gateway-backed correction execution once the
   selected engine is installed/configured server-side or on the operator machine.
 - codex-goal live engine execution once `C:\git\codex\codex-goal` exists.
-- Browser-to-Kilo execution requires the local `scripts/kilo-bridge.mjs` process
-  plus `FIDEO_AI_BRIDGE_TOKEN` in browser localStorage; no process is launched
-  automatically by opening the public page.
+- Browser-to-Kilo execution requires the local `scripts/kilo-bridge.mjs` process;
+  then `AI plan` calls the loopback bridge directly.
 
 Until those inputs are configured, the app exposes dry-run or gated receipts
 instead of client-side secrets or unsafe SDK loading. PocketBase remains a
