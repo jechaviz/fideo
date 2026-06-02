@@ -60,53 +60,14 @@ import { createAiGateway } from '../infrastructure/aiGateway.js';
 import { createPocketBaseGateway } from '../infrastructure/pocketbaseGateway.js';
 import { runtimeGateMatrix } from '../infrastructure/runtimeGates.js';
 import { createVeeperGateway } from '../infrastructure/veeperGateway.js';
-
-const createReceipts = (vue) => vue.ref([]);
-
-const pushReceipt = (receipts, receipt) => {
-  receipts.value = [
-    {
-      id: `receipt_${Date.now()}_${Math.round(Math.random() * 10000)}`,
-      at: new Date().toISOString(),
-      ...receipt,
-    },
-    ...receipts.value,
-  ].slice(0, 12);
-};
-
-const nextFruitState = {
-  Verde: 'Entrado',
-  Entrado: 'Maduro',
-  Maduro: 'Suave',
-  Suave: '',
-};
-
-const criteriaFromBatch = (batch) => ({
-  varietyId: batch.varietyId,
-  size: batch.size,
-  quality: batch.quality,
-  state: batch.state,
-  warehouseId: batch.warehouseId,
-  packagingId: batch.packagingId,
-});
-
-const iconPalette = ['TR', 'MX', 'PV', 'WH', 'ST', 'AI'];
-
-const nextIconCode = (current) => {
-  const index = iconPalette.indexOf(current);
-  return iconPalette[(index + 1) % iconPalette.length] || iconPalette[0];
-};
-
-const nextAvailableName = (usedNames, baseName) => {
-  const used = new Set(usedNames);
-  let candidate = baseName;
-  let count = 2;
-  while (used.has(candidate)) {
-    candidate = `${baseName} ${count}`;
-    count += 1;
-  }
-  return candidate;
-};
+import {
+  createReceipts,
+  criteriaFromBatch,
+  nextAvailableName,
+  nextFruitState,
+  nextIconCode,
+  pushReceipt,
+} from './kernelHelpers.js';
 
 export const createKernel = ({ vue, config }) => {
   const state = vue.reactive(createInitialState());
