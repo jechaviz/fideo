@@ -9,6 +9,8 @@ export const runtimeGateMatrix = (config = {}) => {
   const veeperConfigured = Boolean(config.veeperBaseUrl);
   const oneSignalLive = bool(config.allowOneSignalLive) && Boolean(config.oneSignalAppId);
   const aiConfigured = Boolean(config.codexGoalPath);
+  const aiBridgeConfigured = Boolean(config.aiBridgeUrl);
+  const aiBridgeTokenConfigured = Boolean(config.aiBridgeToken);
   const ai = normalizeAiProviderConfig({
     provider: config.aiProvider,
     model: config.aiModel,
@@ -38,8 +40,10 @@ export const runtimeGateMatrix = (config = {}) => {
     {
       id: 'codex-goal',
       title: `${ai.providerLabel} AI`,
-      status: aiConfigured ? 'configured' : 'dry-run',
-      detail: `${ai.model} (${ai.variant}); ${config.codexGoalPath || 'sin ruta local configurada'}.`,
+      status: aiBridgeConfigured
+        ? (aiBridgeTokenConfigured ? 'configured' : 'gated')
+        : (aiConfigured ? 'configured' : 'dry-run'),
+      detail: `${ai.model} (${ai.variant}); bridge ${config.aiBridgeUrl || 'sin bridge'}; ${config.codexGoalPath || 'sin ruta local configurada'}.`,
     },
   ];
 };

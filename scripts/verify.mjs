@@ -13,6 +13,7 @@ const requiredFiles = [
   'src/infrastructure/veeperGateway.js',
   'src/infrastructure/aiGateway.js',
   'src/infrastructure/aiProviderCatalog.js',
+  'scripts/kilo-bridge.mjs',
 ];
 
 const extensionOf = (file) => {

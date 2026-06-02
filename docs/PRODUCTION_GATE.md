@@ -11,7 +11,7 @@ providers behind explicit deployment gates.
 | Domain parity | Operations, inventory, catalog, customers, suppliers, delivery, finance, messages, portals, assets and planogram | Passed |
 | MySQL snapshot adapter | PocketBase-compatible route manifest, bootstrap, persist, runtime overview, realtime plan and dry receipts via `pb-mysql` | Passed |
 | Veeper comms | WhatsApp follow-up, promotion and provider receipt adapters | Passed |
-| AI engines | codex-goal adapter, Kilo/StepFun provider catalog and dry-run planning receipt | Passed |
+| AI engines | codex-goal adapter, Kilo/StepFun provider catalog, local Kilo bridge and dry-run/live planning receipts | Passed |
 | Security | CSP, no committed secrets, mutation token gate, no eval, no raw HTML insertion | Passed |
 | Quality | Line guard, SFC checks, domain tests, browser smoke | Passed |
 | Commits | Each production slice committed on `port/vue3-sfc-unocss` | Passed |
@@ -27,6 +27,9 @@ deployment credentials, running services or local operator paths:
 - Kilo StepFun 3.7 Free, Gemini or gateway-backed correction execution once the
   selected engine is installed/configured server-side or on the operator machine.
 - codex-goal live engine execution once `C:\git\codex\codex-goal` exists.
+- Browser-to-Kilo execution requires the local `scripts/kilo-bridge.mjs` process
+  plus `FIDEO_AI_BRIDGE_TOKEN` in browser localStorage; no process is launched
+  automatically by opening the public page.
 
 Until those inputs are configured, the app exposes dry-run or gated receipts
 instead of client-side secrets or unsafe SDK loading. PocketBase remains a

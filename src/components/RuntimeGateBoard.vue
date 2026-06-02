@@ -89,11 +89,13 @@ export default {
             class: 'focus-ring rounded-lg bg-amber-300 px-3 py-2 text-xs font-black text-slate-950',
             onClick: () => this.$emit('plan-realtime'),
           }, 'Realtime'),
+        ]) : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Mutaciones snapshot protegidas por token de runtime.'),
+        h('div', { class: 'mt-3 flex flex-wrap gap-2' }, [
           h('button', {
             class: 'focus-ring rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-slate-200',
             onClick: () => this.$emit('plan-ai'),
           }, 'AI plan'),
-        ]) : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Mutaciones snapshot protegidas por token de runtime.'),
+        ]),
         h('ul', { class: 'm-0 mt-3 flex list-none flex-wrap gap-2 p-0' },
           this.pocketbaseRoutes.slice(0, 8).map((route) =>
             h('li', { class: 'pill text-xs', key: route.id }, `${route.method} ${route.path}`))),

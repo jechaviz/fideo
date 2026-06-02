@@ -86,6 +86,8 @@ export const createKernel = ({ vue, config }) => {
     provider: config.aiProvider,
     model: config.aiModel,
     variant: config.aiVariant,
+    bridgeUrl: config.aiBridgeUrl,
+    bridgeToken: config.aiBridgeToken,
   });
   const runtimeGates = runtimeGateMatrix(config);
 

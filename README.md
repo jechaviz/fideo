@@ -34,6 +34,7 @@ Opening `index.html` directly is not supported because browser SFC loading uses
 node scripts/verify.mjs
 node scripts/domain-tests.mjs
 node scripts/domain-regression-tests.mjs
+node scripts/kilo-bridge-smoke.mjs
 node scripts/source-inventory.mjs C:\git\customers\fideo\frontend
 node scripts/browser-smoke.mjs http://127.0.0.1:4173/
 ```
@@ -89,4 +90,9 @@ allowing component or backend-equivalent files to grow past the line limit.
   `window.FIDEO_CONFIG.aiProvider`, `aiModel` and `aiVariant`. The codex-goal
   path remains configurable, so missing local engines produce dry-run receipts
   instead of hard failing.
+- Live local Kilo execution uses `scripts/kilo-bridge.mjs` on `127.0.0.1:8765`.
+  Start it with `FIDEO_KILO_BRIDGE_TOKEN` or use the generated token it prints,
+  then store that token in browser localStorage as `FIDEO_AI_BRIDGE_TOKEN`. The
+  public page never starts `kilo.exe` on load; `AI plan` calls the bridge only
+  after the local token is present.
 - Reusable V-side contracts live in `C:\git\v_projects\lib\fideo_core`.

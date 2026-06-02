@@ -6,6 +6,9 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const url = process.argv[2] || 'http://127.0.0.1:4173/';
 const port = Number(process.env.FIDEOVUE_CDP_PORT || (9300 + Math.floor(Math.random() * 600)));
+const aiBridgeToken = String(process.env.FIDEO_AI_BRIDGE_TOKEN || '');
+const aiBridgeUrl = String(process.env.FIDEO_AI_BRIDGE_URL || '');
+const expectLiveAiBridge = process.env.FIDEO_AI_BRIDGE_EXPECT_LIVE === '1';
 const browserCandidates = [
   process.env.FIDEOVUE_BROWSER,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -219,6 +222,14 @@ try {
   await send('Page.enable');
   await send('Log.enable');
   await send('Runtime.enable');
+  if (aiBridgeToken || aiBridgeUrl) {
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        ${aiBridgeToken ? `localStorage.setItem('FIDEO_AI_BRIDGE_TOKEN', ${JSON.stringify(aiBridgeToken)});` : ''}
+        ${aiBridgeUrl ? `localStorage.setItem('FIDEO_AI_BRIDGE_URL', ${JSON.stringify(aiBridgeUrl)});` : ''}
+      })();`,
+    });
+  }
   await send('Page.navigate', { url });
 
   const value = await waitForPageValue(
@@ -232,6 +243,27 @@ try {
   if (value.cloaked) throw new Error('FideoVue remained cloaked after boot.');
   if (!value.hasUnoRuntime) throw new Error('UnoCSS runtime styles were not injected.');
   if (exceptions.length) throw new Error(`Browser exceptions: ${exceptions.join('; ')}`);
+
+  const aiPlanResult = await send('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `(() => {
+      const button = Array.from(document.querySelectorAll('button'))
+        .find((item) => item.textContent.trim() === 'AI plan');
+      if (!button) return { clicked: false, text: document.body.innerText };
+      button.click();
+      return { clicked: true };
+    })()`,
+  });
+  if (!aiPlanResult.result?.result?.value?.clicked) {
+    throw new Error(`Could not click AI plan action: ${JSON.stringify(aiPlanResult.result?.result?.value)}`);
+  }
+
+  await delay(500);
+  const aiPlanValue = await evaluatePage(`({ text: document.body.innerText })`);
+  const aiReceiptText = expectLiveAiBridge ? 'Kilo mock genero plan Fideo.' : 'ai_engine_plan';
+  if (!aiPlanValue?.text.includes(aiReceiptText)) {
+    throw new Error(`AI plan did not produce a visible receipt: ${JSON.stringify(aiPlanValue)}`);
+  }
 
   const clickResult = await send('Runtime.evaluate', {
     returnByValue: true,
