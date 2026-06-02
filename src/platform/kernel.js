@@ -78,6 +78,7 @@ export const createKernel = ({ vue, config }) => {
   const pocketbase = createPocketBaseGateway({
     baseUrl: config.pocketbaseBaseUrl || '',
     backend: config.pocketbaseBackend || 'pocketbase',
+    token: config.pocketbaseToken || '',
   });
   const pocketbaseRoutes = pocketbase.routes();
   const ai = createAiGateway({ codexGoalPath: config.codexGoalPath });
@@ -471,11 +472,13 @@ export const createKernel = ({ vue, config }) => {
       pushReceipt(receipts, await pocketbase.bootstrap(buildPersistableSnapshot(state)));
     },
     persistSnapshot: async () => {
-      pushReceipt(receipts, await pocketbase.persist(
+      const result = await pocketbase.persist(
         state.workspace.id,
         buildPersistableSnapshot(state),
         state.workspace.version,
-      ));
+      );
+      if (result.version > 0) state.workspace.version = result.version;
+      pushReceipt(receipts, result);
     },
     presencePing: async () => {
       pushReceipt(receipts, await pocketbase.presencePing(state.workspace.id, {

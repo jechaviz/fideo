@@ -131,7 +131,7 @@ export default {
     },
     renderOrder(order) {
       const canOrder = order.status === 'Pendiente';
-      const canReceive = order.status !== 'Recibido';
+      const canReceive = order.status === 'Ordenado';
       return h('li', { class: 'rounded-lg bg-slate-950/40 p-3 text-sm', key: order.id }, [
         h('div', { class: 'flex items-start justify-between gap-3' }, [
           h('div', { class: 'min-w-0' }, [

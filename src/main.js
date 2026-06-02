@@ -38,16 +38,18 @@ const boot = async () => {
   ]);
 
   App.components = { ...(App.components || {}), ...components };
+  const runtimeConfig = window.FIDEO_CONFIG || {};
 
   const kernel = createKernel({
     vue: window.Vue,
     config: {
-      pocketbaseBaseUrl: './',
-      pocketbaseBackend: 'mysql',
-      oneSignalAppId: '',
-      allowOneSignalLive: false,
-      veeperBaseUrl: 'http://127.0.0.1:8097',
-      codexGoalPath: 'C:/git/codex/codex-goal',
+      pocketbaseBaseUrl: runtimeConfig.pocketbaseBaseUrl ?? './',
+      pocketbaseBackend: runtimeConfig.pocketbaseBackend || 'mysql',
+      pocketbaseToken: runtimeConfig.pocketbaseToken || '',
+      oneSignalAppId: runtimeConfig.oneSignalAppId || '',
+      allowOneSignalLive: runtimeConfig.allowOneSignalLive || false,
+      veeperBaseUrl: runtimeConfig.veeperBaseUrl || '',
+      codexGoalPath: runtimeConfig.codexGoalPath || '',
     },
   });
 

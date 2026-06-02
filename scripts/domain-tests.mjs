@@ -25,7 +25,7 @@ import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { addPayment, assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
 import { createPurchaseOrder, recordPurchaseProviderReceipt, receivePurchaseOrder, repricePurchaseOrder, setPurchaseOrderStatus, updateSupplier, updateSupplierSupply } from '../src/domain/suppliers/supplierActions.js';
 import { purchaseOrderPipeline, purchaseReceiptRows, purchaseReceiptSummary, supplierCostMatrix, supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
-import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
+import { buildPersistableSnapshot, compactRemoteSnapshot, normalizePersistResult } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';
 import { gateSummary, runtimeGateMatrix } from '../src/infrastructure/runtimeGates.js';
@@ -405,12 +405,16 @@ assert.equal(dryInspect.routes, 19);
 const dryRealtime = await gateway.realtimePlan('fideo-demo');
 assert.equal(dryRealtime.status, 'dry-run');
 assert.equal(dryRealtime.realtime, 'disabled');
+const persistResult = normalizePersistResult({ version: 7, message: 'ok' });
+assert.equal(persistResult.status, 'ok');
+assert.equal(persistResult.version, 7);
 const gates = runtimeGateMatrix({
   veeperBaseUrl: 'http://127.0.0.1:8097',
   codexGoalPath: 'C:/git/codex/codex-goal',
 });
 assert.equal(gates.length, 4);
 assert.equal(gateSummary(gates).gated, 1);
+assert.equal(gateSummary(gates).configured, 2);
 
 const portalState = createInitialState();
 assert.equal(fixedAssetSummary(portalState).total, 2);

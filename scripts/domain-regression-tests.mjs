@@ -21,6 +21,9 @@ assert.match(fideoApiSource, /FIDEO_IDEMPOTENCY_COLLECTION = 'fideo_idempotency'
 assert.match(fideoApiSource, /INSERT IGNORE INTO pbm_records/);
 assert.match(fideoApiSource, /SELECT ROW_COUNT\(\)/);
 assert.match(fideoApiSource, /respond\(409, \$payload\)/);
+assert.match(fideoApiSource, /function authorize_mutation\(\): void/);
+assert.match(fideoApiSource, /FIDEO_API_TOKEN/);
+assert.match(fideoApiSource, /respond\(401,/);
 assert.match(fideoApiSource, /if \(!defined\('FIDEO_API_NO_RUN'\)\)/);
 
 const taskWorkflowState = createInitialState();

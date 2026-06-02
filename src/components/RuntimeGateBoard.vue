@@ -49,8 +49,9 @@ export default {
     return h('section', { class: 'mt-4 grid gap-4 xl:grid-cols-[0.75fr_1.25fr]' }, [
       h('article', { class: 'surface p-4' }, [
         h('h2', { class: 'm-0 text-lg font-black text-white' }, 'Gates runtime'),
-        h('div', { class: 'mt-3 grid gap-2 sm:grid-cols-3' }, [
+        h('div', { class: 'mt-3 grid gap-2 sm:grid-cols-4' }, [
           this.metric('Live/local', this.summary.liveReady),
+          this.metric('Configurados', this.summary.configured),
           this.metric('Gated', this.summary.gated),
           this.metric('Dry-run', this.summary.dryRun),
         ]),

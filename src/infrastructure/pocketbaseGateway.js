@@ -8,8 +8,8 @@ const dryReceipt = (message) => ({
   message,
 });
 
-export const createPocketBaseGateway = ({ baseUrl = '', backend = 'pocketbase' } = {}) => {
-  const client = createJsonClient({ baseUrl, browserClient: '' });
+export const createPocketBaseGateway = ({ baseUrl = '', backend = 'pocketbase', token = '' } = {}) => {
+  const client = createJsonClient({ baseUrl, browserClient: '', token });
   const label = backend === 'mysql' ? 'MySQL snapshot adapter' : 'PocketBase';
 
   const requireBaseUrl = () => {

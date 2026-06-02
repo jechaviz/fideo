@@ -42,7 +42,7 @@ function app_env(): array
     foreach ($paths as $path) {
         $values = array_merge($values, env_values($path));
     }
-    foreach (['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD'] as $key) {
+    foreach (['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'FIDEO_API_TOKEN'] as $key) {
         $value = getenv($key);
         if ($value !== false) {
             $values[$key] = $value;
@@ -130,6 +130,43 @@ function send_json_headers(): void
 {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, max-age=0');
+}
+
+function mutation_token(): string
+{
+    return trim((string)(app_env()['FIDEO_API_TOKEN'] ?? ''));
+}
+
+function request_bearer_token(): string
+{
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (is_string($header) && preg_match('/^Bearer\s+(.+)$/i', trim($header), $matches)) {
+        return trim($matches[1]);
+    }
+    return trim((string)($_SERVER['HTTP_X_FIDEO_API_TOKEN'] ?? ''));
+}
+
+function authorize_mutation(): void
+{
+    $token = mutation_token();
+    if ($token === '') {
+        respond(503, [
+            'kind' => 'fideo_mysql_snapshot',
+            'status' => 'failed',
+            'backend' => 'mysql',
+            'plugin' => 'pb-mysql',
+            'message' => 'Mutation token is not configured.',
+        ]);
+    }
+    if (!hash_equals($token, request_bearer_token())) {
+        respond(401, [
+            'kind' => 'fideo_mysql_snapshot',
+            'status' => 'unauthorized',
+            'backend' => 'mysql',
+            'plugin' => 'pb-mysql',
+            'message' => 'Mutation token required.',
+        ]);
+    }
 }
 
 function json_body(): array
@@ -394,6 +431,7 @@ function fideo_handle_request(): void
                 'route' => $route,
             ]);
         }
+        authorize_mutation();
 
         $body = json_body();
         $workspaceId = workspace_id($body);

@@ -12,7 +12,7 @@ providers behind explicit deployment gates.
 | MySQL snapshot adapter | PocketBase-compatible route manifest, bootstrap, persist, runtime overview, realtime plan and dry receipts via `pb-mysql` | Passed |
 | Veeper comms | WhatsApp follow-up, promotion and provider receipt adapters | Passed |
 | AI engines | codex-goal adapter and dry-run planning receipt | Passed |
-| Security | CSP, no public secrets, no eval, no raw HTML insertion | Passed |
+| Security | CSP, no committed secrets, mutation token gate, no eval, no raw HTML insertion | Passed |
 | Quality | Line guard, SFC checks, domain tests, browser smoke | Passed |
 | Commits | Each production slice committed on `port/vue3-sfc-unocss` | Passed |
 
@@ -21,7 +21,7 @@ providers behind explicit deployment gates.
 These are intentionally not activated in the static repo because they require
 deployment credentials, running services or local operator paths:
 
-- MySQL credentials and tables on the production host.
+- MySQL credentials, `FIDEO_API_TOKEN` and tables on the production host.
 - OneSignal SDK execution with an app id and explicit live flag.
 - Veeper live receipt loop against a running provider service.
 - Gemini/provider-backed correction execution with server-side credentials.

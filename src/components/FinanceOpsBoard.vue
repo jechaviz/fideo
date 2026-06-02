@@ -78,6 +78,7 @@ export default {
       ]);
     },
     renderDrawerPanel() {
+      const drawerOpen = this.drawer?.status === 'Abierta';
       return h('article', { class: 'surface p-4' }, [
         h('div', { class: 'flex items-start justify-between gap-3' }, [
           h('div', [
@@ -95,7 +96,7 @@ export default {
           this.metric('Diferencia', money(this.finance.drawerDifferences)),
           this.metric('Neto op.', money(this.finance.netOperating)),
         ]),
-        this.drawer ? h('div', { class: 'mt-3 flex flex-wrap gap-2' }, [
+        drawerOpen ? h('div', { class: 'mt-3 flex flex-wrap gap-2' }, [
           h('button', {
             class: 'focus-ring rounded-lg bg-sky-300 px-3 py-2 text-xs font-black text-slate-950',
             onClick: () => this.$emit('cash-deposit', this.drawer.id),
@@ -112,7 +113,7 @@ export default {
             class: 'focus-ring rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-slate-200',
             onClick: () => this.$emit('add-expense'),
           }, 'Gasto'),
-        ]) : null,
+        ]) : h('p', { class: 'mt-3 text-sm text-slate-400' }, 'Abre caja para registrar movimientos.'),
       ]);
     },
     renderAttentionPanel() {

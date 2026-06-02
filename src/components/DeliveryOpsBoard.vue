@@ -134,6 +134,7 @@ export default {
     },
     saleButtons(task) {
       const buttons = [];
+      if (task.status !== 'in_progress') return buttons;
       if (task.sale?.status === 'Pendiente de Empaque') {
         buttons.push(h('button', {
           class: 'focus-ring rounded-lg bg-sky-300 px-2 py-1 text-xs font-black text-slate-950',

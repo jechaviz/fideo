@@ -105,6 +105,9 @@ export const mergeRuntimeIntoSnapshot = (snapshot, runtime = {}) => ({
 });
 
 export const normalizePersistResult = (payload = {}) => ({
+  kind: payload.kind || 'snapshot_persist',
+  status: payload.status || 'ok',
+  message: payload.message || 'Snapshot persistido.',
   version: Number(payload.version || 0),
   snapshotRecordId: String(payload.snapshotRecordId || ''),
   updatedAt: payload.updatedAt || new Date().toISOString(),

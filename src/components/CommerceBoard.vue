@@ -106,7 +106,7 @@ export default {
                 h('strong', { class: 'text-white' }, order.supplier?.name || 'Proveedor'),
                 h('span', { class: 'block text-slate-300' }, `${order.status} - ${money(order.totalCost)}`),
               ]),
-              order.status !== 'Recibido' ? h('button', {
+              order.status === 'Ordenado' ? h('button', {
                 class: 'focus-ring rounded-lg bg-emerald-300 px-2 py-1 text-xs font-black text-slate-950',
                 onClick: () => this.$emit('receive-order', order.id),
               }, 'Recibir') : null,

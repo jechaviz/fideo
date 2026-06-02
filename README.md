@@ -76,6 +76,10 @@ allowing component or backend-equivalent files to grow past the line limit.
 - The PocketBase-compatible route surface is backed by the `pb-mysql` adapter in
   `api/fideo/index.php`, so production persistence uses MySQL without exposing
   PocketBase as a live browser dependency.
+- Production MySQL mutations require `FIDEO_API_TOKEN` in the host env. Browser
+  requests include `Authorization: Bearer <token>` only when `config.js` sets
+  `window.FIDEO_CONFIG.pocketbaseToken`; if the host token is missing, POST
+  requests fail closed with 503.
 - Mutating snapshot posts may send `expectedVersion`; stale writes return HTTP
   409 with the current server `version` and `snapshotRecordId`.
 - Repeated posts with the same `actionId` or `idempotencyKey` replay the stored

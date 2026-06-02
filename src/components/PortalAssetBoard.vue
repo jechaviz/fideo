@@ -68,6 +68,34 @@ export default {
         h('strong', { class: 'text-lg text-white' }, String(value)),
       ]);
     },
+    taskButtons(task) {
+      const buttons = [];
+      if (task.status === 'assigned') {
+        buttons.push(h('button', {
+          class: 'focus-ring rounded-lg bg-sky-300 px-3 py-2 text-xs font-black text-slate-950',
+          onClick: () => this.$emit('ack-task', task.taskId),
+        }, 'Enterado'));
+      }
+      if (task.status === 'acknowledged') {
+        buttons.push(h('button', {
+          class: 'focus-ring rounded-lg bg-violet-300 px-3 py-2 text-xs font-black text-slate-950',
+          onClick: () => this.$emit('start-task', task.taskId),
+        }, 'Iniciar'));
+      }
+      if (task.status === 'in_progress') {
+        buttons.push(h('button', {
+          class: 'focus-ring rounded-lg bg-emerald-300 px-3 py-2 text-xs font-black text-slate-950',
+          onClick: () => this.$emit('complete-task', task.taskId),
+        }, 'Cerrar'));
+      }
+      if (task.status !== 'blocked' && task.status !== 'done') {
+        buttons.push(h('button', {
+          class: 'focus-ring rounded-lg bg-rose-300 px-3 py-2 text-xs font-black text-slate-950',
+          onClick: () => this.$emit('block-task', task.taskId),
+        }, 'Bloquear'));
+      }
+      return buttons;
+    },
     renderAssets() {
       return h('article', { class: 'surface p-4' }, [
         h('div', { class: 'flex items-start justify-between gap-3' }, [
@@ -116,24 +144,7 @@ export default {
           this.metric('Reparto', this.delivererPortal?.tasks.length || 0),
           this.metric('Proveedor', this.supplierPortal?.latestStatus || 'N/A'),
         ]),
-        this.firstTask ? h('div', { class: 'mt-3 flex flex-wrap gap-2' }, [
-          h('button', {
-            class: 'focus-ring rounded-lg bg-sky-300 px-3 py-2 text-xs font-black text-slate-950',
-            onClick: () => this.$emit('ack-task', this.firstTask.taskId),
-          }, 'Enterado'),
-          h('button', {
-            class: 'focus-ring rounded-lg bg-violet-300 px-3 py-2 text-xs font-black text-slate-950',
-            onClick: () => this.$emit('start-task', this.firstTask.taskId),
-          }, 'Iniciar'),
-          h('button', {
-            class: 'focus-ring rounded-lg bg-rose-300 px-3 py-2 text-xs font-black text-slate-950',
-            onClick: () => this.$emit('block-task', this.firstTask.taskId),
-          }, 'Bloquear'),
-          h('button', {
-            class: 'focus-ring rounded-lg bg-emerald-300 px-3 py-2 text-xs font-black text-slate-950',
-            onClick: () => this.$emit('complete-task', this.firstTask.taskId),
-          }, 'Cerrar'),
-        ]) : null,
+        this.firstTask ? h('div', { class: 'mt-3 flex flex-wrap gap-2' }, this.taskButtons(this.firstTask)) : null,
       ]);
     },
   },
