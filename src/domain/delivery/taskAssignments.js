@@ -91,6 +91,8 @@ const closeTask = (existing, now) => {
   };
 };
 
+const validTaskStatuses = new Set(['assigned', 'acknowledged', 'in_progress', 'blocked', 'done']);
+
 export const syncOperationalTaskAssignments = (state) => {
   const now = nowIso();
   const taskByTaskId = new Map(state.taskAssignments.map((task) => [task.taskId, task]));
@@ -148,6 +150,20 @@ export const updateTaskAssignmentStatus = (state, taskId, nextStatus, actor = {}
   const now = nowIso();
   const task = state.taskAssignments.find((item) => item.taskId === taskId);
   if (!task) return { kind: 'task_status', status: 'skipped', message: 'Tarea no encontrada.' };
+  if (!validTaskStatuses.has(nextStatus)) {
+    return { kind: 'task_status', status: 'failed', message: 'Estado de tarea invalido.', taskId };
+  }
+  if (task.status === 'done') {
+    return { kind: 'task_status', status: 'skipped', message: 'La tarea ya esta cerrada.', taskId };
+  }
+  if (nextStatus === 'done' && task.status !== 'in_progress') {
+    return {
+      kind: 'task_status',
+      status: 'failed',
+      message: 'La tarea debe estar en progreso antes de cerrarse.',
+      taskId,
+    };
+  }
 
   task.status = nextStatus;
   task.employeeId = actor.employeeId ?? task.employeeId ?? null;

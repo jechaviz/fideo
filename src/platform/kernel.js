@@ -14,6 +14,7 @@ import {
 } from '../domain/catalog/catalogActions.js';
 import { markCrateAsLost, returnCrateLoan } from '../domain/customers/customerActions.js';
 import { pingDeliveryPresence, recordDeliveryReportReceipt } from '../domain/delivery/presenceActions.js';
+import { completeOperationalTask } from '../domain/delivery/taskCompletion.js';
 import { updateTaskAssignmentStatus } from '../domain/delivery/taskAssignments.js';
 import { submitTaskReport } from '../domain/delivery/taskReports.js';
 import {
@@ -427,15 +428,8 @@ export const createKernel = ({ vue, config }) => {
         'Bloqueo reportado desde portal'));
     },
     completeTask: (taskId) => {
-      const task = state.taskAssignments.find((item) => item.taskId === taskId);
-      const result = updateTaskAssignmentStatus(state, taskId, 'done', actorForTask(taskId));
-      pushReceipt(receipts, result);
-      if (result.status === 'ok' && task?.kind === 'PACK_ORDER' && task.saleId) {
-        pushReceipt(receipts, markOrderAsPacked(state, task.saleId));
-      }
-      if (result.status === 'ok' && task?.kind === 'DELIVER_ORDER' && task.saleId) {
-        pushReceipt(receipts, completeSale(state, task.saleId, 'Pagado', 'Efectivo'));
-      }
+      completeOperationalTask(state, taskId, actorForTask(taskId))
+        .forEach((result) => pushReceipt(receipts, result));
     },
     noteTask: (taskId) => {
       pushReceipt(receipts, submitTaskReport(state, taskId, {

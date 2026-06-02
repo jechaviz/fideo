@@ -33,6 +33,7 @@ Opening `index.html` directly is not supported because browser SFC loading uses
 ```powershell
 node scripts/verify.mjs
 node scripts/domain-tests.mjs
+node scripts/domain-regression-tests.mjs
 node scripts/source-inventory.mjs C:\git\customers\fideo\frontend
 node scripts/browser-smoke.mjs http://127.0.0.1:4173/
 ```
@@ -58,7 +59,7 @@ index.html
           -> domain state/selectors
           -> domain operations
           -> infrastructure adapters
-              -> PocketBase HTTP contract
+              -> MySQL snapshot HTTP contract
               -> Veeper WhatsApp/comms contract
               -> codex-goal AI engine contract
 ```
@@ -72,6 +73,13 @@ allowing component or backend-equivalent files to grow past the line limit.
 - Veeper is expected at `http://127.0.0.1:8097` by default.
 - Mutating Veeper calls include `X-Veeper-Client: veeper-ui`, matching Veeper's
   anti-CSRF browser contract.
+- The PocketBase-compatible route surface is backed by the `pb-mysql` adapter in
+  `api/fideo/index.php`, so production persistence uses MySQL without exposing
+  PocketBase as a live browser dependency.
+- Mutating snapshot posts may send `expectedVersion`; stale writes return HTTP
+  409 with the current server `version` and `snapshotRecordId`.
+- Repeated posts with the same `actionId` or `idempotencyKey` replay the stored
+  response without creating a second version or event.
 - `C:\git\codex\codex-goal` is represented as a configurable AI engine path.
   The path is currently absent locally, so this slice keeps an adapter contract
   and dry-run evidence instead of hard failing.

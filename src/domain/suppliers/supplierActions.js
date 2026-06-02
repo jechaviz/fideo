@@ -12,6 +12,9 @@ const productInfoFor = (state, varietyId) =>
 const packagingCost = (supply, packaging) =>
   supply.packagingOptions.find((option) => option.name === packaging)?.cost ?? 0;
 
+const editablePurchaseStatuses = new Set(['Pendiente', 'Ordenado']);
+const isFiniteNonNegative = (value) => Number.isFinite(value) && value >= 0;
+
 export const updateSupplier = (state, supplierId, updates) => {
   const supplier = findSupplier(state, supplierId);
   if (!supplier) return receipt('supplier_update', 'skipped', 'Proveedor no encontrado.');
@@ -23,11 +26,16 @@ export const updateSupplier = (state, supplierId, updates) => {
 export const addSupplierSupply = (state, supplierId, supply) => {
   const supplier = findSupplier(state, supplierId);
   if (!supplier) return receipt('supplier_supply_add', 'skipped', 'Proveedor no encontrado.');
+  const baseCost = Number(supply.baseCost);
+  const freightCost = Number(supply.freightCost);
+  if (!isFiniteNonNegative(baseCost) || !isFiniteNonNegative(freightCost)) {
+    return receipt('supplier_supply_add', 'failed', 'Costos de proveedor invalidos.');
+  }
   supplier.supplies ||= [];
   supplier.supplies.push({
     varietyId: supply.varietyId,
-    baseCost: Number(supply.baseCost || 0),
-    freightCost: Number(supply.freightCost || 0),
+    baseCost,
+    freightCost,
     availableSizes: supply.availableSizes || [],
     packagingOptions: supply.packagingOptions?.length ? supply.packagingOptions : [{ name: 'Caja', cost: 0 }],
     notes: supply.notes || '',
@@ -50,10 +58,15 @@ export const updateSupplierSupply = (state, supplierId, varietyId, updates) => {
   const supplier = findSupplier(state, supplierId);
   const supply = supplier?.supplies.find((item) => item.varietyId === varietyId);
   if (!supplier || !supply) return receipt('supplier_supply_update', 'skipped', 'Producto de proveedor no encontrado.');
+  const nextBaseCost = updates.baseCost === undefined ? supply.baseCost : Number(updates.baseCost);
+  const nextFreightCost = updates.freightCost === undefined ? supply.freightCost : Number(updates.freightCost);
+  if (!isFiniteNonNegative(nextBaseCost) || !isFiniteNonNegative(nextFreightCost)) {
+    return receipt('supplier_supply_update', 'failed', 'Costos de proveedor invalidos.');
+  }
   Object.assign(supply, {
     ...updates,
-    baseCost: updates.baseCost === undefined ? supply.baseCost : Number(updates.baseCost || 0),
-    freightCost: updates.freightCost === undefined ? supply.freightCost : Number(updates.freightCost || 0),
+    baseCost: nextBaseCost,
+    freightCost: nextFreightCost,
   });
   pushLog(state, 'PROVEEDOR_CRUD', `Costo de proveedor actualizado: ${supplier.name}`);
   return receipt('supplier_supply_update', 'ok', 'Producto de proveedor actualizado.', { supplierId, varietyId });
@@ -77,6 +90,10 @@ export const createPurchaseOrder = (state, input) => {
   if (supply.packagingOptions?.length && !supply.packagingOptions.some((option) => option.name === input.packaging)) {
     return receipt('purchase_order_add', 'failed', 'Empaque no disponible para este proveedor.');
   }
+  const status = input.status || 'Pendiente';
+  if (!editablePurchaseStatuses.has(status)) {
+    return receipt('purchase_order_add', 'failed', 'Estado inicial de compra invalido.');
+  }
   const totalCost = (supply.baseCost + supply.freightCost + packagingCost(supply, input.packaging)) * quantity;
   const order = {
     id: makeId('po'),
@@ -86,7 +103,7 @@ export const createPurchaseOrder = (state, input) => {
     packaging: input.packaging,
     quantity,
     totalCost,
-    status: input.status || 'Pendiente',
+    status,
     orderDate: nowIso(),
     expectedArrivalDate: input.expectedArrivalDate || null,
     paymentMethod: input.paymentMethod || 'Credito',
@@ -156,6 +173,9 @@ export const setPurchaseOrderStatus = (state, orderId, status) => {
   if (!order) return receipt('purchase_order_status', 'skipped', 'Orden no encontrada.');
   if (!['Pendiente', 'Ordenado', 'Recibido'].includes(status)) {
     return receipt('purchase_order_status', 'failed', 'Estado de orden invalido.');
+  }
+  if (order.status === 'Recibido' && status !== 'Recibido') {
+    return receipt('purchase_order_status', 'failed', 'Una orden recibida no puede reabrirse.');
   }
   if (status === 'Recibido') return receivePurchaseOrder(state, orderId);
   order.status = status;

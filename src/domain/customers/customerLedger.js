@@ -29,7 +29,12 @@ export const customerLedger = (state, customer) => {
   const billedDebt = sales
     .filter((sale) => sale.paymentStatus === 'En Deuda' && sale.status === 'Completado')
     .reduce((sum, sale) => sum + saleAmount(sale), 0);
-  const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const debtSaleIds = new Set(sales
+    .filter((sale) => sale.paymentStatus === 'En Deuda' && sale.status === 'Completado')
+    .map((sale) => sale.id));
+  const paid = payments
+    .filter((payment) => !payment.saleId || debtSaleIds.has(payment.saleId))
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const monetaryDebt = Math.max(0, billedDebt - paid);
   const lentCratesValue = loans.reduce((sum, loan) => sum + loanValue(state, loan), 0);
   const lastSale = sales.toSorted((left, right) =>

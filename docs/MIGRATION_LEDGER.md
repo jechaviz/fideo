@@ -76,7 +76,9 @@ Ported and verified:
 
 - Full Gemini live execution and provider-backed correction receipts require server-side credentials.
 - OneSignal live SDK execution requires deployment app id plus explicit live flag.
-- PocketBase authenticated realtime restore requires a live backend URL/session.
+- MySQL-backed snapshot restore requires production database credentials and
+  host-side schema readiness; PocketBase remains only as route-compatibility
+  vocabulary in this static port.
 - Veeper live receipt loop requires a running provider service and credentials.
 - codex-goal live engine execution requires `C:\git\codex\codex-goal` on the operator machine.
 

@@ -67,31 +67,34 @@ export const completeSale = (state, saleId, paymentStatus = 'Pagado', paymentMet
   if (!customer) return receipt('sale_complete', 'failed', 'Cliente no encontrado.');
 
   const amount = saleAmount(sale);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return receipt('sale_complete', 'failed', 'La venta no tiene monto valido para cierre.');
+  }
   const finalPaymentStatus = paymentStatus === 'Pagado' ? 'Pagado' : 'En Deuda';
+  const cashDrawer = paymentMethod === 'Efectivo' && finalPaymentStatus === 'Pagado'
+    ? state.cashDrawers.find((item) => item.status === 'Abierta')
+    : null;
 
-  if (paymentMethod === 'Efectivo' && finalPaymentStatus === 'Pagado') {
-    const drawer = state.cashDrawers.find((item) => item.status === 'Abierta');
-    if (drawer) {
-      drawer.balance += amount;
-      state.cashDrawerActivities.unshift({
-        id: makeId('cda'),
-        drawerId: drawer.id,
-        type: 'INGRESO_VENTA',
-        amount,
-        timestamp: nowIso(),
-        relatedId: sale.id,
-        notes: `Pago de ${sale.customer}`,
-      });
-    } else {
-      pushLog(state, 'CAJA_OPERACION', 'Pago en efectivo no registrado: caja cerrada', {
-        Cliente: sale.customer,
-        Monto: amount,
-      });
-    }
+  if (paymentMethod === 'Efectivo' && finalPaymentStatus === 'Pagado' && !cashDrawer) {
+    return receipt('sale_complete', 'failed', 'No hay caja abierta para registrar pago en efectivo.');
   }
 
   if (finalPaymentStatus === 'Pagado') {
-    addPayment(state, customer.id, amount, saleId);
+    const paymentReceipt = addPayment(state, customer.id, amount, saleId);
+    if (paymentReceipt.status !== 'ok') return paymentReceipt;
+  }
+
+  if (paymentMethod === 'Efectivo' && finalPaymentStatus === 'Pagado') {
+    cashDrawer.balance += amount;
+    state.cashDrawerActivities.unshift({
+      id: makeId('cda'),
+      drawerId: cashDrawer.id,
+      type: 'INGRESO_VENTA',
+      amount,
+      timestamp: nowIso(),
+      relatedId: sale.id,
+      notes: `Pago de ${sale.customer}`,
+    });
   }
 
   sale.status = 'Completado';

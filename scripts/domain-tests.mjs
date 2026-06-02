@@ -2,75 +2,20 @@ import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/fideoState.js';
 import { addFixedAsset, logAssetMaintenance, sellCrateAsset } from '../src/domain/assets/assetActions.js';
 import { crateAssetSummary, fixedAssetSummary } from '../src/domain/assets/assetSelectors.js';
-import {
-  addSize,
-  addWarehouse,
-  setCategoryIcon,
-  setProductGroupArchived,
-  setRipeningRule,
-  setSizeArchived,
-  setStateIcon,
-  setWarehouseArchived,
-  updateProductGroup,
-  updateSize,
-  updateVariety,
-  updateWarehouse,
-} from '../src/domain/catalog/catalogActions.js';
-import {
-  catalogSizeRows,
-  catalogSummary,
-  catalogWarehouseRows,
-  ripeningTransitionRows,
-} from '../src/domain/catalog/catalogSelectors.js';
+import { addSize, addWarehouse, setCategoryIcon, setProductGroupArchived, setRipeningRule, setSizeArchived, setStateIcon, setWarehouseArchived, updateProductGroup, updateSize, updateVariety, updateWarehouse } from '../src/domain/catalog/catalogActions.js';
+import { catalogSizeRows, catalogSummary, catalogWarehouseRows, ripeningTransitionRows } from '../src/domain/catalog/catalogSelectors.js';
 import { markCrateAsLost, returnCrateLoan, updateCustomer } from '../src/domain/customers/customerActions.js';
 import { customerPortfolio } from '../src/domain/customers/customerLedger.js';
 import { syncOperationalTaskAssignments, updateTaskAssignmentStatus } from '../src/domain/delivery/taskAssignments.js';
 import { pingDeliveryPresence, recordDeliveryReportReceipt } from '../src/domain/delivery/presenceActions.js';
-import {
-  deliveryAttentionItems,
-  deliveryColumns,
-  deliveryPresenceRows,
-  deliveryReportReceiptRows,
-  delivererPortal,
-  routeGroups,
-} from '../src/domain/delivery/deliverySelectors.js';
+import { deliveryAttentionItems, deliveryColumns, deliveryPresenceRows, deliveryReportReceiptRows, delivererPortal, routeGroups } from '../src/domain/delivery/deliverySelectors.js';
 import { submitTaskReport } from '../src/domain/delivery/taskReports.js';
-import {
-  addExpense,
-  closeCashDrawer,
-  createFinanceExport,
-  openCashDrawer,
-  recordCashMovement,
-  recordCashRemoteReceipt,
-  signedCashMovementAmount,
-} from '../src/domain/finance/financeActions.js';
-import {
-  cashActivityRows,
-  cashRemoteReceiptRows,
-  debtRows,
-  financeExportRows,
-  financeSummary,
-} from '../src/domain/finance/financeSelectors.js';
+import { addExpense, closeCashDrawer, createFinanceExport, openCashDrawer, recordCashMovement, recordCashRemoteReceipt, signedCashMovementAmount } from '../src/domain/finance/financeActions.js';
+import { cashActivityRows, cashRemoteReceiptRows, debtRows, financeExportRows, financeSummary } from '../src/domain/finance/financeSelectors.js';
 import { adjustInventory, changeQuality, moveBatchLocation, moveInventory, transferBatchWarehouse } from '../src/domain/inventory/inventoryActions.js';
 import { inventoryFilterOptions, inventoryTableRows, warehouseInventoryMatrix } from '../src/domain/inventory/selectors.js';
-import {
-  addMessage,
-  appendTrainingKnowledge,
-  approveInterpretation,
-  correctInterpretation,
-  interpretMessage,
-  recordCampaignProviderReceipt,
-  revertInterpretation,
-  sendPromotion,
-  updateMessageTemplate,
-} from '../src/domain/messages/messageActions.js';
-import {
-  aiInsightCards,
-  campaignDeliveryAnalytics,
-  campaignDrafts,
-  campaignReceiptRows,
-  correctionQueue,
-} from '../src/domain/messages/messageInsights.js';
+import { addMessage, appendTrainingKnowledge, approveInterpretation, correctInterpretation, interpretMessage, recordCampaignProviderReceipt, revertInterpretation, sendPromotion, updateMessageTemplate } from '../src/domain/messages/messageActions.js';
+import { aiInsightCards, campaignDeliveryAnalytics, campaignDrafts, campaignReceiptRows, correctionQueue } from '../src/domain/messages/messageInsights.js';
 import { messageStats } from '../src/domain/messages/messageSelectors.js';
 import { followUpException, reassignException, resolveException } from '../src/domain/operations/exceptionLoop.js';
 import { rolePipelineAudit } from '../src/domain/operations/rolePipelineAudit.js';
@@ -78,22 +23,8 @@ import { planogramZones } from '../src/domain/planogram/planogramSelectors.js';
 import { customerPortal, packerPortal, supplierPortal } from '../src/domain/portals/portalSelectors.js';
 import { planPushBinding } from '../src/domain/push/pushIdentity.js';
 import { addPayment, assignDelivery, completeSale, markOrderAsPacked, setPrice, setSpecialPrice } from '../src/domain/sales/salesActions.js';
-import {
-  createPurchaseOrder,
-  recordPurchaseProviderReceipt,
-  receivePurchaseOrder,
-  repricePurchaseOrder,
-  setPurchaseOrderStatus,
-  updateSupplier,
-  updateSupplierSupply,
-} from '../src/domain/suppliers/supplierActions.js';
-import {
-  purchaseOrderPipeline,
-  purchaseReceiptRows,
-  purchaseReceiptSummary,
-  supplierCostMatrix,
-  supplierStats,
-} from '../src/domain/suppliers/supplierSelectors.js';
+import { createPurchaseOrder, recordPurchaseProviderReceipt, receivePurchaseOrder, repricePurchaseOrder, setPurchaseOrderStatus, updateSupplier, updateSupplierSupply } from '../src/domain/suppliers/supplierActions.js';
+import { purchaseOrderPipeline, purchaseReceiptRows, purchaseReceiptSummary, supplierCostMatrix, supplierStats } from '../src/domain/suppliers/supplierSelectors.js';
 import { buildPersistableSnapshot, compactRemoteSnapshot } from '../src/domain/snapshotTransport.js';
 import { createPocketBaseGateway } from '../src/infrastructure/pocketbaseGateway.js';
 import { mutatingPocketBaseRoutes, pocketBaseRouteManifest, routeById } from '../src/infrastructure/pocketbaseRoutes.js';

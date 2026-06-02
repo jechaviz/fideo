@@ -3,7 +3,7 @@
 ## Product Goal
 
 FideoVue preserves Fideo's operational cockpit strengths while removing the
-largest structural risks from the React/PocketBase version:
+largest structural risks from the legacy React/PocketBase version:
 
 - no component file over 600 lines
 - no frontend dependency install required at runtime
@@ -25,8 +25,10 @@ The Action Center uses this layer for follow-up, reassignment and resolution.
 
 ### Infrastructure
 
-`src/infrastructure` contains HTTP adapters for PocketBase, Veeper and AI
-engines. They never mutate UI state directly and always return receipts.
+`src/infrastructure` contains HTTP adapters for the MySQL snapshot runtime,
+Veeper and AI engines. The snapshot adapter keeps the historical
+PocketBase-compatible route names while using `pb-mysql` on the server. Adapters
+never mutate UI state directly and always return receipts.
 
 ### Components
 
@@ -49,7 +51,7 @@ kernel actions. They do not own transport or business rules.
    finances, messaging and staff portals.
 3. Replace large Fideo source files with small Vue components plus domain
    services.
-4. Keep live PocketBase, Veeper, OneSignal and AI execution behind deployment
-   gates until credentials and services are supplied.
+4. Keep live MySQL, Veeper, OneSignal and AI execution behind deployment gates
+   until credentials and services are supplied.
 5. Treat the static port as production-ready when parity, security and local
    gates pass, with live provider activation tracked separately.
