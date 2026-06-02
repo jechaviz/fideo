@@ -423,7 +423,8 @@ function fideo_kilo_prompt(array $body, string $model): string
     ];
 
     return 'Eres el engine server-side de Fideo en Spaceship. Devuelve solo JSON valido con ' .
-        'summary, recommendedActions, risks, followUps y confidence. Contexto: ' .
+        'summary, recommendedActions, risks, followUps y confidence. No uses herramientas, subagentes, ' .
+        'lectura de archivos, busqueda ni comandos; responde solo con el contexto recibido. Contexto: ' .
         json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
@@ -513,6 +514,20 @@ function fideo_kilo_plan_payload(array $body): array
 
     $promptPayload = [
         'model' => fideo_kilo_model_ref($model),
+        'tools' => [
+            'task' => false,
+            'bash' => false,
+            'glob' => false,
+            'grep' => false,
+            'list' => false,
+            'read' => false,
+            'write' => false,
+            'edit' => false,
+            'patch' => false,
+            'webfetch' => false,
+            'websearch' => false,
+            'todowrite' => false,
+        ],
         'parts' => [[
             'type' => 'text',
             'text' => fideo_kilo_prompt($body, $model),
