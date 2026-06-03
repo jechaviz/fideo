@@ -163,8 +163,8 @@ button {
   --fideo-main-top-gradient: linear-gradient(
     to bottom,
     rgb(2, 6, 17) 0 1px,
-    rgb(2, 6, 17) 1px 10px,
-    rgb(2, 6, 18) 10px 204px,
+    rgb(2, 6, 17) 1px 9px,
+    rgb(2, 6, 18) 9px 204px,
     rgb(1, 6, 18) 204px 208px,
     rgb(2, 6, 19) 208px 213px,
     rgb(2, 6, 18) 213px 217px,
@@ -220,14 +220,24 @@ button {
   content: "";
   position: absolute;
   z-index: 0;
-  top: 204px;
+  top: 0;
   right: 1px;
   width: 19px;
-  height: 107px;
+  height: 311px;
   background: linear-gradient(
     to bottom,
-    rgb(2, 6, 18) 0 13px,
-    rgb(2, 6, 17) 13px 107px
+    rgb(2, 6, 17) 0 29px,
+    rgb(2, 6, 18) 29px 40px,
+    rgb(2, 6, 17) 40px 62px,
+    rgb(2, 6, 18) 62px 81px,
+    rgb(2, 6, 17) 81px 106px,
+    rgb(2, 6, 18) 106px 170px,
+    rgb(2, 6, 17) 170px 195px,
+    rgb(2, 6, 18) 195px 214px,
+    rgb(2, 6, 17) 214px 236px,
+    rgb(2, 6, 18) 236px 247px,
+    rgb(2, 6, 17) 247px 304px,
+    rgb(3, 7, 18) 304px 311px
   );
   pointer-events: none;
 }
