@@ -90,30 +90,8 @@ button {
   background: #030712;
 }
 
-.fideo-main-scroll::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 0 0 auto;
-  height: 229px;
-  background: #020612;
-  pointer-events: none;
-}
-
-.fideo-main-content {
-  position: relative;
-  z-index: 1;
-}
-
-.fideo-main-stage::before {
-  content: "";
-  position: absolute;
-  z-index: 25;
-  top: 48px;
-  bottom: 1px;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
+.fideo-main-stage {
+  --fideo-main-seam-gradient: linear-gradient(
     to bottom,
     rgb(31, 34, 40) 0 1px,
     rgb(1, 5, 17) 1px 10px,
@@ -132,6 +110,83 @@ button {
     rgb(2, 6, 18) 305px 715px,
     rgb(2, 6, 17) 715px 719px
   );
+  --fideo-main-top-gradient: linear-gradient(
+    to bottom,
+    rgb(31, 34, 40) 0 1px,
+    rgb(2, 6, 17) 1px 10px,
+    rgb(2, 6, 18) 10px 206px,
+    rgb(1, 6, 18) 206px 209px,
+    rgb(2, 6, 19) 209px 214px,
+    rgb(2, 6, 18) 214px 218px,
+    rgb(2, 5, 18) 218px 221px,
+    rgb(2, 6, 18) 221px 222px,
+    rgb(2, 6, 19) 222px 225px,
+    rgb(2, 6, 18) 225px 229px
+  );
+  --fideo-main-end-gradient: linear-gradient(
+    to bottom,
+    rgb(31, 34, 40) 0 1px,
+    rgb(2, 6, 17) 1px 31px,
+    rgb(2, 6, 18) 31px 42px,
+    rgb(2, 6, 17) 42px 66px,
+    rgb(2, 6, 18) 66px 85px,
+    rgb(2, 6, 17) 85px 118px,
+    rgb(2, 6, 18) 118px 160px,
+    rgb(2, 6, 17) 160px 193px,
+    rgb(2, 6, 18) 193px 212px,
+    rgb(2, 6, 17) 212px 236px,
+    rgb(2, 6, 18) 236px 247px,
+    rgb(2, 6, 17) 247px 305px,
+    rgb(3, 7, 18) 305px 719px
+  );
+}
+
+.fideo-main-scroll::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 229px;
+  background: var(--fideo-main-top-gradient);
+  pointer-events: none;
+}
+
+.fideo-main-scroll::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 1px 1px;
+  width: 19px;
+  background: var(--fideo-main-seam-gradient);
+  pointer-events: none;
+}
+
+.fideo-main-content {
+  position: relative;
+  z-index: 1;
+}
+
+.fideo-main-stage::before {
+  content: "";
+  position: absolute;
+  z-index: 25;
+  top: 48px;
+  bottom: 1px;
+  left: 0;
+  width: 1px;
+  background: var(--fideo-main-seam-gradient);
+  pointer-events: none;
+}
+
+.fideo-main-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 25;
+  top: 48px;
+  right: 0;
+  bottom: 1px;
+  width: 1px;
+  background: var(--fideo-main-end-gradient);
   pointer-events: none;
 }
 
