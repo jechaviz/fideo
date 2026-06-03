@@ -262,7 +262,7 @@ export default {
         neutral: 'border-white/10 bg-white/5 text-slate-200',
       }[signal.tone] || 'border-slate-400/30 bg-slate-300/10 text-slate-100';
       return h('span', {
-        class: `inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${tone}`,
+        class: `fideo-signal-badge inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${tone}`,
         key: signal.id,
       }, [
         h('span', { class: signal.tone === 'neutral' ? 'h-2 w-2 rounded-full bg-slate-400' : 'h-2 w-2 rounded-full bg-current opacity-80' }),
@@ -283,7 +283,7 @@ export default {
           }, [h('i', { class: 'fa-solid fa-bars' })]),
           h('div', { class: 'flex min-w-0 flex-1 items-center gap-2' }, [
             h('span', {
-              class: 'inline-flex items-center gap-1.5 rounded-md border border-brand-400/20 bg-brand-400/10 px-2 py-1 text-[11px] font-black text-brand-200',
+              class: 'fideo-role-badge inline-flex items-center gap-1.5 rounded-md border border-brand-400/20 bg-brand-400/10 px-2 py-1 text-[11px] font-black text-brand-200',
             }, [
               h('span', { class: 'h-1.5 w-1.5 rounded-full bg-brand-400' }),
               this.roleLabel,
