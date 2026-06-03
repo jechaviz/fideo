@@ -274,6 +274,10 @@ button {
   min-width: 72px;
 }
 
+.fideo-shell header h1 {
+  transform: translateX(-0.28px);
+}
+
 .fideo-sidebar {
   border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
   background: #030712 !important;
