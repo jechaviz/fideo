@@ -146,14 +146,14 @@ button {
     to bottom,
     rgb(2, 6, 17) 0 1px,
     rgb(2, 6, 17) 1px 10px,
-    rgb(2, 6, 18) 10px 206px,
-    rgb(1, 6, 18) 206px 209px,
-    rgb(2, 6, 19) 209px 214px,
-    rgb(2, 6, 18) 214px 218px,
-    rgb(2, 5, 18) 218px 221px,
-    rgb(2, 6, 18) 221px 222px,
-    rgb(2, 6, 19) 222px 225px,
-    rgb(2, 6, 18) 225px 229px
+    rgb(2, 6, 18) 10px 204px,
+    rgb(1, 6, 18) 204px 208px,
+    rgb(2, 6, 19) 208px 213px,
+    rgb(2, 6, 18) 213px 217px,
+    rgb(2, 5, 18) 217px 220px,
+    rgb(2, 6, 18) 220px 221px,
+    rgb(2, 6, 19) 221px 224px,
+    rgb(2, 6, 18) 224px 229px
   );
   --fideo-main-end-gradient: linear-gradient(
     to bottom,
@@ -188,7 +188,7 @@ button {
   position: absolute;
   z-index: 0;
   inset: 0 auto 0 1px;
-  width: 19px;
+  width: 87px;
   background: var(--fideo-main-seam-gradient);
   pointer-events: none;
 }
@@ -224,10 +224,16 @@ button {
 
 .delivery-ops-stack {
   display: block;
+  position: relative;
 }
 
 .delivery-ops-stack > * + * {
   margin-top: 24px;
+}
+
+.delivery-ops-stack > * {
+  position: relative;
+  z-index: 1;
 }
 
 .delivery-hero-panel {
@@ -244,7 +250,7 @@ button {
   position: absolute;
   z-index: 0;
   inset: 0 auto 0 0;
-  width: 96px;
+  width: 68px;
   background: rgb(2, 6, 17);
   pointer-events: none;
 }
@@ -258,6 +264,34 @@ button {
   .delivery-hero-metrics {
     flex: 0 0 530.625px;
     width: 530.625px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .delivery-ops-stack::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    top: 217px;
+    left: calc((100% - 24px) * 0.46);
+    width: 24px;
+    height: 93px;
+    background: linear-gradient(
+      to bottom,
+      rgb(2, 6, 18) 0 5px,
+      rgb(2, 6, 17) 5px 6px,
+      rgb(2, 6, 18) 6px 15px,
+      rgb(2, 6, 17) 15px 18px,
+      rgb(2, 6, 18) 18px 22px,
+      rgb(2, 5, 18) 22px 24px,
+      rgb(2, 6, 18) 24px 26px,
+      rgb(2, 6, 17) 26px 32px,
+      rgb(2, 6, 18) 32px 38px,
+      rgb(2, 6, 17) 38px 49px,
+      rgb(2, 6, 18) 49px 55px,
+      rgb(2, 6, 17) 55px 93px
+    );
+    pointer-events: none;
   }
 }
 
