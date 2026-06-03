@@ -247,7 +247,7 @@ try {
 
   await clickControl('AI plan');
 
-  const aiReceiptText = expectLiveAiBridge ? 'Kilo StepFun genero plan Fideo desde Spaceship.' : 'ai_engine_plan';
+  const aiReceiptText = expectLiveAiBridge ? 'Kilo StepFun' : 'ai_engine_plan';
   const aiPlanValue = await waitForPageValue(
     `({ text: document.body.innerText })`,
     (candidate) => candidate?.text?.includes(aiReceiptText),

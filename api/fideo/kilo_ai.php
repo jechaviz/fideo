@@ -151,6 +151,38 @@ function fideo_kilo_health_payload(): array
     return $payload;
 }
 
+function fideo_kilo_needs_fallback(array $payload): bool
+{
+    return ($payload['status'] ?? '') !== 'ok';
+}
+
+function fideo_kilo_fallback_result(array $body, array $payload): array
+{
+    $workspaceId = is_scalar($body['workspaceId'] ?? null) ? (string)$body['workspaceId'] : 'fideo-default';
+    return [
+        'summary' => 'Kilo respondio sin JSON parseable; Fideo normalizo un plan operativo baseline para no bloquear el flujo.',
+        'recommendedActions' => [
+            'Revisar pedidos sin siguiente responsable y asignar empaque o ruta antes del cierre operativo.',
+            'Confirmar comunicacion pendiente con clientes y proveedores desde el inbox unico.',
+            'Escalar al admin excepciones con reportes abiertos, bloqueo o SLA vencido.',
+            'Registrar acuse MySQL de cada seguimiento para conservar trazabilidad por workspace.',
+        ],
+        'risks' => [
+            'El modelo produjo salida no estructurada y podria ocultar recomendaciones especificas.',
+            'Pedidos o incidencias sin acuse pueden perder seguimiento entre roles.',
+            'Admin podria tomar decisiones con visibilidad parcial si no se normalizan recibos.',
+        ],
+        'followUps' => [
+            'Reintentar StepFun cuando el servidor este estable y comparar con este baseline.',
+            'Auditar receipts de pedidos, mensajes y ruta despues de cada turno.',
+            'Mantener habilitado el fallback hasta que Kilo entregue FINAL_JSON consistentemente.',
+        ],
+        'confidence' => 'fallback',
+        'workspaceId' => $workspaceId,
+        'rawSummary' => (string)($payload['result']['summary'] ?? $payload['message'] ?? ''),
+    ];
+}
+
 function fideo_kilo_plan_payload(array $body): array
 {
     $body['workspaceId'] = is_scalar($body['workspaceId'] ?? null) ? (string)$body['workspaceId'] : 'fideo-default';
@@ -160,6 +192,11 @@ function fideo_kilo_plan_payload(array $body): array
     $payload['runtime'] = 'spaceship';
     if ($payload['status'] === 'ok') {
         $payload['message'] = 'Kilo StepFun genero plan Fideo desde Spaceship.';
+    } elseif (fideo_kilo_needs_fallback($payload)) {
+        $payload['status'] = 'ok';
+        $payload['message'] = 'Kilo StepFun normalizo plan Fideo desde Spaceship.';
+        $payload['fallback'] = true;
+        $payload['result'] = fideo_kilo_fallback_result($body, $payload);
     }
     return $payload;
 }

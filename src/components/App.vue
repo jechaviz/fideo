@@ -40,12 +40,6 @@ const defaultViewByRole = {
   Proveedor: 'portal',
 };
 
-const money = (value) => Number(value || 0).toLocaleString('es-MX', {
-  style: 'currency',
-  currency: 'MXN',
-  maximumFractionDigits: 0,
-});
-
 export default {
   name: 'FideoVueApp',
   setup() {
@@ -284,13 +278,6 @@ export default {
         h('span', signal.label),
       ]);
     },
-    roleKpi(label, value, detail) {
-      return h('article', { class: 'surface p-4' }, [
-        h('p', { class: 'm-0 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500' }, label),
-        h('strong', { class: 'mt-2 block text-2xl text-white' }, String(value)),
-        h('span', { class: 'text-sm text-slate-300' }, detail),
-      ]);
-    },
     renderHeader() {
       const FideoRoleSwitcher = resolveComponent('FideoRoleSwitcher');
       return h('header', {
@@ -467,72 +454,6 @@ export default {
         ]),
       ]);
     },
-    renderCustomerPortal() {
-      const customer = this.state.customers[0];
-      const sales = this.state.sales.filter((sale) => sale.customerId === customer?.id);
-      const debt = sales
-        .filter((sale) => sale.paymentStatus === 'En Deuda')
-        .reduce((sum, sale) => sum + Number(sale.total || sale.price || 0), 0);
-      return [
-        this.renderPortalHero('Portal cliente', customer?.name || 'Cliente', [
-          this.roleKpi('Balance total', money(debt), 'credito y cajas'),
-          this.roleKpi('Pedidos', sales.length, 'historial visible'),
-          this.roleKpi('Precios', customer?.specialPrices?.length || 0, 'condiciones activas'),
-        ]),
-        this.renderPortalList('Pedido de hoy', sales.slice(0, 4).map((sale) => ({
-          id: sale.id,
-          title: `${sale.quantity}x ${sale.varietyName} ${sale.size}`,
-          detail: `${sale.status} - ${money(sale.total || sale.price)}`,
-        }))),
-        this.board('CommerceBoard', this.commerceProps()),
-      ];
-    },
-    renderSupplierPortal() {
-      const supplier = this.state.suppliers[0];
-      const orders = this.state.purchaseOrders.filter((order) => order.supplierId === supplier?.id);
-      const total = orders.reduce((sum, order) => sum + Number(order.totalCost || 0), 0);
-      return [
-        this.renderPortalHero('Portal proveedor', supplier?.name || 'Proveedor', [
-          this.roleKpi('Ordenes', orders.length, 'compras recientes'),
-          this.roleKpi('Monto total', money(total), 'abasto coordinado'),
-          this.roleKpi('Ultimo estado', orders[0]?.status || 'Sin actividad', supplier?.contact || 'contacto'),
-        ]),
-        this.renderPortalList('Ordenes de compra', orders.slice(0, 5).map((order) => ({
-          id: order.id,
-          title: `${order.quantity} ${order.packaging} - ${order.size}`,
-          detail: `${order.status} - ${money(order.totalCost)}`,
-        }))),
-        this.board('SupplierOpsBoard', this.supplierProps()),
-      ];
-    },
-    renderPortalHero(eyebrow, title, tiles) {
-      return h('section', {
-        class: 'rounded-lg border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(163,230,53,0.14),transparent_32%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8',
-      }, [
-        h('div', { class: 'flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between' }, [
-          h('div', { class: 'max-w-3xl' }, [
-            h('p', { class: 'm-0 text-[10px] font-black uppercase tracking-[0.32em] text-lime-200' }, eyebrow),
-            h('h2', { class: 'm-0 mt-3 text-4xl font-black tracking-tight text-white' }, title),
-            h('p', { class: 'm-0 mt-4 max-w-2xl text-sm leading-6 text-slate-300' },
-              'Consulta actividad, pedidos, comunicacion y seguimiento desde una vista clara.'),
-          ]),
-          h('div', { class: 'grid gap-3 sm:grid-cols-3 xl:min-w-[540px]' }, tiles),
-        ]),
-      ]);
-    },
-    renderPortalList(title, rows) {
-      return h('section', { class: 'surface overflow-hidden p-4' }, [
-        h('div', { class: 'border-b border-white/10 pb-3' }, [
-          h('p', { class: 'm-0 text-[10px] font-black uppercase tracking-[0.24em] text-slate-500' }, 'Portal'),
-          h('h3', { class: 'm-0 mt-1 text-2xl font-black text-white' }, title),
-        ]),
-        rows.length ? h('ul', { class: 'm-0 mt-4 grid list-none gap-3 p-0' }, rows.map((row) =>
-          h('li', { class: 'rounded-lg border border-white/10 bg-white/5 p-4', key: row.id }, [
-            h('strong', { class: 'text-white' }, row.title),
-            h('span', { class: 'block text-sm text-slate-300' }, row.detail),
-          ]))) : h('p', { class: 'mt-4 text-sm text-slate-400' }, 'Sin actividad para mostrar.'),
-      ]);
-    },
     renderPortalShell() {
       const FideoRoleSwitcher = resolveComponent('FideoRoleSwitcher');
       return h('div', { class: 'min-h-screen bg-slate-950 text-slate-100' }, [
@@ -571,7 +492,9 @@ export default {
         h('main', { class: 'relative' }, [
           h('div', { class: 'mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8' }, [
             h('div', { class: 'glass-panel-dark grid gap-4 rounded-lg p-4 md:p-6' },
-              this.currentRole === 'Cliente' ? this.renderCustomerPortal() : this.renderSupplierPortal()),
+              this.currentRole === 'Cliente'
+                ? [this.board('FideoCustomerPortal', { state: this.state })]
+                : [this.board('FideoSupplierPortal', { state: this.state })]),
           ]),
         ]),
       ]);
