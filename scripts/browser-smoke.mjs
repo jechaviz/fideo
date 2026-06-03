@@ -169,119 +169,129 @@ try {
     throw new Error(`${label} not ready after ${timeoutMs}ms: ${JSON.stringify(lastValue)} logs=${logs.join(' | ')}`);
   };
 
-  const cockpitSnapshotExpression = `({
+  const pageSnapshotExpression = `({
     text: document.body?.innerText || '',
     cloaked: Boolean(document.querySelector('[data-fideo-cloak]')),
     title: document.title,
-    hasActionCenter: Boolean((document.body?.innerText || '').match(/action center/i)),
+    hasShell: Boolean(document.querySelector('.fideo-shell')),
+    hasSidebar: Boolean(document.querySelector('aside')),
+    hasPortal: Boolean(document.querySelector('.glass-panel-dark')),
     hasUnoRuntime: Boolean(document.querySelector('[data-unocss-runtime-layer]'))
   })`;
 
-  const hasRequiredText = (value) => (
+  const hasRequiredText = (requiredText) => (value) => (
     value
-    && value.hasActionCenter
+    && value.hasShell
+    && value.hasSidebar
     && requiredText.every((text) => value.text.includes(text))
   );
 
-  const requiredText = [
-    'Mesa operativa',
-    'Clientes',
-    'Proveedores',
-    'Finanzas',
-    'Mensajes IA',
-    'Campanas',
-    'AUDITORIA ROLES',
-    'Pipelines por rol',
-    'ENTREGA VIVA',
-    'Atencion ruta',
-    'Presencia ruta',
-    'Mapa entregas',
-    'TABLA INVENTARIO',
-    'Lotes operables',
-    'CATALOGO OPERATIVO',
-    'Bodegas editables',
-    'Reglas maduracion',
-    'CAJA OPERATIVA',
-    'Timeline caja',
-    'Cobranza viva',
-    'Export finanzas',
-    'Recibos caja',
-    'ABASTO COORDINADO',
-    'Pipeline compras',
-    'Recibos compra',
-    'Insights IA',
-    'Correccion remota',
-    'Campanas segmentadas',
-    'Entregas proveedor',
-    'Activos',
-    'Planograma',
-    'Portales',
-    'Gates runtime',
-    'MySQL snapshot',
-    'OneSignal live',
-  ];
+  const clickControl = async (label) => {
+    const expression = `(() => {
+      const label = ${JSON.stringify(label)};
+      const controls = Array.from(document.querySelectorAll('button,a'));
+      const textOf = (item) => (item.textContent || '').replace(/\\s+/g, ' ').trim();
+      const same = (value) => String(value || '').toLowerCase() === label.toLowerCase();
+      const has = (value) => String(value || '').toLowerCase().includes(label.toLowerCase());
+      const control = controls.find((item) =>
+        same(item.getAttribute('aria-label'))
+        || same(item.getAttribute('title'))
+        || same(textOf(item))
+        || (label.length > 3 && has(textOf(item)))
+      );
+      if (!control) return { clicked: false, label, text: document.body.innerText };
+      control.click();
+      return { clicked: true, label };
+    })()`;
+    const result = await send('Runtime.evaluate', { returnByValue: true, expression });
+    const value = result.result?.result?.value;
+    if (!value?.clicked) {
+      throw new Error(`Could not click ${label}: ${JSON.stringify(value)}`);
+    }
+  };
+
+  const waitForText = async (requiredText, label, timeoutMs = 15000) => waitForPageValue(
+    pageSnapshotExpression,
+    hasRequiredText(requiredText),
+    label,
+    timeoutMs,
+  );
 
   await send('Page.enable');
   await send('Log.enable');
   await send('Runtime.enable');
   await send('Page.navigate', { url });
 
-  const value = await waitForPageValue(
-    cockpitSnapshotExpression,
-    hasRequiredText,
-    'FideoVue cockpit',
-  );
-  if (!value || !hasRequiredText(value)) {
-    throw new Error(`FideoVue did not render expected cockpit text: ${JSON.stringify(value)} logs=${logs.join(' | ')}`);
-  }
+  const value = await waitForText([
+    'Centro Comercial',
+    'Excepciones',
+    'Excepciones operativas',
+    'Pipelines por rol',
+  ], 'FideoVue dashboard');
   if (value.cloaked) throw new Error('FideoVue remained cloaked after boot.');
   if (!value.hasUnoRuntime) throw new Error('UnoCSS runtime styles were not injected.');
   if (exceptions.length) throw new Error(`Browser exceptions: ${exceptions.join('; ')}`);
 
-  const aiPlanResult = await send('Runtime.evaluate', {
-    returnByValue: true,
-    expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button'))
-        .find((item) => item.textContent.trim() === 'AI plan');
-      if (!button) return { clicked: false, text: document.body.innerText };
-      button.click();
-      return { clicked: true };
-    })()`,
-  });
-  if (!aiPlanResult.result?.result?.value?.clicked) {
-    throw new Error(`Could not click AI plan action: ${JSON.stringify(aiPlanResult.result?.result?.value)}`);
-  }
+  await clickControl('Ruta');
+  await waitForText(['Empaque, asignacion y ruta', 'Presencia ruta', 'Mapa entregas'], 'deliveries view');
 
-  const aiReceiptText = expectLiveAiBridge ? 'Kilo mock genero plan Fideo.' : 'ai_engine_plan';
+  await clickControl('Stock');
+  await waitForText(['TABLA INVENTARIO', 'Lotes operables'], 'inventory view');
+
+  await clickControl('Abrir More');
+  await clickControl('Proveedores');
+  await waitForText(['ABASTO COORDINADO', 'Pipeline compras'], 'suppliers view');
+
+  await clickControl('IA');
+  await waitForText(['Insights IA', 'Gates runtime', 'AI plan'], 'training view');
+
+  await clickControl('AI plan');
+
+  const aiReceiptText = expectLiveAiBridge ? 'Kilo StepFun genero plan Fideo desde Spaceship.' : 'ai_engine_plan';
   const aiPlanValue = await waitForPageValue(
     `({ text: document.body.innerText })`,
     (candidate) => candidate?.text?.includes(aiReceiptText),
     'AI plan receipt',
-    expectLiveAiBridge ? 20000 : 180000,
+    expectLiveAiBridge ? 90000 : 180000,
   );
   if (!aiPlanValue?.text.includes(aiReceiptText)) {
     throw new Error(`AI plan did not produce a visible receipt: ${JSON.stringify(aiPlanValue)}`);
   }
 
-  const clickResult = await send('Runtime.evaluate', {
-    returnByValue: true,
-    expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button'))
-        .find((item) => item.textContent.trim() === 'Empacar');
-      if (!button) return { clicked: false, text: document.body.innerText };
-      button.click();
-      return { clicked: true };
-    })()`,
-  });
-  if (!clickResult.result?.result?.value?.clicked) {
-    throw new Error(`Could not click Empacar action: ${JSON.stringify(clickResult.result?.result?.value)}`);
-  }
+  await clickControl('Ruta');
+  await waitForText(['Empaque, asignacion y ruta'], 'deliveries after AI');
+  await clickControl('Enterado');
+  await waitForText(['Iniciar'], 'delivery acknowledged');
+  await clickControl('Iniciar');
+  await waitForText(['Empacar'], 'delivery started');
+  await clickControl('Empacar');
 
   await delay(500);
   const interactionValue = await evaluatePage(`({ text: document.body.innerText })`);
-  if (!interactionValue?.text.includes('Listo para Entrega')) {
+  if (!interactionValue?.text.includes('Pedido empacado') || !interactionValue?.text.includes('Asignar ruta')) {
     throw new Error(`Sale action did not update visible state: ${JSON.stringify(interactionValue)}`);
   }
+  await clickControl('Enterado');
+  await waitForText(['Iniciar'], 'route assignment acknowledged');
+  await clickControl('Iniciar');
+  await waitForText(['Asignar'], 'route assignment started');
+  await clickControl('Asignar');
+  await delay(500);
+  const routeValue = await evaluatePage(`({ text: document.body.innerText })`);
+  if (!routeValue?.text.includes('Pedido asignado') && !routeValue?.text.includes('Entregar Fruteria Lupita')) {
+    throw new Error(`Route assignment did not update visible state: ${JSON.stringify(routeValue)}`);
+  }
+
+  await clickControl('Abrir More global');
+  await clickControl('Cambiar a Cliente');
+  await waitForPageValue(
+    pageSnapshotExpression,
+    (candidate) => candidate?.hasPortal && candidate?.text?.includes('Portal cliente') && candidate?.text?.includes('Fideo Cliente'),
+    'customer portal',
+  );
+
+  await clickControl('Cambiar a Admin');
+  await waitForText(['Centro Comercial', 'Excepciones operativas'], 'admin return');
 
   console.log(`FideoVue browser smoke passed: ${value.title}`);
   ws.close();

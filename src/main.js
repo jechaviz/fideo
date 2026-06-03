@@ -8,6 +8,8 @@ const componentUrls = {
   DeliveryOpsBoard: './src/components/DeliveryOpsBoard.vue',
   DomainBoard: './src/components/DomainBoard.vue',
   FinanceOpsBoard: './src/components/FinanceOpsBoard.vue',
+  FideoRoleSwitcher: './src/components/FideoRoleSwitcher.vue',
+  FideoShellSidebar: './src/components/FideoShellSidebar.vue',
   IntegrationHealth: './src/components/IntegrationHealth.vue',
   InventoryOpsBoard: './src/components/InventoryOpsBoard.vue',
   MessageAiOpsBoard: './src/components/MessageAiOpsBoard.vue',

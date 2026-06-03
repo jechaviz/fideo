@@ -19,6 +19,7 @@ export default {
   props: {
     gates: { type: Array, required: true },
     pocketbaseRoutes: { type: Array, required: true },
+    receipts: { type: Array, default: () => [] },
   },
   emits: ['bootstrap-pocketbase', 'persist-snapshot', 'presence-ping', 'plan-realtime', 'plan-ai'],
   computed: {
@@ -96,6 +97,11 @@ export default {
             onClick: () => this.$emit('plan-ai'),
           }, 'AI plan'),
         ]),
+        this.receipts.length ? h('ul', { class: 'm-0 mt-3 grid list-none gap-2 p-0' },
+          this.receipts.slice(0, 4).map((receipt) => h('li', {
+            class: 'rounded-lg bg-slate-950/40 p-3 text-xs text-slate-300',
+            key: receipt.id,
+          }, `${receipt.kind || 'receipt'}: ${receipt.status || 'ok'} - ${receipt.message || receipt.kind}`))) : null,
         h('ul', { class: 'm-0 mt-3 flex list-none flex-wrap gap-2 p-0' },
           this.pocketbaseRoutes.slice(0, 8).map((route) =>
             h('li', { class: 'pill text-xs', key: route.id }, `${route.method} ${route.path}`))),
