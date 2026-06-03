@@ -142,6 +142,24 @@ button {
     rgb(2, 6, 18) 305px 715px,
     rgb(2, 6, 17) 715px 719px
   );
+  --fideo-scroll-seam-gradient: linear-gradient(
+    to bottom,
+    rgb(1, 5, 17) 0 9px,
+    rgb(1, 5, 16) 9px 16px,
+    rgb(1, 5, 17) 16px 30px,
+    rgb(1, 5, 18) 30px 41px,
+    rgb(1, 5, 17) 41px 65px,
+    rgb(1, 5, 18) 65px 84px,
+    rgb(1, 5, 17) 84px 117px,
+    rgb(1, 5, 18) 117px 159px,
+    rgb(1, 5, 17) 159px 192px,
+    rgb(1, 5, 18) 192px 211px,
+    rgb(1, 5, 17) 211px 235px,
+    rgb(1, 5, 18) 235px 246px,
+    rgb(1, 5, 17) 246px 304px,
+    rgb(2, 6, 18) 304px 714px,
+    rgb(2, 6, 17) 714px 718px
+  );
   --fideo-main-top-gradient: linear-gradient(
     to bottom,
     rgb(2, 6, 17) 0 1px,
@@ -189,7 +207,7 @@ button {
   z-index: 0;
   inset: 0 auto 0 1px;
   width: 87px;
-  background: var(--fideo-main-seam-gradient);
+  background: var(--fideo-scroll-seam-gradient);
   pointer-events: none;
 }
 
