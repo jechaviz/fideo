@@ -121,6 +121,68 @@ button {
   font-weight: 900;
 }
 
+.fideo-sidebar button {
+  font: inherit;
+}
+
+.sidebar-brand-mark {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: #a3e635;
+  color: #020617;
+}
+
+.sidebar-section-toggle,
+.sidebar-more-toggle,
+.sidebar-collapse-button,
+.sidebar-close-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.sidebar-nav-button {
+  appearance: none;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-nav-button:hover,
+.sidebar-more-toggle:hover,
+.sidebar-collapse-button:hover {
+  background: rgba(255, 255, 255, 0.055);
+  color: #ffffff;
+}
+
+.sidebar-nav-button.is-active {
+  background: #a3e635;
+  color: #020617;
+}
+
+.sidebar-nav-button.is-collapsed {
+  justify-content: center;
+}
+
+.sidebar-nav-icon {
+  text-align: center;
+  font-size: 1rem;
+}
+
 .hamburger-lines,
 .hamburger-lines::before,
 .hamburger-lines::after {

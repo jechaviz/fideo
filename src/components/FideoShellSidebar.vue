@@ -9,39 +9,39 @@ const adminNavConfig = [
   {
     title: 'Daily',
     items: [
-      { id: 'dashboard', label: 'Ops', short: 'OP' },
-      { id: 'actions', label: 'Acciones', short: 'AC' },
-      { id: 'deliveries', label: 'Ruta', short: 'RT' },
-      { id: 'messages', label: 'Mensajes', short: 'MS' },
-      { id: 'inventory', label: 'Stock', short: 'ST' },
+      { id: 'dashboard', label: 'Ops', icon: 'fa-grip' },
+      { id: 'actions', label: 'Acciones', icon: 'fa-clipboard-check' },
+      { id: 'deliveries', label: 'Ruta', icon: 'fa-truck' },
+      { id: 'messages', label: 'Mensajes', icon: 'fa-comments' },
+      { id: 'inventory', label: 'Stock', icon: 'fa-boxes-stacked' },
     ],
   },
   {
     title: 'More',
     items: [
-      { id: 'customers', label: 'Clientes', short: 'CL' },
-      { id: 'suppliers', label: 'Proveedores', short: 'PR' },
-      { id: 'planogram', label: 'Mapa', short: 'MP' },
-      { id: 'finances', label: 'Finanzas', short: 'FN' },
-      { id: 'salesLog', label: 'Ventas', short: 'VT' },
-      { id: 'history', label: 'Historial', short: 'HS' },
-      { id: 'ripening', label: 'Maduracion', short: 'MD' },
-      { id: 'assets', label: 'Activos', short: 'AT' },
-      { id: 'training', label: 'IA', short: 'IA' },
+      { id: 'customers', label: 'Clientes', icon: 'fa-users' },
+      { id: 'suppliers', label: 'Proveedores', icon: 'fa-truck-field' },
+      { id: 'planogram', label: 'Mapa', icon: 'fa-cubes-stacked' },
+      { id: 'finances', label: 'Finanzas', icon: 'fa-sack-dollar' },
+      { id: 'salesLog', label: 'Ventas', icon: 'fa-file-invoice-dollar' },
+      { id: 'history', label: 'Historial', icon: 'fa-clock-rotate-left' },
+      { id: 'ripening', label: 'Maduracion', icon: 'fa-forward' },
+      { id: 'assets', label: 'Activos', icon: 'fa-building-columns' },
+      { id: 'training', label: 'IA', icon: 'fa-brain' },
     ],
   },
   {
     title: 'Settings',
-    items: [{ id: 'settings', label: 'Ajustes', short: 'AJ' }],
+    items: [{ id: 'settings', label: 'Ajustes', icon: 'fa-gear' }],
   },
 ];
 
 const packerNavConfig = [
-  { title: 'Empaque', items: [{ id: 'deliveries', label: 'Pedidos', short: 'PD' }] },
+  { title: 'Empaque', items: [{ id: 'deliveries', label: 'Pedidos', icon: 'fa-truck' }] },
 ];
 
 const delivererNavConfig = [
-  { title: 'Ruta', items: [{ id: 'deliveries', label: 'Mis Entregas', short: 'ME' }] },
+  { title: 'Ruta', items: [{ id: 'deliveries', label: 'Mis Entregas', icon: 'fa-truck' }] },
 ];
 
 export default {
@@ -95,21 +95,19 @@ export default {
       }, [
         h('div', { class: `flex min-w-0 ${collapsed ? 'flex-col items-center gap-2' : 'items-center gap-3'}` }, [
           h('div', {
-            class: 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-lime-300 text-base font-black text-slate-950',
+            class: 'sidebar-brand-mark',
             title: 'Fideo',
-          }, 'F'),
+          }, [h('i', { class: 'fa-solid fa-apple-whole text-base' })]),
           collapsed ? null : h('div', { class: 'min-w-0' }, [
             h('p', { class: 'm-0 truncate text-sm font-black tracking-tight text-white' }, 'Fideo'),
-            h('span', { class: 'block truncate text-[11px] font-semibold text-slate-500' },
-              this.identity?.primaryLabel || 'Operacion'),
           ]),
         ]),
         collapsed ? null : h('button', {
-          class: 'focus-ring flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 md:hidden',
+          class: 'sidebar-close-button focus-ring flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-400 md:hidden',
           type: 'button',
           'aria-label': 'Cerrar menu',
           onClick: () => this.$emit('close'),
-        }, 'x'),
+        }, [h('i', { class: 'fa-solid fa-xmark' })]),
       ]);
     },
     renderSection(section, collapsed) {
@@ -117,13 +115,13 @@ export default {
       const header = collapsed
         ? this.renderCollapsedSectionHeader(section)
         : h('button', {
-          class: 'mb-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[10px] font-black uppercase text-slate-500 hover:bg-white/5 hover:text-slate-300',
+          class: 'sidebar-section-toggle mb-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[10px] font-black uppercase text-slate-500 hover:bg-white/5 hover:text-slate-300',
           type: 'button',
           'aria-label': section.title === 'More' ? 'Abrir More' : `Seccion ${section.title}`,
           onClick: () => this.toggleSection(section.title, collapsed),
         }, [
           h('span', section.title),
-          h('span', { class: 'text-xs' }, this.openSections[section.title] ? 'v' : '>'),
+          h('i', { class: `fa-solid ${this.openSections[section.title] ? 'fa-chevron-down' : 'fa-chevron-right'}` }),
         ]);
 
       return h('div', { class: 'mb-2.5', key: section.title }, [
@@ -136,14 +134,14 @@ export default {
     renderCollapsedSectionHeader(section) {
       if (section.title === 'More') {
         return h('button', {
-          class: `mx-auto mb-1.5 flex h-10 w-10 items-center justify-center rounded-md text-sm font-black ${
+          class: `sidebar-more-toggle mx-auto mb-1.5 flex h-10 w-10 items-center justify-center rounded-md text-sm font-black ${
             this.openSections.More ? 'bg-white/[0.07] text-white' : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
           }`,
           type: 'button',
           title: 'More',
           'aria-label': 'Abrir More',
           onClick: () => this.toggleSection(section.title, true),
-        }, '...');
+        }, [h('i', { class: 'fa-solid fa-ellipsis' })]);
       }
       return h('div', { class: 'mx-auto my-2 h-px w-8 bg-white/10', title: section.title });
     },
@@ -151,17 +149,15 @@ export default {
       const active = this.currentView === item.id;
       return h('li', { class: 'w-full', key: item.id }, [
         h('button', {
-          class: `group relative flex w-full items-center rounded-md px-3 py-2 transition-all duration-200 ${
-            active ? 'bg-lime-300 text-slate-950' : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
-          } ${collapsed ? 'justify-center' : 'text-left'}`,
+          class: `sidebar-nav-button group relative ${active ? 'is-active' : ''} ${collapsed ? 'is-collapsed' : ''}`,
           type: 'button',
           title: collapsed ? item.label : '',
           'aria-label': item.label,
           onClick: () => this.selectView(item.id),
         }, [
           h('span', {
-            class: `nav-icon-box ${collapsed ? '' : 'mr-3'} ${active ? 'bg-slate-950/10' : 'bg-white/5'}`,
-          }, item.short),
+            class: `sidebar-nav-icon ${collapsed ? '' : 'mr-3 w-5'}`,
+          }, [h('i', { class: `fa-solid fa-fw ${item.icon}` })]),
           collapsed ? this.renderTooltip(item.label) : h('span', {
             class: 'block min-w-0 flex-1 truncate text-sm font-bold',
           }, item.label),
@@ -183,20 +179,20 @@ export default {
             h('span', this.identity?.secondaryLabel || `${this.metrics?.openExceptions || 0} excepciones abiertas`),
           ]),
           h('button', {
-            class: 'focus-ring hidden h-10 items-center justify-center rounded-md bg-white/5 px-3 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white md:flex',
+            class: 'sidebar-collapse-button focus-ring hidden h-10 items-center justify-center rounded-md bg-white/5 px-3 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white md:flex',
             type: 'button',
             title: collapsed ? 'Expandir menu' : 'Colapsar menu',
-            onClick: () => this.$emit('toggle-collapse'),
-          }, [
-            h('span', collapsed ? '>' : '<'),
-            collapsed ? null : h('span', { class: 'ml-2' }, 'Colapsar'),
-          ]),
+          onClick: () => this.$emit('toggle-collapse'),
+        }, [
+          h('i', { class: `fa-solid ${collapsed ? 'fa-chevron-right' : 'fa-chevron-left'}` }),
+          collapsed ? null : h('span', { class: 'ml-2' }, 'Colapsar'),
+        ]),
         ]),
       ]);
     },
     renderContent(collapsed) {
       return h('aside', {
-        class: `${collapsed ? 'w-[5.25rem]' : 'w-[17.5rem]'} relative flex h-full flex-col overflow-hidden border-r border-white/[0.08] bg-[#040916]/92 text-slate-200 shadow-panel backdrop-blur-2xl transition-all duration-300 ease-in-out`,
+        class: `fideo-sidebar ${collapsed ? 'w-[5.25rem]' : 'w-[17.5rem]'} relative flex h-full flex-col overflow-hidden border-r border-white/[0.08] bg-[#040916]/92 text-slate-200 shadow-panel backdrop-blur-2xl transition-all duration-300 ease-in-out`,
       }, [
         this.renderBrand(collapsed),
         h('nav', { class: 'flex-1 overflow-y-auto overflow-x-hidden px-2 py-3' },

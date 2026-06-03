@@ -18,6 +18,14 @@ window.__unocss = {
   ],
   theme: {
     colors: {
+      brand: {
+        50: '#f7fee7',
+        100: '#ecfccb',
+        200: '#d9f99d',
+        300: '#bef264',
+        400: '#a3e635',
+        500: '#84cc16',
+      },
       fideo: {
         ink: '#0f172a',
         panel: '#101827',
@@ -29,4 +37,3 @@ window.__unocss = {
     },
   },
 };
-

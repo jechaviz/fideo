@@ -25,7 +25,7 @@ const walk = async (dir) => {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    if (entry.name === '.git' || entry.name === '.tmp' || entry.name === 'vendor') continue;
+    if (entry.name === '.git' || entry.name === '.tmp' || entry.name === '.audit' || entry.name === 'vendor') continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) files.push(...await walk(path));
     else files.push(path);

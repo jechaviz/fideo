@@ -233,7 +233,7 @@ try {
   if (exceptions.length) throw new Error(`Browser exceptions: ${exceptions.join('; ')}`);
 
   await clickControl('Ruta');
-  await waitForText(['Empaque, asignacion y ruta', 'Presencia ruta', 'Mapa entregas'], 'deliveries view');
+  await waitForText(['OPERACION EN PISO', 'SLA INMEDIATO', 'Actividad en vivo'], 'deliveries view');
 
   await clickControl('Stock');
   await waitForText(['TABLA INVENTARIO', 'Lotes operables'], 'inventory view');
@@ -259,7 +259,7 @@ try {
   }
 
   await clickControl('Ruta');
-  await waitForText(['Empaque, asignacion y ruta'], 'deliveries after AI');
+  await waitForText(['OPERACION EN PISO', 'SLA INMEDIATO'], 'deliveries after AI');
   await clickControl('Enterado');
   await waitForText(['Iniciar'], 'delivery acknowledged');
   await clickControl('Iniciar');

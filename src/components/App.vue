@@ -102,19 +102,9 @@ export default {
     headerSignals() {
       return [
         {
-          id: 'exceptions',
-          label: `${this.metrics.openExceptions} exc`,
-          tone: this.metrics.openExceptions ? 'warning' : 'live',
-        },
-        {
-          id: 'staff',
-          label: `${this.metrics.activeStaff} staff`,
-          tone: this.metrics.activeStaff ? 'live' : 'offline',
-        },
-        {
-          id: 'receipts',
-          label: `${this.receipts.length} acuses`,
-          tone: this.receipts.length ? 'live' : 'idle',
+          id: 'runtime',
+          label: 'Local',
+          tone: 'neutral',
         },
       ];
     },
@@ -269,13 +259,14 @@ export default {
         warning: 'border-amber-400/30 bg-amber-300/10 text-amber-100',
         offline: 'border-rose-400/30 bg-rose-300/10 text-rose-100',
         idle: 'border-slate-400/30 bg-slate-300/10 text-slate-100',
+        neutral: 'border-white/10 bg-white/5 text-slate-200',
       }[signal.tone] || 'border-slate-400/30 bg-slate-300/10 text-slate-100';
       return h('span', {
-        class: `inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-black ${tone}`,
+        class: `inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`,
         key: signal.id,
       }, [
-        h('span', { class: 'h-1.5 w-1.5 rounded-full bg-current opacity-80' }),
-        h('span', signal.label),
+        h('span', { class: signal.tone === 'neutral' ? 'h-2 w-2 rounded-full bg-slate-400' : 'h-2 w-2 rounded-full bg-current opacity-80' }),
+        h('span', { class: 'truncate' }, signal.label),
       ]);
     },
     renderHeader() {
@@ -285,11 +276,11 @@ export default {
       }, [
         h('div', { class: 'mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4 lg:px-5' }, [
           h('button', {
-            class: 'focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-200 md:hidden',
+            class: 'focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10 md:hidden',
             type: 'button',
             'aria-label': 'Abrir menu',
             onClick: () => { this.isSidebarOpen = true; },
-          }, [h('span', { class: 'hamburger-lines' })]),
+          }, [h('i', { class: 'fa-solid fa-bars' })]),
           h('div', { class: 'flex min-w-0 flex-1 items-center gap-2' }, [
             h('span', {
               class: 'inline-flex items-center gap-1.5 rounded-md border border-lime-300/20 bg-lime-300/10 px-2 py-1 text-[11px] font-black text-lime-200',
@@ -301,10 +292,6 @@ export default {
             h('div', { class: 'hidden min-w-0 items-center gap-1.5 lg:flex' },
               this.headerSignals.map((signal) => this.signalBadge(signal))),
           ]),
-          this.identity ? h('span', {
-            class: 'hidden max-w-[220px] truncate text-xs font-semibold text-slate-400 sm:block',
-            title: this.identity.secondaryLabel || this.identity.primaryLabel,
-          }, this.identity.primaryLabel) : null,
           h('button', {
             class: `focus-ring flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-black transition ${
               this.isMoreOpen
@@ -316,7 +303,7 @@ export default {
             'aria-label': 'Abrir More global',
             onClick: () => { this.isMoreOpen = !this.isMoreOpen; },
           }, [
-            h('span', '...'),
+            h('i', { class: 'fa-solid fa-ellipsis' }),
             h('span', { class: 'hidden sm:inline' }, 'More'),
           ]),
         ]),
