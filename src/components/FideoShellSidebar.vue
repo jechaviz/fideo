@@ -134,7 +134,7 @@ export default {
     renderCollapsedSectionHeader(section) {
       if (section.title === 'More') {
         return h('button', {
-          class: `sidebar-more-toggle mx-auto mb-1.5 flex h-10 w-10 items-center justify-center rounded-md text-sm font-black ${
+          class: `sidebar-more-toggle mx-auto mb-1.5 flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
             this.openSections.More ? 'bg-white/[0.07] text-white' : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
           }`,
           type: 'button',

@@ -10,8 +10,11 @@ html {
   background: #0d1117;
 }
 
-* {
+*,
+::before,
+::after {
   box-sizing: border-box;
+  border: 0 solid #e5e7eb;
 }
 
 body {
@@ -227,17 +230,13 @@ button {
   margin-top: 24px;
 }
 
-.delivery-ops-stack > *:nth-child(2) {
-  margin-top: 23px;
-}
-
 .delivery-hero-panel {
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2.4rem;
   background: #030712;
-  min-height: 193px;
+  min-height: 192px;
 }
 
 .delivery-hero-panel::before {
@@ -357,13 +356,26 @@ button {
 .sidebar-collapse-button,
 .sidebar-close-button {
   appearance: none;
-  border: 0;
+}
+
+.sidebar-section-toggle,
+.sidebar-more-toggle {
+  border: 0 solid #e5e7eb;
   background: transparent;
-  color: inherit;
-  font: inherit;
+}
+
+.sidebar-more-toggle {
+  padding: 0;
+  color: #94a3b8;
+}
+
+.sidebar-section-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
 }
 
 .sidebar-collapse-button {
+  border: 0 solid #e5e7eb;
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -386,7 +398,7 @@ button {
   display: flex;
   width: 100%;
   align-items: center;
-  border: 0;
+  border: 0 solid #e5e7eb;
   border-radius: 0.375rem;
   background: transparent;
   color: #94a3b8;
