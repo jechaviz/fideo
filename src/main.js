@@ -43,10 +43,12 @@ const boot = async () => {
 
   App.components = { ...(App.components || {}), ...components };
   const runtimeConfig = window.FIDEO_CONFIG || {};
+  const query = new URLSearchParams(window.location.search);
 
   const kernel = createKernel({
     vue: window.Vue,
     config: {
+      stateProfile: query.get('fideo_state') || runtimeConfig.stateProfile || 'demo',
       pocketbaseBaseUrl: runtimeConfig.pocketbaseBaseUrl ?? './',
       pocketbaseBackend: runtimeConfig.pocketbaseBackend || 'mysql',
       pocketbaseToken: runtimeConfig.pocketbaseToken || '',

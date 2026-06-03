@@ -1,6 +1,6 @@
 const nowIso = () => new Date().toISOString();
 
-export const createInitialState = () => ({
+const createDemoState = () => ({
   workspace: {
     id: 'fideo-demo',
     slug: 'fideo-operacion',
@@ -427,6 +427,52 @@ export const createInitialState = () => ({
     ai: { status: 'dry-run', label: 'Kilo StepFun AI engines' },
   },
 });
+
+export const applyStateProfile = (state, profile = 'demo') => {
+  const normalized = String(profile || 'demo').trim().toLowerCase();
+  if (!['react-default', 'react', 'reference'].includes(normalized)) return state;
+
+  return {
+    ...state,
+    workspace: {
+      ...state.workspace,
+      id: 'fideo-react-default',
+      slug: 'fideo-react-default',
+      mode: 'vue3-static-sfc:react-default',
+    },
+    sales: [],
+    payments: [],
+    crateLoans: [],
+    activities: [],
+    activityLog: [],
+    inventoryRecommendations: [],
+    taskAssignments: [],
+    taskReports: [],
+    deliveryPresence: [],
+    presenceRoster: [],
+    operationalExceptions: [],
+    actionItems: [],
+    cashDrawers: [{ id: 'cd1', name: 'Caja Principal', balance: 5000, status: 'Cerrada' }],
+    cashDrawerActivities: [],
+    deliveryReportReceipts: [],
+    financeExports: [],
+    cashRemoteReceipts: [],
+    purchaseReceipts: [],
+    currentView: 'dashboard',
+    currentRole: 'Admin',
+    currentCustomerId: null,
+    currentSupplierId: null,
+    productFilter: 'all',
+    warehouseFilter: 'all',
+    saleStatusFilter: 'all',
+    paymentStatusFilter: 'all',
+  };
+};
+
+export const createInitialState = (options = {}) => {
+  const profile = typeof options === 'string' ? options : options.profile;
+  return applyStateProfile(createDemoState(), profile);
+};
 
 export const deriveMetrics = (state) => {
   const openReports = state.taskReports.filter((report) => report.status !== 'resolved');

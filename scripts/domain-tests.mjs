@@ -35,6 +35,7 @@ import { gateSummary, runtimeGateMatrix } from '../src/infrastructure/runtimeGat
 const state = createInitialState();
 const snapshot = buildPersistableSnapshot(state);
 const compact = compactRemoteSnapshot(snapshot, snapshot);
+const reactDefaultState = createInitialState({ profile: 'react-default' });
 
 assert.equal(compact.customers, undefined);
 assert.equal(compact.suppliers, undefined);
@@ -42,6 +43,12 @@ assert.equal(compact.productGroups, undefined);
 assert.equal(compact.taskAssignments.length, 2);
 assert.equal(snapshot.productGroups.length, 3);
 assert.equal(snapshot.stateIcons.Verde, 'VE');
+assert.equal(reactDefaultState.sales.length, 0);
+assert.equal(reactDefaultState.taskAssignments.length, 0);
+assert.equal(reactDefaultState.taskReports.length, 0);
+assert.equal(reactDefaultState.deliveryPresence.length, 0);
+assert.equal(reactDefaultState.cashDrawers[0].id, 'cd1');
+assert.equal(deliveryColumns(reactDefaultState).packing.length, 0);
 
 const initialAudit = rolePipelineAudit(createInitialState());
 assert.equal(initialAudit.summary.adminKnowsEverything, true);

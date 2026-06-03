@@ -1,4 +1,5 @@
 window.FIDEO_CONFIG = {
+  stateProfile: 'demo',
   pocketbaseBaseUrl: './',
   pocketbaseBackend: 'mysql',
   pocketbaseToken: '',

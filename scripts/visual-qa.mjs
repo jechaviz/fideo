@@ -20,6 +20,12 @@ if (!browser) throw new Error('No Edge/Chrome executable found.');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const quotePowerShell = (value) => `'${String(value).replace(/'/g, "''")}'`;
+const withSearchParam = (targetUrl, key, value) => {
+  if (!value) return targetUrl;
+  const nextUrl = new URL(targetUrl);
+  nextUrl.searchParams.set(key, value);
+  return nextUrl.toString();
+};
 
 const withTimeout = (promise, label, ms = 60000) => {
   let timer;
@@ -268,7 +274,12 @@ const target = await connectTarget(browserSession.port);
 const desktop = { width: 1366, height: 768, mobile: false };
 const mobile = { width: 390, height: 844, mobile: true };
 const reactBase = `http://127.0.0.1:${reactPort}/`;
-const vueBase = process.env.FIDEO_VUE_URL || 'https://appniverse.com/fideo/';
+const visualStateProfile = process.env.FIDEO_VISUAL_STATE || 'react-default';
+const vueBase = withSearchParam(
+  process.env.FIDEO_VUE_URL || 'https://appniverse.com/fideo/',
+  'fideo_state',
+  visualStateProfile,
+);
 
 const items = [
   { name: 'react_admin_desktop', url: reactBase, viewport: desktop, waitFor: 'Centro Comercial' },
@@ -292,7 +303,11 @@ const selectedItems = scope === 'mobile'
 const results = [];
 try {
   for (const item of selectedItems) results.push(await capture(target.send, item));
-  await writeFile(join(outDir, 'capture-manifest.json'), JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2));
+  await writeFile(join(outDir, 'capture-manifest.json'), JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    visualStateProfile,
+    results,
+  }, null, 2));
   target.ws.close();
   console.log(JSON.stringify({ ok: true, outDir, results }, null, 2));
 } finally {

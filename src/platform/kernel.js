@@ -71,7 +71,7 @@ import {
 } from './kernelHelpers.js';
 
 export const createKernel = ({ vue, config }) => {
-  const state = vue.reactive(createInitialState());
+  const state = vue.reactive(createInitialState({ profile: config.stateProfile }));
   const receipts = createReceipts(vue);
 
   const veeper = createVeeperGateway({ baseUrl: config.veeperBaseUrl });

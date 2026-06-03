@@ -172,14 +172,14 @@ export default {
     renderFooter(collapsed) {
       return h('div', { class: 'relative mt-auto border-t border-white/[0.08] p-2.5' }, [
         h('div', {
-          class: `rounded-md border border-white/[0.08] bg-slate-900/70 p-2 ${collapsed ? 'grid gap-2' : 'space-y-2'}`,
+          class: `flex rounded-md border border-white/[0.08] bg-slate-900/70 p-2 ${collapsed ? 'justify-center' : 'items-center justify-end'}`,
         }, [
           collapsed ? null : h('div', { class: 'text-[11px] text-slate-400' }, [
             h('strong', { class: 'block text-slate-200' }, this.identity?.primaryLabel || this.currentRole),
             h('span', this.identity?.secondaryLabel || `${this.metrics?.openExceptions || 0} excepciones abiertas`),
           ]),
           h('button', {
-            class: 'sidebar-collapse-button focus-ring hidden h-10 items-center justify-center rounded-md bg-white/5 px-3 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white md:flex',
+            class: 'sidebar-collapse-button focus-ring hidden h-10 items-center justify-center rounded-xl bg-white/5 px-3 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white md:flex',
             type: 'button',
             title: collapsed ? 'Expandir menu' : 'Colapsar menu',
           onClick: () => this.$emit('toggle-collapse'),

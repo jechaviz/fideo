@@ -181,14 +181,14 @@ export default {
     },
     renderHero() {
       return h('section', {
-        class: 'rounded-[2.4rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_34%),rgba(15,23,42,0.92)] p-6 shadow-panel md:p-8',
+        class: 'delivery-hero-panel p-6 md:p-8',
       }, [
         h('div', { class: 'flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between' }, [
           h('div', [
             h('p', { class: 'm-0 text-[10px] font-black uppercase tracking-[0.34em] text-brand-300' }, 'Operacion en piso'),
             h('h1', { class: 'm-0 mt-3 text-4xl font-black tracking-tight text-white md:text-5xl' }, 'Entregas'),
           ]),
-          h('div', { class: 'grid grid-cols-2 gap-3 lg:min-w-[420px] lg:grid-cols-4' }, [
+          h('div', { class: 'delivery-hero-metrics grid grid-cols-2 gap-3 lg:grid-cols-4' }, [
             this.metric('Pendientes', this.signalCounts.assigned),
             this.metric('Acuses', this.signalCounts.acknowledged),
             this.metric('Bloqueos', this.signalCounts.blocked),
@@ -278,18 +278,16 @@ export default {
       ]);
     },
     renderColumn(title, rows, accent) {
-      return h('article', { class: `${panelClass} p-6 md:p-7` }, [
-        h('div', { class: 'mb-6 flex items-end justify-between gap-3 border-b border-white/10 pb-5' }, [
+      return h('article', { class: `${panelClass} flex h-full flex-col p-5` }, [
+        h('div', { class: 'mb-5 flex items-center justify-between gap-4 border-b border-white/10 pb-4' }, [
           h('div', [
-            h('h2', { class: `m-0 text-3xl font-black tracking-tight text-white ${accent}` }, title),
+            h('h2', { class: `m-0 mt-2 text-2xl font-black tracking-tight ${accent}` }, title),
           ]),
-          h('span', { class: 'rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-slate-300' }, String(rows.length)),
+          h('span', { class: 'rounded-full border border-white/10 bg-slate-950/70 px-4 py-2 text-sm font-black text-white' }, String(rows.length)),
         ]),
-        rows.length
-          ? h('ul', { class: 'm-0 grid list-none gap-3 p-0' }, rows.map((task) => this.renderTask(task)))
-          : h('div', { class: 'rounded-[1.8rem] border border-dashed border-white/10 bg-white/[0.03] px-6 py-14 text-center' }, [
-            h('p', { class: 'm-0 text-xl font-bold text-white' }, 'No hay tareas en esta etapa.'),
-          ]),
+        h('div', { class: 'flex-grow space-y-4 overflow-y-auto pr-1' }, rows.length
+          ? [h('ul', { class: 'm-0 grid list-none gap-3 p-0' }, rows.map((task) => this.renderTask(task)))]
+          : [h('p', { class: 'm-0 py-10 text-center text-sm text-slate-500' }, 'No hay tareas en esta etapa.')]),
       ]);
     },
     renderRouteSection() {
