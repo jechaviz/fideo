@@ -431,7 +431,7 @@ export default {
           onClose: () => { this.isSidebarOpen = false; },
           onToggleCollapse: () => { this.isSidebarCollapsed = !this.isSidebarCollapsed; },
         }),
-        h('main', { class: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden' }, [
+        h('main', { class: 'fideo-main-stage relative flex h-full min-w-0 flex-1 flex-col overflow-hidden' }, [
           this.renderHeader(),
           h('div', { class: 'fideo-main-scroll flex-grow overflow-y-auto scroll-smooth' }, [
             h('div', {

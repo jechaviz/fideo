@@ -55,6 +55,10 @@ button {
   isolation: isolate;
 }
 
+.fideo-shell {
+  background: #030712;
+}
+
 .fideo-ambient {
   display: none;
 }
@@ -99,6 +103,36 @@ button {
 .fideo-main-content {
   position: relative;
   z-index: 1;
+}
+
+.fideo-main-stage::before {
+  content: "";
+  position: absolute;
+  z-index: 25;
+  top: 48px;
+  bottom: 1px;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    rgb(31, 34, 40) 0 1px,
+    rgb(1, 5, 17) 1px 10px,
+    rgb(1, 5, 16) 10px 17px,
+    rgb(1, 5, 17) 17px 31px,
+    rgb(1, 5, 18) 31px 42px,
+    rgb(1, 5, 17) 42px 66px,
+    rgb(1, 5, 18) 66px 85px,
+    rgb(1, 5, 17) 85px 118px,
+    rgb(1, 5, 18) 118px 160px,
+    rgb(1, 5, 17) 160px 193px,
+    rgb(1, 5, 18) 193px 212px,
+    rgb(1, 5, 17) 212px 236px,
+    rgb(1, 5, 18) 236px 247px,
+    rgb(1, 5, 17) 247px 305px,
+    rgb(2, 6, 18) 305px 715px,
+    rgb(2, 6, 17) 715px 719px
+  );
+  pointer-events: none;
 }
 
 .delivery-ops-stack {
