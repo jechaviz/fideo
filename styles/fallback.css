@@ -203,10 +203,27 @@ button {
 }
 
 .delivery-hero-panel {
+  position: relative;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2.4rem;
   background: #030712;
   min-height: 193px;
+}
+
+.delivery-hero-panel::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 96px;
+  background: rgb(2, 6, 17);
+  pointer-events: none;
+}
+
+.delivery-hero-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 1024px) {
