@@ -50,6 +50,22 @@ const fetchJson = async (targetUrl, timeoutMs = 45000) => {
   throw new Error(`Endpoint not ready: ${targetUrl}`);
 };
 
+const waitForHttpOk = async (targetUrl, timeoutMs = 45000) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(targetUrl, { signal: AbortSignal.timeout(1500) });
+      if (response.ok) return;
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await delay(250);
+  }
+  throw new Error(`Endpoint not ready: ${targetUrl}; ${lastError}`);
+};
+
 const startProcess = (file, args, cwd, env = {}) => {
   const command = [
     `$p = Start-Process -FilePath ${quotePowerShell(file)}`,
@@ -261,10 +277,24 @@ const capture = async (send, item) => {
 await mkdir(outDir, { recursive: true });
 
 const reactPort = Number(process.env.FIDEO_REACT_PORT || 3107);
-const react = startProcess('bun', ['run', 'dev', '--host', '127.0.0.1', '--port', String(reactPort)], 'C:\\git\\customers\\fideo\\frontend', {
-  VITE_POCKETBASE_URL: '',
-});
-await delay(4000);
+const reactFrontendRoot = 'C:\\git\\customers\\fideo\\frontend';
+const reactVisualMode = `visualqa${process.pid}`;
+const reactVisualEnvPath = join(reactFrontendRoot, `.env.${reactVisualMode}.local`);
+await writeFile(reactVisualEnvPath, [
+  'VITE_POCKETBASE_URL=',
+  'VITE_ONESIGNAL_ENABLED=false',
+  '',
+].join('\n'), 'utf8');
+const react = startProcess('bun', [
+  'run',
+  'dev',
+  '--host',
+  '127.0.0.1',
+  '--port',
+  String(reactPort),
+  '--mode',
+  reactVisualMode,
+], reactFrontendRoot);
 
 const desktop = { width: 1366, height: 768, mobile: false };
 const mobile = { width: 390, height: 844, mobile: true };
@@ -297,6 +327,7 @@ const selectedItems = scope === 'mobile'
 
 const results = [];
 try {
+  await waitForHttpOk(reactBase);
   for (const item of selectedItems) {
     const browserSession = await startBrowser();
     const target = await connectTarget(browserSession.port);
@@ -315,4 +346,5 @@ try {
   console.log(JSON.stringify({ ok: true, outDir, results }, null, 2));
 } finally {
   react.kill();
+  await rm(reactVisualEnvPath, { force: true }).catch(() => undefined);
 }
