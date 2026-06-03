@@ -363,6 +363,10 @@ button {
   font: inherit;
 }
 
+.sidebar-collapse-button {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .sidebar-nav-button {
   appearance: none;
   display: flex;
