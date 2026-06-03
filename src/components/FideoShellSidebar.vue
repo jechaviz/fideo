@@ -170,9 +170,9 @@ export default {
       }, label);
     },
     renderFooter(collapsed) {
-      return h('div', { class: 'relative mt-auto border-t border-white/[0.08] p-2.5' }, [
+      return h('div', { class: 'sidebar-footer relative mt-auto border-t border-white/[0.08] p-2.5' }, [
         h('div', {
-          class: `flex rounded-md border border-white/[0.08] bg-slate-900/70 p-2 ${collapsed ? 'justify-center' : 'items-center justify-end'}`,
+          class: `sidebar-footer-shell flex rounded-md border border-white/[0.08] bg-slate-900/70 p-2 ${collapsed ? 'is-collapsed justify-center' : 'items-center justify-end'}`,
         }, [
           collapsed ? null : h('div', { class: 'text-[11px] text-slate-400' }, [
             h('strong', { class: 'block text-slate-200' }, this.identity?.primaryLabel || this.currentRole),
