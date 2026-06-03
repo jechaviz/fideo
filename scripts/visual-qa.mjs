@@ -396,6 +396,11 @@ const collectGeometry = (send) => evaluate(send, `(() => {
           className: String(icon.className || ''),
           rect: rect(icon),
           css: css(icon),
+          parent: icon.parentElement ? {
+            className: String(icon.parentElement.className || ''),
+            rect: rect(icon.parentElement),
+            css: css(icon.parentElement),
+          } : null,
           before: pseudoCss(icon, '::before'),
         } : null,
       };
