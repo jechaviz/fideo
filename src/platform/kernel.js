@@ -312,6 +312,9 @@ export const createKernel = ({ vue, config }) => {
     addDemoMessage: () => {
       pushReceipt(receipts, addMessage(state, 'compra proveedor mango mediano 10 cajas', 'Huerta del Sur'));
     },
+    addVoiceMessage: (text) => {
+      pushReceipt(receipts, addMessage(state, text, 'Admin (Voz)'));
+    },
     interpretMessage: (messageId) => {
       pushReceipt(receipts, interpretMessage(state, messageId));
     },

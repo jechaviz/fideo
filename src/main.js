@@ -22,6 +22,7 @@ const componentUrls = {
   RolePipelineAuditBoard: './src/components/RolePipelineAuditBoard.vue',
   ShellHeader: './src/components/ShellHeader.vue',
   SupplierOpsBoard: './src/components/SupplierOpsBoard.vue',
+  VoiceControl: './src/components/VoiceControl.vue',
 };
 
 const loadComponents = async () => {

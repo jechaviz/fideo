@@ -176,7 +176,9 @@ try {
     hasShell: Boolean(document.querySelector('.fideo-shell')),
     hasSidebar: Boolean(document.querySelector('aside')),
     hasPortal: Boolean(document.querySelector('.glass-panel-dark')),
-    hasUnoRuntime: Boolean(document.querySelector('[data-unocss-runtime-layer]'))
+    hasUnoRuntime: Boolean(document.querySelector('[data-unocss-runtime-layer]')),
+    brandBg: getComputedStyle(document.querySelector('.fa-apple-whole')?.parentElement || document.body).backgroundColor,
+    shellBg: getComputedStyle(document.querySelector('.fideo-shell') || document.body).backgroundColor
   })`;
 
   const hasRequiredText = (requiredText) => (value) => (
@@ -230,6 +232,9 @@ try {
   ], 'FideoVue dashboard');
   if (value.cloaked) throw new Error('FideoVue remained cloaked after boot.');
   if (!value.hasUnoRuntime) throw new Error('UnoCSS runtime styles were not injected.');
+  if (value.brandBg !== 'rgb(163, 230, 53)' || value.shellBg !== 'rgb(3, 7, 18)') {
+    throw new Error(`FideoVue visual tokens were not painted: ${JSON.stringify({ brandBg: value.brandBg, shellBg: value.shellBg })}`);
+  }
   if (exceptions.length) throw new Error(`Browser exceptions: ${exceptions.join('; ')}`);
 
   await clickControl('Ruta');

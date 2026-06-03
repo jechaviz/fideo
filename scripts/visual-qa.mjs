@@ -168,8 +168,8 @@ const waitForVisualReady = async (send, timeoutMs = 20000) => {
       const brandBg = brand ? getComputedStyle(brand).backgroundColor : '';
       const shellBg = shell ? getComputedStyle(shell).backgroundColor : '';
       const hasUno = Boolean(document.querySelector('[data-unocss-runtime-layer]'));
-      const paintedBrand = !brand || (brandBg && brandBg !== 'rgba(0, 0, 0, 0)' && brandBg !== 'transparent');
-      const paintedShell = !shell || (shellBg && shellBg !== 'rgba(0, 0, 0, 0)' && shellBg !== 'transparent');
+      const paintedBrand = brandBg === 'rgb(163, 230, 53)';
+      const paintedShell = shellBg === 'rgb(3, 7, 18)';
       return { ready: paintedBrand && paintedShell, hasUno, brandBg, shellBg };
     })()`);
     if (lastValue?.ready) return lastValue;
@@ -225,9 +225,6 @@ const capture = async (send, item) => {
   });
   try {
     await send('Page.navigate', { url: item.url });
-    await delay(900);
-    await evaluate(send, `(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} return true; })()`);
-    await send('Page.navigate', { url: item.url });
     await waitForText(send, item.waitFor || 'Fideo');
     if (item.steps) {
       for (const step of item.steps) {
@@ -269,8 +266,6 @@ const react = startProcess('bun', ['run', 'dev', '--host', '127.0.0.1', '--port'
 });
 await delay(4000);
 
-const browserSession = await startBrowser();
-const target = await connectTarget(browserSession.port);
 const desktop = { width: 1366, height: 768, mobile: false };
 const mobile = { width: 390, height: 844, mobile: true };
 const reactBase = `http://127.0.0.1:${reactPort}/`;
@@ -284,8 +279,8 @@ const vueBase = withSearchParam(
 const items = [
   { name: 'react_admin_desktop', url: reactBase, viewport: desktop, waitFor: 'Centro Comercial' },
   { name: 'vue_admin_desktop', url: vueBase, viewport: desktop, waitFor: 'Centro Comercial' },
-  { name: 'react_route_desktop', url: reactBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'Ruta' }, { waitFor: 'Entregas' }] },
-  { name: 'vue_route_desktop', url: vueBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'Ruta' }, { waitFor: 'Entregas' }] },
+  { name: 'react_route_desktop', url: reactBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'Ruta' }, { waitFor: 'Actividad en vivo' }] },
+  { name: 'vue_route_desktop', url: vueBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'Ruta' }, { waitFor: 'Actividad en vivo' }] },
   { name: 'react_customer_desktop', url: reactBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'More', last: true }, { selectLabel: 'Rol', value: 'Cliente' }, { waitFor: 'Portal cliente' }], allowFailure: true },
   { name: 'vue_customer_desktop', url: vueBase, viewport: desktop, waitFor: 'Centro Comercial', steps: [{ click: 'Abrir More global' }, { click: 'Cambiar a Cliente' }, { waitFor: 'Portal cliente' }] },
   { name: 'react_admin_mobile', url: reactBase, viewport: mobile, waitFor: 'Centro Comercial' },
@@ -302,15 +297,22 @@ const selectedItems = scope === 'mobile'
 
 const results = [];
 try {
-  for (const item of selectedItems) results.push(await capture(target.send, item));
+  for (const item of selectedItems) {
+    const browserSession = await startBrowser();
+    const target = await connectTarget(browserSession.port);
+    try {
+      results.push(await capture(target.send, item));
+    } finally {
+      target.ws.close();
+      await browserSession.cleanup();
+    }
+  }
   await writeFile(join(outDir, 'capture-manifest.json'), JSON.stringify({
     generatedAt: new Date().toISOString(),
     visualStateProfile,
     results,
   }, null, 2));
-  target.ws.close();
   console.log(JSON.stringify({ ok: true, outDir, results }, null, 2));
 } finally {
-  await browserSession.cleanup();
   react.kill();
 }

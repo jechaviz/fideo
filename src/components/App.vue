@@ -283,9 +283,9 @@ export default {
           }, [h('i', { class: 'fa-solid fa-bars' })]),
           h('div', { class: 'flex min-w-0 flex-1 items-center gap-2' }, [
             h('span', {
-              class: 'inline-flex items-center gap-1.5 rounded-md border border-lime-300/20 bg-lime-300/10 px-2 py-1 text-[11px] font-black text-lime-200',
+              class: 'inline-flex items-center gap-1.5 rounded-md border border-brand-400/20 bg-brand-400/10 px-2 py-1 text-[11px] font-black text-brand-200',
             }, [
-              h('span', { class: 'h-1.5 w-1.5 rounded-full bg-lime-300' }),
+              h('span', { class: 'h-1.5 w-1.5 rounded-full bg-brand-400' }),
               this.roleLabel,
             ]),
             h('h1', { class: 'm-0 truncate text-sm font-black text-white md:text-base' }, this.viewTitle),
@@ -295,7 +295,7 @@ export default {
           h('button', {
             class: `focus-ring flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-black transition ${
               this.isMoreOpen
-                ? 'border-lime-300/35 bg-lime-300/10 text-lime-100'
+                ? 'border-brand-400/35 bg-brand-400/10 text-brand-100'
                 : 'border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/10 hover:text-white'
             }`,
             type: 'button',
@@ -412,11 +412,12 @@ export default {
     },
     renderInternalShell() {
       const FideoShellSidebar = resolveComponent('FideoShellSidebar');
+      const VoiceControl = resolveComponent('VoiceControl');
       return h('div', { class: 'fideo-shell relative flex h-screen overflow-hidden bg-[#030712] text-slate-100' }, [
         h('div', { class: 'fideo-ambient pointer-events-none absolute inset-0' }),
         h('div', { class: 'noise-overlay pointer-events-none absolute inset-0' }),
         h('a', {
-          class: 'sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-lime-300 focus:px-4 focus:py-3 focus:text-sm focus:font-black focus:text-slate-950',
+          class: 'sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-2xl focus:bg-brand-400 focus:px-4 focus:py-3 focus:text-sm focus:font-black focus:text-slate-950',
           href: '#main-content',
         }, 'Saltar al contenido'),
         h(FideoShellSidebar, {
@@ -439,6 +440,9 @@ export default {
             }, this.renderInternalView()),
           ]),
         ]),
+        h(VoiceControl, {
+          onVoiceMessage: this.actions.addVoiceMessage,
+        }),
       ]);
     },
     renderPortalShell() {
