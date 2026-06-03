@@ -127,7 +127,7 @@ export default {
       return h('div', { class: 'mb-2.5', key: section.title }, [
         header,
         isOpen ? h('ul', {
-          class: `m-0 list-none p-0 ${collapsed ? 'flex flex-col items-center gap-1' : 'mt-1 space-y-1'}`,
+          class: `m-0 list-none p-0 ${collapsed ? 'flex flex-col items-center space-y-1' : 'mt-1 space-y-1'}`,
         }, section.items.map((item) => this.renderNavItem(item, collapsed))) : null,
       ]);
     },

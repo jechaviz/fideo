@@ -184,7 +184,7 @@ button {
   content: "";
   position: absolute;
   z-index: 0;
-  inset: 0 auto 1px 1px;
+  inset: 0 auto 0 1px;
   width: 19px;
   background: var(--fideo-main-seam-gradient);
   pointer-events: none;
@@ -200,7 +200,7 @@ button {
   position: absolute;
   z-index: 25;
   top: 48px;
-  bottom: 1px;
+  bottom: 0;
   left: 0;
   width: 1px;
   background: var(--fideo-main-seam-gradient);
@@ -257,8 +257,8 @@ button {
 
 @media (min-width: 1024px) {
   .delivery-hero-metrics {
-    flex: 0 0 531px;
-    width: 531px;
+    flex: 0 0 530.625px;
+    width: 530.625px;
   }
 }
 
@@ -365,6 +365,20 @@ button {
 
 .sidebar-collapse-button {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.fideo-sidebar .sidebar-collapse-button {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.fideo-sidebar .sidebar-collapse-button .fa-solid {
+  font-size: 1em;
+  line-height: 1;
 }
 
 .sidebar-nav-button {

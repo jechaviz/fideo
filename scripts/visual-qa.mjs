@@ -194,6 +194,21 @@ const waitForVisualReady = async (send, timeoutMs = 20000) => {
   throw new Error(`Visual styles not ready: ${JSON.stringify(lastValue)}`);
 };
 
+const waitForFontsReady = async (send, timeoutMs = 20000) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastValue = null;
+  while (Date.now() < deadline) {
+    lastValue = await evaluate(send, `(() => {
+      const fonts = document.fonts;
+      if (!fonts) return { ready: true, status: 'unsupported' };
+      return { ready: fonts.status === 'loaded', status: fonts.status };
+    })()`);
+    if (lastValue?.ready) return lastValue;
+    await delay(150);
+  }
+  throw new Error(`Fonts not ready: ${JSON.stringify(lastValue)}`);
+};
+
 const clickText = async (send, label, options = {}) => {
   const expression = `(() => {
     const label = ${JSON.stringify(label)};
@@ -231,6 +246,121 @@ const selectValue = async (send, label, value) => {
   await delay(900);
 };
 
+const collectGeometry = (send) => evaluate(send, `(() => {
+  const round = (value) => Math.round(value * 1000) / 1000;
+  const rect = (node) => {
+    if (!node) return null;
+    const box = node.getBoundingClientRect();
+    return {
+      x: round(box.x),
+      y: round(box.y),
+      w: round(box.width),
+      h: round(box.height),
+      bottom: round(box.bottom),
+      right: round(box.right),
+    };
+  };
+  const css = (node) => {
+    if (!node) return null;
+    const style = getComputedStyle(node);
+    return {
+      display: style.display,
+      position: style.position,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+      fontSynthesis: style.fontSynthesis,
+      mozOsxFontSmoothing: style.MozOsxFontSmoothing,
+      textRendering: style.textRendering,
+      webkitFontSmoothing: style.webkitFontSmoothing,
+      color: style.color,
+      background: style.backgroundColor,
+      padding: style.padding,
+      margin: style.margin,
+      width: style.width,
+      height: style.height,
+      justify: style.justifyContent,
+      align: style.alignItems,
+      border: style.border,
+      boxSizing: style.boxSizing,
+      transform: style.transform,
+    };
+  };
+  const label = (node) => (node.textContent || '').replace(/\\s+/g, ' ').trim();
+  const snapshot = (selector, limit = 40) => Array.from(document.querySelectorAll(selector))
+    .slice(0, limit)
+    .map((node, index) => ({
+      index,
+      selector,
+      tagName: node.tagName.toLowerCase(),
+      text: label(node).slice(0, 160),
+      className: String(node.className || ''),
+      rect: rect(node),
+      css: css(node),
+    }));
+  return {
+    bodyText: label(document.body).slice(0, 400),
+    content: [
+      ...snapshot('main', 4),
+      ...snapshot('.fideo-main-scroll', 4),
+      ...snapshot('.fideo-main-stage', 4),
+      ...snapshot('.fideo-main-content', 4),
+      ...snapshot('main section', 48),
+      ...snapshot('main .glass-panel-dark', 48),
+      ...snapshot('main [class*="bg-white"]', 48),
+      ...snapshot('main [class*="rounded-"]', 48),
+      ...snapshot('.delivery-ops-stack', 4),
+      ...snapshot('.delivery-hero-panel', 4),
+      ...snapshot('.delivery-hero-metrics', 4),
+      ...snapshot('.fideo-card', 24),
+      ...snapshot('.delivery-ops-stack section', 24),
+      ...snapshot('main h1, main h2, main h3', 32),
+    ],
+    asides: Array.from(document.querySelectorAll('aside')).map((aside, index) => ({
+      index,
+      className: String(aside.className || ''),
+      rect: rect(aside),
+      css: css(aside),
+    })),
+    navs: Array.from(document.querySelectorAll('aside nav')).map((nav, index) => ({
+      index,
+      className: String(nav.className || ''),
+      rect: rect(nav),
+      css: css(nav),
+    })),
+    lists: Array.from(document.querySelectorAll('aside ul')).map((list, index) => ({
+      index,
+      className: String(list.className || ''),
+      rect: rect(list),
+      css: css(list),
+      children: Array.from(list.children).map((child, childIndex) => ({
+        index: childIndex,
+        className: String(child.className || ''),
+        rect: rect(child),
+        css: css(child),
+      })),
+    })),
+    buttons: Array.from(document.querySelectorAll('aside button')).map((button, index) => {
+      const icon = button.querySelector('i');
+      return {
+        index,
+        text: label(button),
+        ariaLabel: button.getAttribute('aria-label') || '',
+        title: button.getAttribute('title') || '',
+        className: String(button.className || ''),
+        rect: rect(button),
+        css: css(button),
+        icon: icon ? {
+          className: String(icon.className || ''),
+          rect: rect(icon),
+          css: css(icon),
+        } : null,
+      };
+    }),
+  };
+})()`);
+
 const capture = async (send, item) => {
   let visualReady = null;
   await send('Emulation.setDeviceMetricsOverride', {
@@ -251,6 +381,7 @@ const capture = async (send, item) => {
       }
     }
     visualReady = await waitForVisualReady(send);
+    await waitForFontsReady(send);
   } catch (error) {
     const screenshot = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
     const text = await evaluate(send, `document.body?.innerText || ''`);
@@ -267,11 +398,16 @@ const capture = async (send, item) => {
   const dom = process.env.FIDEO_VISUAL_SAVE_DOM === '1'
     ? await evaluate(send, `document.documentElement.outerHTML`)
     : '';
+  const geometry = process.env.FIDEO_VISUAL_SAVE_GEOMETRY === '1'
+    ? await collectGeometry(send)
+    : null;
   const pngPath = join(outDir, `${item.name}.png`);
+  const geometryPath = join(outDir, `${item.name}.geometry.json`);
   await writeFile(pngPath, Buffer.from(screenshot.result.data, 'base64'));
   await writeFile(join(outDir, `${item.name}.txt`), String(text || ''), 'utf8');
   if (dom) await writeFile(join(outDir, `${item.name}.html`), String(dom), 'utf8');
-  return { name: item.name, pngPath, textLength: String(text || '').length, visualReady };
+  if (geometry) await writeFile(geometryPath, JSON.stringify(geometry, null, 2), 'utf8');
+  return { name: item.name, pngPath, textLength: String(text || '').length, visualReady, geometryPath: geometry ? geometryPath : undefined };
 };
 
 await mkdir(outDir, { recursive: true });
@@ -281,7 +417,7 @@ const reactFrontendRoot = 'C:\\git\\customers\\fideo\\frontend';
 const reactVisualMode = `visualqa${process.pid}`;
 const reactVisualEnvPath = join(reactFrontendRoot, `.env.${reactVisualMode}.local`);
 await writeFile(reactVisualEnvPath, [
-  'VITE_POCKETBASE_URL=',
+  'VITE_POCKETBASE_URL=" "',
   'VITE_ONESIGNAL_ENABLED=false',
   '',
 ].join('\n'), 'utf8');
@@ -294,7 +430,10 @@ const react = startProcess('bun', [
   String(reactPort),
   '--mode',
   reactVisualMode,
-], reactFrontendRoot);
+], reactFrontendRoot, {
+  VITE_POCKETBASE_URL: ' ',
+  VITE_ONESIGNAL_ENABLED: 'false',
+});
 
 const desktop = { width: 1366, height: 768, mobile: false };
 const mobile = { width: 390, height: 844, mobile: true };
