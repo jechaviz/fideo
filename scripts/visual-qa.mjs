@@ -50,7 +50,7 @@ const fetchJson = async (targetUrl, timeoutMs = 45000) => {
   throw new Error(`Endpoint not ready: ${targetUrl}`);
 };
 
-const waitForHttpOk = async (targetUrl, timeoutMs = 45000) => {
+const waitForHttpOk = async (targetUrl, timeoutMs = 90000) => {
   const deadline = Date.now() + timeoutMs;
   let lastError = '';
   while (Date.now() < deadline) {
