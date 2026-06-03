@@ -1,5 +1,5 @@
 <template>
-  <section class="space-y-6">
+  <section class="delivery-ops-stack">
     <article class="glass-panel-dark rounded-[2rem] p-6">Entregas</article>
   </section>
 </template>
@@ -335,7 +335,7 @@ export default {
     },
   },
   render() {
-    return h('section', { class: 'space-y-6' }, [
+    return h('section', { class: 'delivery-ops-stack' }, [
       this.renderHero(),
       h('section', { class: 'grid grid-cols-1 gap-6 xl:grid-cols-[0.92fr_1.08fr]' }, [
         this.renderAttentionPanel(),

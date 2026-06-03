@@ -262,7 +262,7 @@ export default {
         neutral: 'border-white/10 bg-white/5 text-slate-200',
       }[signal.tone] || 'border-slate-400/30 bg-slate-300/10 text-slate-100';
       return h('span', {
-        class: `inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`,
+        class: `inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${tone}`,
         key: signal.id,
       }, [
         h('span', { class: signal.tone === 'neutral' ? 'h-2 w-2 rounded-full bg-slate-400' : 'h-2 w-2 rounded-full bg-current opacity-80' }),
@@ -433,10 +433,10 @@ export default {
         }),
         h('main', { class: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden' }, [
           this.renderHeader(),
-          h('div', { class: 'flex-grow overflow-y-auto scroll-smooth' }, [
+          h('div', { class: 'fideo-main-scroll flex-grow overflow-y-auto scroll-smooth' }, [
             h('div', {
               id: 'main-content',
-              class: 'mx-auto w-full max-w-[1500px] px-3 py-3 md:px-4 lg:px-5',
+              class: 'fideo-main-content mx-auto w-full max-w-[1500px] px-3 py-3 md:px-4 lg:px-5',
             }, this.renderInternalView()),
           ]),
         ]),

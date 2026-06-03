@@ -81,6 +81,38 @@ button {
   box-shadow: none;
 }
 
+.fideo-main-scroll {
+  position: relative;
+  background: #030712;
+}
+
+.fideo-main-scroll::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 229px;
+  background: #020612;
+  pointer-events: none;
+}
+
+.fideo-main-content {
+  position: relative;
+  z-index: 1;
+}
+
+.delivery-ops-stack {
+  display: block;
+}
+
+.delivery-ops-stack > * + * {
+  margin-top: 24px;
+}
+
+.delivery-ops-stack > *:nth-child(2) {
+  margin-top: 23px;
+}
+
 .delivery-hero-panel {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2.4rem;
